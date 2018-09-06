@@ -29,7 +29,7 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	metadata "github.com/digitalocean/go-metadata"
-	"github.com/digitalocean/godo"
+	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -57,7 +57,7 @@ type Driver struct {
 	region   string
 
 	srv      *grpc.Server
-	doClient *godo.Client
+	cloudscaleClient *cloudscale.Client
 	mounter  Mounter
 	log      *logrus.Entry
 
@@ -84,10 +84,7 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 	region := all.Region
 	nodeId := strconv.Itoa(all.DropletID)
 
-	opts := []godo.ClientOpt{}
-	opts = append(opts, godo.SetBaseURL(url))
-
-	doClient, err := godo.New(oauthClient, opts...)
+	cloudscaleClient, err := cloudscale.NewClient(oauthClient)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't initialize DigitalOcean client: %s", err)
 	}
@@ -102,7 +99,7 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 		endpoint: ep,
 		nodeId:   nodeId,
 		region:   region,
-		doClient: doClient,
+		cloudscaleClient: cloudscaleClient,
 		mounter:  newMounter(log),
 		log:      log,
 	}, nil

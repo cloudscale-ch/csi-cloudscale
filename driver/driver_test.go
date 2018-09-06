@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/digitalocean/godo"
+	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/kubernetes-csi/csi-test/pkg/sanity"
 	"github.com/sirupsen/logrus"
 )
@@ -73,15 +73,15 @@ func TestDriverSuite(t *testing.T) {
 	ts := httptest.NewServer(fake)
 	defer ts.Close()
 
-	doClient := godo.NewClient(nil)
+	cloudscaleClient := cloudscale.NewClient(nil)
 	url, _ := url.Parse(ts.URL)
-	doClient.BaseURL = url
+	cloudscaleClient.BaseURL = url
 
 	driver := &Driver{
 		endpoint: endpoint,
 		nodeId:   nodeId,
 		region:   "nyc3",
-		doClient: doClient,
+		cloudscaleClient: cloudscaleClient,
 		mounter:  &fakeMounter{},
 		log:      logrus.New().WithField("test_enabed", true),
 	}

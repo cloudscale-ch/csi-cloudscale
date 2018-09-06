@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	"github.com/digitalocean/godo"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -42,8 +42,6 @@ const (
 
 const (
 	defaultVolumeSizeInGB = 16 * GB
-
-	createdByDO = "Created by DigitalOcean CSI driver"
 )
 
 var (
@@ -66,19 +64,21 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
 	}
 
-	if req.AccessibilityRequirements != nil {
-		for _, t := range req.AccessibilityRequirements.Requisite {
-			region, ok := t.Segments["region"]
-			if !ok {
-				continue // nothing to do
-			}
+	/*
+		if req.AccessibilityRequirements != nil {
+			for _, t := range req.AccessibilityRequirements.Requisite {
+				region, ok := t.Segments["region"]
+				if !ok {
+					continue // nothing to do
+				}
 
-			if region != d.region {
-				return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in region: %q, got: %q", d.region, region)
+				if region != d.region {
+					return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in region: %q, got: %q", d.region, region)
 
+				}
 			}
 		}
-	}
+	*/
 
 	size, err := extractStorage(req.CapacityRange)
 	if err != nil {
@@ -96,9 +96,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.Info("create volume called")
 
 	// get volume first, if it's created do no thing
-	volumes, _, err := d.doClient.Storage.ListVolumes(ctx, &godo.ListVolumeParams{
-		Region: d.region,
-		Name:   volumeName,
+	volumes, _, err := d.cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
+		Name: volumeName,
 	})
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -124,24 +123,18 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}, nil
 	}
 
-	volumeReq := &godo.VolumeCreateRequest{
-		Region:        d.region,
-		Name:          volumeName,
-		Description:   createdByDO,
-		SizeGigaBytes: size / GB,
+	volumeReq := &cloudscale.Volume{
+		/* Region:        d.region, */
+		Name:   volumeName,
+		SizeGB: size / GB,
 	}
 
 	if !validateCapabilities(req.VolumeCapabilities) {
 		return nil, status.Error(codes.AlreadyExists, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
 	}
 
-	ll.Info("checking volume limit")
-	if err := d.checkLimit(ctx); err != nil {
-		return nil, err
-	}
-
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
-	vol, _, err := d.doClient.Storage.CreateVolume(ctx, volumeReq)
+	vol, err := d.cloudscaleClient.Volumes.Create(ctx, volumeReq)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -176,7 +169,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	resp, err := d.doClient.Storage.DeleteVolume(ctx, req.VolumeId)
+	resp, err := d.cloudscaleClient.Volumes.DeleteVolume(ctx, req.VolumeId)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			// we assume it's deleted already for idempotency
@@ -226,25 +219,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
-	// check if volume exist before trying to attach it
-	_, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
-		}
-		return nil, err
+	attachRequest = &cloudscale.Volume{
+		ServerUUIDs: &[]string{dropletID},
 	}
-
-	// check if droplet exist before trying to attach the volume to the droplet
-	_, resp, err = d.doClient.Droplets.Get(ctx, dropletID)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "droplet %q not found", dropletID)
-		}
-		return nil, err
-	}
-
-	action, resp, err := d.doClient.StorageActions.Attach(ctx, req.VolumeId, dropletID)
+	action, resp, err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
 		// don't do anything if attached
 		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
@@ -301,26 +279,10 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	// check if volume exist before trying to detach it
-	_, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			// assume it's detached
-			return &csi.ControllerUnpublishVolumeResponse{}, nil
-		}
-		return nil, err
+	attachRequest = &cloudscale.Volume{
+		ServerUUIDs: &[]string{},
 	}
-
-	// check if droplet exist before trying to detach the volume from the droplet
-	_, resp, err = d.doClient.Droplets.Get(ctx, dropletID)
-	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "droplet %q not found", dropletID)
-		}
-		return nil, err
-	}
-
-	action, resp, err := d.doClient.StorageActions.DetachByDropletID(ctx, req.VolumeId, dropletID)
+	action, resp, err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
 			if strings.Contains(err.Error(), "Attachment not found") {
@@ -376,7 +338,7 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	ll.Info("validate volume capabilities called")
 
 	// check if volume exist before trying to validate it it
-	_, volResp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	_, volResp, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
 		if volResp != nil && volResp.StatusCode == http.StatusNotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
@@ -421,57 +383,31 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 		}
 	}
 
-	listOpts := &godo.ListVolumeParams{
-		ListOptions: &godo.ListOptions{
-			PerPage: int(req.MaxEntries),
-			Page:    page,
-		},
-		Region: d.region,
-	}
+	/*
+		listOpts := &cloudscale.ListVolumeParams{
+			Region: d.region,
+		}
+	*/
 
 	ll := d.log.WithFields(logrus.Fields{
-		"list_opts":          listOpts,
+		/* "list_opts":          listOpts, */
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
 	})
 	ll.Info("list volumes called")
 
-	var volumes []godo.Volume
+    volumes, err := d.cloudscaleClient.Volumes.List(ctx)
+    if err != nil {
+        return nil, err
+    }
 	lastPage := 0
-	for {
-		vols, resp, err := d.doClient.Storage.ListVolumes(ctx, listOpts)
-		if err != nil {
-			return nil, err
-		}
-
-		volumes = append(volumes, vols...)
-
-		if resp.Links == nil || resp.Links.IsLastPage() {
-			if resp.Links != nil {
-				page, err := resp.Links.CurrentPage()
-				if err != nil {
-					return nil, err
-				}
-				// save this for the response
-				lastPage = page
-			}
-			break
-		}
-
-		page, err := resp.Links.CurrentPage()
-		if err != nil {
-			return nil, err
-		}
-
-		listOpts.ListOptions.Page = page + 1
-	}
 
 	var entries []*csi.ListVolumesResponse_Entry
 	for _, vol := range volumes {
 		entries = append(entries, &csi.ListVolumesResponse_Entry{
 			Volume: &csi.Volume{
-				Id:            vol.ID,
-				CapacityBytes: vol.SizeGigaBytes * GB,
+				Id:            vol.UUID,
+				CapacityBytes: vol.SizeGB * GB,
 			},
 		})
 	}
@@ -479,7 +415,6 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	// TODO(arslan): check that the NextToken logic works fine, might be racy
 	resp := &csi.ListVolumesResponse{
 		Entries:   entries,
-		NextToken: strconv.Itoa(lastPage),
 	}
 
 	ll.WithField("response", resp).Info("volumes listed")
@@ -589,80 +524,6 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 	}
 
 	return 0, errors.New("requiredBytes and LimitBytes are not the same")
-}
-
-// waitAction waits until the given action for the volume is completed
-func (d *Driver) waitAction(ctx context.Context, volumeId string, actionId int) error {
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id": volumeId,
-		"action_id": actionId,
-	})
-
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-
-	// TODO(arslan): use backoff in the future
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			action, _, err := d.doClient.StorageActions.Get(ctx, volumeId, actionId)
-			if err != nil {
-				ll.WithError(err).Info("waiting for volume errored")
-				continue
-			}
-			ll.WithField("action_status", action.Status).Info("action received")
-
-			if action.Status == godo.ActionCompleted {
-				ll.Info("action completed")
-				return nil
-			}
-
-			if action.Status == godo.ActionInProgress {
-				continue
-			}
-		case <-ctx.Done():
-			return fmt.Errorf("timeout occured waiting for storage action of volume: %q", volumeId)
-		}
-	}
-}
-
-// checkLimit checks whether the user hit their volume limit to ensure.
-func (d *Driver) checkLimit(ctx context.Context) error {
-	// only one provisioner runs, we can make sure to prevent burst creation
-	d.readyMu.Lock()
-	defer d.readyMu.Unlock()
-
-	account, _, err := d.doClient.Account.Get(ctx)
-	if err != nil {
-		return status.Errorf(codes.Internal,
-			"couldn't get account information to check volume limit: %s", err.Error())
-	}
-
-	// administrative accounts might have zero length limits, make sure to not check them
-	if account.VolumeLimit == 0 {
-		return nil //  hail to the king!
-	}
-
-	// NOTE(arslan): the API returns the limit for *all* regions, so passing
-	// the region down as a parameter doesn't change the response.
-	// Nevertheless, this is something we should be aware of.
-	volumes, _, err := d.doClient.Storage.ListVolumes(ctx, &godo.ListVolumeParams{
-		Region: d.region,
-	})
-	if err != nil {
-		return status.Errorf(codes.Internal,
-			"couldn't get fetch volume list to check volume limit: %s", err.Error())
-	}
-
-	if account.VolumeLimit <= len(volumes) {
-		return status.Errorf(codes.ResourceExhausted,
-			"volume limit (%d) has been reached. Current number of volumes: %d. Please contact support.",
-			account.VolumeLimit, len(volumes))
-	}
-
-	return nil
 }
 
 // validateCapabilities validates the requested capabilities. It returns false

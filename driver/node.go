@@ -61,7 +61,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	vol, resp, err := d.doClient.Storage.GetVolume(ctx, req.VolumeId)
+	vol, resp, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
