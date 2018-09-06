@@ -8,4 +8,8 @@ integration:
 	go get golang.org/x/oauth2
 	go test -tags=integration -v $(TEST)/test/integration/... $(TESTARGS) -timeout 120m
 
+fmt:
+	go fmt
+	gofmt -l -w test/integration
+
 .PHONY: test integration
