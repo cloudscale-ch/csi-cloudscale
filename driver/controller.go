@@ -548,7 +548,7 @@ func validateCapabilities(caps []*csi.VolumeCapability) bool {
 		} else {
 			// we need to make sure all capabilities are supported. Revert back
 			// in case we have a cap that is supported, but is invalidated now
-			supported = false
+			return false
 		}
 	}
 

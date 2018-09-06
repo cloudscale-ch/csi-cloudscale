@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  branch = "master"
+  digest = "1:d9512fb564bb7c92e1318d6db41b98940e6bfef270a9ee60aaede7f9eb164bf7"
+  name = "github.com/cloudscale-ch/cloudscale-go-sdk"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1bee440bb5de83ba4b46c76e9704788bb244c13a"
+
+[[projects]]
   digest = "1:a54dc69ec3668e0e57ad159a0a8c0ce1ec571174bb4eb6b3915833a8c21d40f3"
   name = "github.com/container-storage-interface/spec"
   packages = ["lib/go/csi/v0"]
@@ -18,14 +26,6 @@
   revision = "15bd36e5f6f745f32074d0705a27aee05ae0a216"
 
 [[projects]]
-  digest = "1:986666250a191ffe32e1445e31fadc1517adbad218b7aa71a078ab81a3933def"
-  name = "github.com/digitalocean/godo"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "6a6ce62154ba780ecbb97bbbb13a4e9e0b157070"
-  version = "v1.4.2"
-
-[[projects]]
   digest = "1:4f506581876d380af43c2a3a424abd7c8f4431569165baa72208b456c4f5c106"
   name = "github.com/golang/protobuf"
   packages = [
@@ -39,14 +39,6 @@
   pruneopts = "UT"
   revision = "b4deda0973fb4c70b50d226b1af49f3da59f5265"
   version = "v1.1.0"
-
-[[projects]]
-  branch = "master"
-  digest = "1:a63cff6b5d8b95638bfe300385d93b2a6d9d687734b863da8e09dc834510a690"
-  name = "github.com/google/go-querystring"
-  packages = ["query"]
-  pruneopts = "UT"
-  revision = "53e6ce116135b80d037921a7fdd5138cf32d7a8a"
 
 [[projects]]
   branch = "master"
@@ -114,14 +106,6 @@
   pruneopts = "UT"
   revision = "c155da19408a8799da419ed3eeb0cb5db0ad5dbc"
   version = "v1.0.5"
-
-[[projects]]
-  branch = "master"
-  digest = "1:595e123593925253dd02152777ddb8cd42300c4f61e783e163b053802547c47c"
-  name = "github.com/tent/http-link-go"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "ac974c61c2f990f4115b119354b5e0b47550e888"
 
 [[projects]]
   branch = "master"
@@ -276,9 +260,9 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/cloudscale-ch/cloudscale-go-sdk",
     "github.com/container-storage-interface/spec/lib/go/csi/v0",
     "github.com/digitalocean/go-metadata",
-    "github.com/digitalocean/godo",
     "github.com/golang/protobuf/ptypes/wrappers",
     "github.com/kubernetes-csi/csi-test/pkg/sanity",
     "github.com/sirupsen/logrus",
