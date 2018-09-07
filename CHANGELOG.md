@@ -1,7 +1,5 @@
 ## unreleased
 
-## v0.3.0 - 2018.09.05
-
 * Forked this repository from csi-digitalocean. They have a similar API. Thanks
   a lot to DigitalOcean - mostly Fatih Arslan - for his work.
 
