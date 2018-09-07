@@ -38,21 +38,6 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-type storageVolumeRoot struct {
-	Volume *godo.Volume `json:"volume"`
-	Links  *godo.Links  `json:"links,omitempty"`
-}
-
-type storageVolumesRoot struct {
-	Volumes []godo.Volume `json:"volumes"`
-	Links   *godo.Links   `json:"links"`
-}
-
-type dropletRoot struct {
-	Droplet *godo.Droplet `json:"droplet"`
-	Links   *godo.Links   `json:"links,omitempty"`
-}
-
 func TestDriverSuite(t *testing.T) {
 	socket := "/tmp/csi.sock"
 	endpoint := "unix://" + socket
@@ -64,9 +49,9 @@ func TestDriverSuite(t *testing.T) {
 	nodeId := "987654"
 	fake := &fakeAPI{
 		t:       t,
-		volumes: map[string]*godo.Volume{},
-		droplets: map[string]*godo.Droplet{
-			nodeId: &godo.Droplet{},
+		volumes: map[string]*cloudscale.Volume{},
+		servers: map[string]*cloudscale.Server{
+			nodeId: &cloudscale.Server{},
 		},
 	}
 
@@ -113,37 +98,23 @@ func TestDriverSuite(t *testing.T) {
 // fakeAPI implements a fake, cached DO API
 type fakeAPI struct {
 	t        *testing.T
-	volumes  map[string]*godo.Volume
-	droplets map[string]*godo.Droplet
+	volumes  map[string]*cloudscale.Volume
+	servers  map[string]*cloudscale.Server
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// don't deal with droplets for now
-	if strings.HasPrefix(r.URL.Path, "/v2/droplets/") {
+	// don't deal with servers for now
+	if strings.HasPrefix(r.URL.Path, "/v2/servers/") {
 		// for now we only do a GET, so we assume it's a GET and don't check
 		// for the method
-		resp := new(dropletRoot)
 		id := filepath.Base(r.URL.Path)
-		droplet, ok := f.droplets[id]
+		server, ok := f.servers[id]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 		} else {
-			resp.Droplet = droplet
+			_ = json.NewEncoder(w).Encode(&server)
 		}
 
-		_ = json.NewEncoder(w).Encode(&resp)
-		return
-	}
-
-	// return empty response to account, assuming there is no volume limit
-	if strings.HasPrefix(r.URL.Path, "/v2/account") {
-		var resp = struct {
-			Account *godo.Account
-		}{
-			Account: &godo.Account{},
-		}
-
-		_ = json.NewEncoder(w).Encode(&resp)
 		return
 	}
 
@@ -152,7 +123,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "GET":
 		// A list call
 		if strings.HasPrefix(r.URL.String(), "/v2/volumes?") {
-			volumes := []godo.Volume{}
+			volumes := []cloudscale.Volume{}
 			if name := r.URL.Query().Get("name"); name != "" {
 				for _, vol := range f.volumes {
 					if vol.Name == name {
@@ -165,68 +136,47 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			resp := new(storageVolumesRoot)
-			resp.Volumes = volumes
-
-			err := json.NewEncoder(w).Encode(&resp)
+			err := json.NewEncoder(w).Encode(&volumes)
 			if err != nil {
 				f.t.Fatal(err)
 			}
 			return
 
 		} else {
-			resp := new(storageVolumeRoot)
 			// single volume get
 			id := filepath.Base(r.URL.Path)
 			vol, ok := f.volumes[id]
 			if !ok {
 				w.WriteHeader(http.StatusNotFound)
 			} else {
-				resp.Volume = vol
+				_ = json.NewEncoder(w).Encode(&vol)
 			}
 
-			_ = json.NewEncoder(w).Encode(&resp)
 			return
 		}
 
 		// response with zero items
-		var resp = struct {
-			Volume []*godo.Volume
-			Links  *godo.Links
-		}{}
-
-		err := json.NewEncoder(w).Encode(&resp)
+		err := json.NewEncoder(w).Encode(&[]*cloudscale.Volume{})
 		if err != nil {
 			f.t.Fatal(err)
 		}
 	case "POST":
-		v := new(godo.VolumeCreateRequest)
+		v := new(cloudscale.Volume)
 		err := json.NewDecoder(r.Body).Decode(v)
 		if err != nil {
 			f.t.Fatal(err)
 		}
 
 		id := randString(10)
-		vol := &godo.Volume{
-			ID: id,
-			Region: &godo.Region{
-				Slug: v.Region,
-			},
-			Description:   v.Description,
-			Name:          v.Name,
-			SizeGigaBytes: v.SizeGigaBytes,
-			CreatedAt:     time.Now().UTC(),
+		vol := &cloudscale.Volume{
+			UUID:   id,
+			Name:   v.Name,
+			SizeGB: v.SizeGB,
 		}
 
 		f.volumes[id] = vol
 
-		var resp = struct {
-			Volume *godo.Volume
-			Links  *godo.Links
-		}{
-			Volume: vol,
-		}
-		err = json.NewEncoder(w).Encode(&resp)
+		err = json.NewEncoder(w).Encode(&vol)
 		if err != nil {
 			f.t.Fatal(err)
 		}
