@@ -1,18 +1,15 @@
-# csi-digitalocean [![Build Status](https://travis-ci.org/digitalocean/csi-digitalocean.svg?branch=master)](https://travis-ci.org/digitalocean/csi-digitalocean)
-A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for DigitalOcean Block Storage. The CSI plugin allows you to use DigitalOcean Block Storage with your preferred Container Orchestrator.
+# csi-cloudscale [![Build Status](https://travis-ci.org/cloudscale-ch/csi-cloudscale.svg?branch=master)](https://travis-ci.org/cloudscale-ch/csi-cloudscale)
+A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
 
-The DigitalOcean CSI plugin is mostly tested on Kubernetes. Theoretically it
+The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
 should also work on other Container Orchestrator's, such as Mesos or
 Cloud Foundry. Feel free to test it on other CO's and give us a feedback.
 
 ## Releases
 
-The DigitalOcean CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v0.2.0`**. This means that the project is still
-under active development and may not be production ready. The plugin will be
-bumped to **`v1.0.0`** once the [DigitalOcean Kubernetes
-product](https://www.digitalocean.com/products/kubernetes/) is released and
-will continue following the rules below:
+The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
+The current version is: **`v0.3.0`**. This means that the project is still
+under active development and may not be production ready.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -32,7 +29,7 @@ will continue following the rules below:
 
 `Mount Propagation` is [disabled by
 default](https://github.com/rancher/rke/issues/765) on latest `v2.0.6` version
-of Rancher, which prevents the `csi-digitalocean` to function correctly. To fix
+of Rancher, which prevents the `csi-cloudscale` to function correctly. To fix
 the issue temporary, make sure to add the following settings to your cluster
 configuration YAML file:
 
@@ -48,7 +45,7 @@ services:
 ```
 
 
-#### 1. Create a secret with your DigitalOcean API Access Token:
+#### 1. Create a secret with your cloudscale.ch API Access Token:
 
 Replace the placeholder string starting with `a05...` with your own secret and
 save it as `secret.yml`: 
@@ -57,7 +54,7 @@ save it as `secret.yml`:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: digitalocean
+  name: cloudscale
   namespace: kube-system
 stringData:
   access-token: "a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da"
@@ -67,26 +64,26 @@ and create the secret using kubectl:
 
 ```
 $ kubectl create -f ./secret.yml
-secret "digitalocean" created
+secret "cloudscale" created
 ```
 
-You should now see the digitalocean secret in the `kube-system` namespace along with other secrets
+You should now see the cloudscale secret in the `kube-system` namespace along with other secrets
 
 ```
 $ kubectl -n kube-system get secrets
 NAME                  TYPE                                  DATA      AGE
 default-token-jskxx   kubernetes.io/service-account-token   3         18h
-digitalocean          Opaque                                1         18h
+cloudscale            Opaque                                1         18h
 ```
 
 #### 2. Deploy the CSI plugin and sidecars:
 
 Before you continue, be sure to checkout to a [tagged
-release](https://github.com/digitalocean/csi-digitalocean/releases). Always use the [latest stable version](https://github.com/digitalocean/csi-digitalocean/releases/latest) 
-For example, to use the latest stable version (`v0.2.0`) you can execute the following command:
+release](https://github.com/cloudscale-ch/csi-cloudscale/releases). Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
+For example, to use the latest stable version (`v0.3.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/digitalocean/csi-digitalocean/master/deploy/kubernetes/releases/csi-digitalocean-v0.2.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.3.0.yaml
 ```
 
 This file will be always updated to point to the latest stable release.
@@ -128,7 +125,7 @@ pvc-0879b207-9558-11e8-b6b4-5218f75c62b9   5Gi        RWO            Delete     
 
 The above output means that the CSI plugin successfully created (provisioned) a
 new Volume on behalf of you. You should be able to see this newly created
-volume under the [Volumes tab in the DigitalOcean UI](https://cloud.digitalocean.com/droplets/volumes)
+volume under the [Volumes tab in the cloudscale.ch UI](https://control.cloudscale.ch/volumes)
 
 The volume is not attached to any node yet. It'll only attached to a node if a
 workload (i.e: pod) is scheduled to a specific node. Now let us create a Pod
@@ -211,7 +208,7 @@ $ git push origin
 ```
 
 After it's merged to master, [create a new Github
-release](https://github.com/digitalocean/csi-digitalocean/releases/new) from
+release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
 master with the version `v0.2.0` and then publish a new docker build:
 
 ```
@@ -224,5 +221,5 @@ This will create a binary with version `v0.2.0` and docker image pushed to
 
 ## Contributing
 
-At DigitalOcean we value and love our community! If you have any issues or
+At cloudscale.ch we value and love our community! If you have any issues or
 would like to contribute, feel free to open an issue/PR
