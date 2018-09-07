@@ -95,7 +95,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.Info("create volume called")
 
 	// get volume first, if it's created do no thing
-	volumes, _, err := d.cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
 		Name: volumeName,
 	})
 	if err != nil {
@@ -109,15 +109,15 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := volumes[0]
 
-		if vol.SizeGigaBytes*GB != size {
+		if int64(vol.SizeGB)*GB != size {
 			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
 		}
 
 		ll.Info("volume already created")
 		return &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
-				Id:            vol.ID,
-				CapacityBytes: vol.SizeGigaBytes * GB,
+				Id:            vol.UUID,
+				CapacityBytes: int64(vol.SizeGB * GB),
 			},
 		}, nil
 	}
@@ -125,7 +125,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	volumeReq := &cloudscale.Volume{
 		/* Region:        d.region, */
 		Name:   volumeName,
-		SizeGB: size / GB,
+		SizeGB: int(size / GB), // Don't want int64.
 	}
 
 	if !validateCapabilities(req.VolumeCapabilities) {
@@ -140,7 +140,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			Id:            vol.ID,
+			Id:            vol.UUID,
 			CapacityBytes: size,
 			AccessibleTopology: []*csi.Topology{
 				{
@@ -168,7 +168,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	resp, err := d.cloudscaleClient.Volumes.DeleteVolume(ctx, req.VolumeId)
+	resp, err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			// we assume it's deleted already for idempotency
@@ -195,13 +195,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume capability must be provided")
 	}
 
-	dropletID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		// don't return because the CSI tests passes ID's in non-integer format.
-		dropletID = 1 // for testing purposes only. Will fail in real world API
-		d.log.WithField("node_id", req.NodeId).Warn("node ID cannot be converted to an integer")
-	}
-
 	if req.Readonly {
 		// TODO(arslan): we should return codes.InvalidArgument, but the CSI
 		// test fails, because according to the CSI Spec, this flag cannot be
@@ -211,46 +204,32 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":  req.VolumeId,
-		"node_id":    req.NodeId,
-		"droplet_id": dropletID,
-		"method":     "controller_publish_volume",
+		"volume_id": req.VolumeId,
+		"node_id":   req.NodeId,
+		"method":    "controller_publish_volume",
 	})
 	ll.Info("controller publish volume called")
 
-	attachRequest = &cloudscale.Volume{
-		ServerUUIDs: &[]string{dropletID},
+	attachRequest := &cloudscale.Volume{
+		ServerUUIDs: &[]string{req.NodeId},
 	}
-	action, resp, err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
+	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
-		// don't do anything if attached
-		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-			if strings.Contains(err.Error(), "This volume is already attached") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("assuming volume is attached already")
-				return &csi.ControllerPublishVolumeResponse{}, nil
+		/*
+			// don't do anything if attached
+			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
+				if strings.Contains(err.Error(), "Droplet already has a pending event") {
+					ll.WithFields(logrus.Fields{
+						"error": err,
+						"resp":  resp,
+					}).Warn("droplet is not able to detach the volume")
+					// sending an abort makes sure the csi-attacher retries with the next backoff tick
+					return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached. droplet %s is in process of another action",
+						req.VolumeId, req.NodeId)
+				}
 			}
-
-			if strings.Contains(err.Error(), "Droplet already has a pending event") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("droplet is not able to detach the volume")
-				// sending an abort makes sure the csi-attacher retries with the next backoff tick
-				return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached. droplet %d is in process of another action",
-					req.VolumeId, dropletID)
-			}
-		}
+		*/
 		return nil, err
-	}
-
-	if action != nil {
-		ll.Info("waiting until volume is attached")
-		if err := d.waitAction(ctx, req.VolumeId, action.ID); err != nil {
-			return nil, err
-		}
 	}
 
 	ll.Info("volume is attached")
@@ -278,38 +257,26 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	attachRequest = &cloudscale.Volume{
+	detachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{},
 	}
-	action, resp, err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-			if strings.Contains(err.Error(), "Attachment not found") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("assuming volume is detached already")
-				return &csi.ControllerUnpublishVolumeResponse{}, nil
-			}
+		/*
+			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
+				if strings.Contains(err.Error(), "Droplet already has a pending event") {
+					ll.WithFields(logrus.Fields{
+						"error": err,
+						"resp":  resp,
+					}).Warn("droplet is not able to detach the volume")
 
-			if strings.Contains(err.Error(), "Droplet already has a pending event") {
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  resp,
-				}).Warn("droplet is not able to detach the volume")
-				// sending an abort makes sure the csi-attacher retries with the next backoff tick
-				return nil, status.Errorf(codes.Aborted, "volume %q couldn't be detached. droplet %d is in process of another action",
-					req.VolumeId, dropletID)
+					// sending an abort makes sure the csi-attacher retries with the next backoff tick
+					return nil, status.Errorf(codes.Aborted, "volume %q couldn't be detached. droplet %d is in process of another action",
+						req.VolumeId, dropletID)
+				}
 			}
-		}
+		*/
 		return nil, err
-	}
-
-	if action != nil {
-		ll.Info("waiting until volume is detached")
-		if err := d.waitAction(ctx, req.VolumeId, action.ID); err != nil {
-			return nil, err
-		}
 	}
 
 	ll.Info("volume is detached")
@@ -395,10 +362,10 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	})
 	ll.Info("list volumes called")
 
-    volumes, err := d.cloudscaleClient.Volumes.List(ctx)
-    if err != nil {
-        return nil, err
-    }
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 	lastPage := 0
 
 	var entries []*csi.ListVolumesResponse_Entry
@@ -406,14 +373,14 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 		entries = append(entries, &csi.ListVolumesResponse_Entry{
 			Volume: &csi.Volume{
 				Id:            vol.UUID,
-				CapacityBytes: vol.SizeGB * GB,
+				CapacityBytes: int64(vol.SizeGB * GB),
 			},
 		})
 	}
 
 	// TODO(arslan): check that the NextToken logic works fine, might be racy
 	resp := &csi.ListVolumesResponse{
-		Entries:   entries,
+		Entries: entries,
 	}
 
 	ll.WithField("response", resp).Info("volumes listed")

@@ -84,7 +84,7 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 	region := all.Region
 	nodeId := strconv.Itoa(all.DropletID)
 
-	cloudscaleClient, err := cloudscale.NewClient(oauthClient)
+	cloudscaleClient := cloudscale.NewClient(oauthClient)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't initialize DigitalOcean client: %s", err)
 	}
@@ -142,12 +142,6 @@ func (d *Driver) Run() error {
 			d.log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
 		}
 		return resp, err
-	}
-
-	// warn the user, it'll not propagate to the user but at least we see if
-	// something is wrong in the logs
-	if err := d.checkLimit(context.Background()); err != nil {
-		d.log.WithError(err).Warn("CSI plugin will not function correctly, please resolve volume limit")
 	}
 
 	d.srv = grpc.NewServer(grpc.UnaryInterceptor(errHandler))
