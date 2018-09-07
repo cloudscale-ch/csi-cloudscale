@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
@@ -168,16 +167,12 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	})
 	ll.Info("delete volume called")
 
-	resp, err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
+	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		if resp != nil && resp.StatusCode == http.StatusNotFound {
-			// we assume it's deleted already for idempotency
-			return &csi.DeleteVolumeResponse{}, nil
-		}
-		return nil, err
+		return nil, reraiseNotFound(err)
 	}
 
-	ll.WithField("response", resp).Info("volume is deleted")
+	ll.Info("volume is deleted")
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -304,12 +299,9 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	ll.Info("validate volume capabilities called")
 
 	// check if volume exist before trying to validate it it
-	_, volResp, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		if volResp != nil && volResp.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
-		}
-		return nil, err
+		return nil, reraiseNotFound(err)
 	}
 
 	if req.AccessibleTopology != nil {
@@ -340,14 +332,14 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	var page int
-	var err error
-	if req.StartingToken != "" {
-		page, err = strconv.Atoi(req.StartingToken)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// var page int
+	// var err error
+	// if req.StartingToken != "" {
+	// 	page, err = strconv.Atoi(req.StartingToken)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// }
 
 	/*
 		listOpts := &cloudscale.ListVolumeParams{
@@ -366,7 +358,6 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	if err != nil {
 		return nil, err
 	}
-	lastPage := 0
 
 	var entries []*csi.ListVolumesResponse_Entry
 	for _, vol := range volumes {
@@ -519,4 +510,14 @@ func validateCapabilities(caps []*csi.VolumeCapability) bool {
 	}
 
 	return supported
+}
+
+func reraiseNotFound(err error) error {
+	errorResponse, ok := err.(*cloudscale.ErrorResponse)
+	if ok {
+		if errorResponse.StatusCode == http.StatusNotFound {
+			return status.Errorf(codes.NotFound, err.Error())
+		}
+	}
+	return err
 }

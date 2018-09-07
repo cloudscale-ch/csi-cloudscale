@@ -26,11 +26,9 @@ package driver
 
 import (
 	"context"
-	"net/http"
 	"path/filepath"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -64,13 +62,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	vol, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-        errorResponse, ok := err.(*cloudscale.ErrorResponse)
-        if ok {
-            if errorResponse.StatusCode == http.StatusNotFound {
-                return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
-            }
-		}
-		return nil, err
+		return nil, reraiseNotFound(err)
 	}
 
 	source := getDiskSource(vol.Name)
