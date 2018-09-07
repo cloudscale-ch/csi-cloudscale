@@ -65,7 +65,7 @@ func TestDriverSuite(t *testing.T) {
 	driver := &Driver{
 		endpoint: endpoint,
 		nodeId:   nodeId,
-		region:   "nyc3",
+		region:   "zrh1",
 		cloudscaleClient: cloudscaleClient,
 		mounter:  &fakeMounter{},
 		log:      logrus.New().WithField("test_enabed", true),
@@ -104,7 +104,7 @@ type fakeAPI struct {
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// don't deal with servers for now
-	if strings.HasPrefix(r.URL.Path, "/v2/servers/") {
+	if strings.HasPrefix(r.URL.Path, "/v1/servers/") {
 		// for now we only do a GET, so we assume it's a GET and don't check
 		// for the method
 		id := filepath.Base(r.URL.Path)
@@ -118,11 +118,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// rest is /v2/volumes related
+	// rest is /v1/volumes related
 	switch r.Method {
 	case "GET":
 		// A list call
-		if strings.HasPrefix(r.URL.String(), "/v2/volumes?") {
+		if !strings.HasPrefix(r.URL.String(), "/v1/volumes/") {
 			volumes := []cloudscale.Volume{}
 			if name := r.URL.Query().Get("name"); name != "" {
 				for _, vol := range f.volumes {
@@ -183,6 +183,19 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "DELETE":
 		id := filepath.Base(r.URL.Path)
 		delete(f.volumes, id)
+	case "PATCH":
+		v := new(cloudscale.Volume)
+		err := json.NewDecoder(r.Body).Decode(v)
+		if err != nil {
+			f.t.Fatal(err)
+		}
+		id := filepath.Base(r.URL.Path)
+		_, ok := f.volumes[id]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	default:
+		f.t.Fatalf("Used the unhandled HTTP method %s\n", r.Method)
 	}
 }
 
