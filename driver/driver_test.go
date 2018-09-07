@@ -189,10 +189,19 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			f.t.Fatal(err)
 		}
+		// Check if volume exists
 		id := filepath.Base(r.URL.Path)
 		_, ok := f.volumes[id]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
+		}
+
+		// Check if server exists
+		for _, serverUUID := range *v.ServerUUIDs {
+			_, ok := f.servers[serverUUID]
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+			}
 		}
 	default:
 		f.t.Fatalf("Used the unhandled HTTP method %s\n", r.Method)

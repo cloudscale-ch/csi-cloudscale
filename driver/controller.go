@@ -224,7 +224,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 				}
 			}
 		*/
-		return nil, err
+		return nil, reraiseNotFound(err)
 	}
 
 	ll.Info("volume is attached")
