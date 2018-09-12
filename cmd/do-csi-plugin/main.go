@@ -22,7 +22,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/digitalocean/csi-digitalocean/driver"
+	"github.com/cloudscale-ch/csi-cloudscale/driver"
 )
 
 func main() {

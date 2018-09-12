@@ -13,7 +13,7 @@
 # limitations under the License.
  
 # Configuration to deploy release version of the CSI DigitalOcean
-# plugin (https://github.com/digitalocean/csi-digitalocean) compatible with
+# plugin (https://github.com/cloudscale-ch/csi-cloudscale) compatible with
 # Kubernetes >=v1.10.5
 #
 # example usage: kubectl create -f <this_file>
