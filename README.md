@@ -175,7 +175,7 @@ Requirements:
 
 * Go: min `v1.10.x`
 
-After making your changes, run the tests: 
+After making your changes, run the unit tests: 
 
 ```
 $ make test
@@ -189,6 +189,13 @@ $ VERSION=dev make publish-dev
 
 This will create a binary with version `dev` and docker image pushed to
 `digitalocean/do-csi-plugin:dev`
+
+
+To run the integration tests run the following:
+
+```
+$ KUBECONFIG=$(pwd)/kubeconfig make test-integration
+```
 
 
 ### Release a new version
