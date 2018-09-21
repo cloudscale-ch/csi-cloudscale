@@ -485,8 +485,7 @@ func extractStorage(capRange *csi.CapacityRange) (int64, error) {
 }
 
 // validateCapabilities validates the requested capabilities. It returns false
-// if it doesn't satisfy the currently supported modes of DigitalOcean Block
-// Storage
+// if it doesn't satisfy the currently supported modes of cloudscale.ch Volumes
 func validateCapabilities(caps []*csi.VolumeCapability) bool {
 	vcaps := []*csi.VolumeCapability_AccessMode{supportedAccessMode}
 

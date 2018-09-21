@@ -39,7 +39,7 @@ const (
 	diskIDPath   = "/dev/disk/by-id"
 	diskDOPrefix = "scsi-0DO_Volume_"
 
-	// See: https://www.digitalocean.com/docs/volumes/overview/#limits
+	// TODO we're not sure yet what our limit is, so just use this for now.
 	maxVolumesPerNode = 7
 )
 
