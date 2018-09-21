@@ -27,7 +27,7 @@ metadata:
   namespace: kube-system
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: com.digitalocean.csi.dobs
+provisioner: ch.cloudscale.csi
 
 ---
 
@@ -56,7 +56,7 @@ spec:
         - name: csi-provisioner
           image: quay.io/k8scsi/csi-provisioner:v0.3.0
           args:
-            - "--provisioner=com.digitalocean.csi.dobs"
+            - "--provisioner=ch.cloudscale.csi"
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
           env:
@@ -226,7 +226,7 @@ spec:
         #    type: DirectoryOrCreate
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/com.digitalocean.csi.dobs
+            path: /var/lib/kubelet/plugins/ch.cloudscale.csi
             type: DirectoryOrCreate
         - name: pods-mount-dir
           hostPath:

@@ -1,4 +1,5 @@
 /*
+Copyright cloudscale.ch
 Copyright 2018 DigitalOcean
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,9 +28,9 @@ import (
 
 func main() {
 	var (
-		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/com.digitalocean.csi.dobs/csi.sock", "CSI endpoint")
-		token    = flag.String("token", "", "DigitalOcean access token")
-		url      = flag.String("url", "https://api.digitalocean.com/", "DigitalOcean API URL")
+		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/ch.cloudscale.csi/csi.sock", "CSI endpoint")
+		token    = flag.String("token", "", "cloudscale.ch access token")
+		url      = flag.String("url", "https://api.cloudscale.ch/", "cloudscale.ch API URL")
 		version  = flag.Bool("version", false, "Print the version and exit.")
 	)
 	flag.Parse()

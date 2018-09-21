@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	driverName = "com.digitalocean.csi.dobs"
+	driverName = "ch.cloudscale.csi"
 )
 
 var (
@@ -70,7 +70,7 @@ type Driver struct {
 
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
-// managaing DigitalOcean Block Storage
+// managaing cloudscale.ch Volumes
 func NewDriver(ep, token, url string) (*Driver, error) {
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: token,
@@ -87,7 +87,7 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't initialize DigitalOcean client: %s", err)
+		return nil, fmt.Errorf("couldn't initialize cloudscale.ch client: %s", err)
 	}
 
 	log := logrus.New().WithFields(logrus.Fields{
