@@ -93,7 +93,7 @@ spec:
             - name: CLOUDSCALE_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: digitalocean
+                  name: cloudscale
                   key: access-token
           imagePullPolicy: "Always"
           volumeMounts:
@@ -201,7 +201,7 @@ spec:
             - name: CLOUDSCALE_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: digitalocean
+                  name: cloudscale
                   key: access-token
           imagePullPolicy: "Always"
           securityContext:
