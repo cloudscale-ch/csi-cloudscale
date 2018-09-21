@@ -46,7 +46,7 @@ func TestDriverSuite(t *testing.T) {
 		t.Fatalf("failed to remove unix domain socket file %s, error: %s", socket, err)
 	}
 
-	// fake DO Server, not working yet ...
+	// fake cloudscale.ch Server, not working yet ...
 	nodeId := "987654"
 	fake := &fakeAPI{
 		t:       t,
@@ -96,7 +96,7 @@ func TestDriverSuite(t *testing.T) {
 	sanity.Test(t, cfg)
 }
 
-// fakeAPI implements a fake, cached DO API
+// fakeAPI implements a fake, cached cloudscale.ch API
 type fakeAPI struct {
 	t        *testing.T
 	volumes  map[string]*cloudscale.Volume

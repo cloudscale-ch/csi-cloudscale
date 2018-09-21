@@ -44,9 +44,9 @@ const (
 )
 
 var (
-	// DO currently only support a single node to be attached to a single node
-	// in read/write mode. This corresponds to `accessModes.ReadWriteOnce` in a
-	// PVC resource on Kubernets
+	// cloudscale.ch currently only support a single node to be attached to a
+	// single node in read/write mode. This corresponds to
+	// `accessModes.ReadWriteOnce` in a PVC resource on Kubernets
 	supportedAccessMode = &csi.VolumeCapability_AccessMode{
 		Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 	}

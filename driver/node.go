@@ -37,7 +37,7 @@ import (
 
 const (
 	diskIDPath   = "/dev/disk/by-id"
-	diskDOPrefix = "scsi-0DO_Volume_"
+	diskCloudscalePrefix = "scsi-0_cloudscale_volume_"
 
 	// TODO we're not sure yet what our limit is, so just use this for now.
 	maxVolumesPerNode = 7
@@ -306,7 +306,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 }
 
 // getDiskSource returns the absolute path of the attached volume for the given
-// DO volume name
+// cloudscale.ch volume name
 func getDiskSource(volumeName string) string {
-	return filepath.Join(diskIDPath, diskDOPrefix+volumeName)
+	return filepath.Join(diskIDPath, diskCloudscalePrefix+volumeName)
 }
