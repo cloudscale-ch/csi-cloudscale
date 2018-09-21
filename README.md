@@ -184,6 +184,9 @@ $ make test
 If you want to test your changes, create a new image with the version set to `dev`:
 
 ```
+apt install docker.io
+# At this point you probably need to add your user to the docker group
+docker login --username=cloudscalech --email=hello@cloudscale.ch
 $ VERSION=dev make publish
 ```
 
