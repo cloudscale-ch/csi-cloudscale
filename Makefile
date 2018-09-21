@@ -16,7 +16,7 @@ VERSION ?= $(shell cat VERSION)
 
 all: test
 
-publish: compile build push clean
+publish: build push clean
 
 .PHONY: bump-version
 bump-version: 
@@ -51,9 +51,9 @@ test-integration:
 
 
 .PHONY: build
-build:
+build: compile
 	@echo "==> Building the docker image"
-	@docker build -t cloudscalech/cloudscale-csi-plugin:$(VERSION) cmd/cloudscale-csi-plugin -f cmd/cloudscale-csi-plugin/Dockerfile
+	@docker build -t cloudscalech/cloudscale-csi-plugin:$(VERSION) -f cmd/cloudscale-csi-plugin/Dockerfile cmd/cloudscale-csi-plugin
 
 .PHONY: push
 push:
