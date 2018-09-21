@@ -8,7 +8,7 @@ Cloud Foundry. Feel free to test it on other CO's and give us a feedback.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v0.3.0`**. This means that the project is still
+The current version is: **`v0.2.0`**. This means that the project is still
 under active development and may not be production ready.
 
 * Bug fixes will be released as a `PATCH` update.
@@ -80,10 +80,10 @@ cloudscale            Opaque                                1         18h
 
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v0.3.0`) you can execute the following command:
+For example, to use the latest stable version (`v0.2.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.3.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.2.0.yaml
 ```
 
 This file will be always updated to point to the latest stable release.
