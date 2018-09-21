@@ -80,7 +80,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
-          image: digitalocean/do-csi-plugin:v0.2.0
+          image: cloudscalech/cloudscale-csi-plugin:v0.2.0
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--token=$(CLOUDSCALE_ACCESS_TOKEN)"
@@ -188,7 +188,7 @@ spec:
               # - name: registrar-socket-dir
               #   mountPath: /var/lib/csi/sockets/
         - name: csi-cloudscale-plugin
-          image: digitalocean/do-csi-plugin:v0.2.0
+          image: cloudscalech/cloudscale-csi-plugin:v0.2.0
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--token=$(CLOUDSCALE_ACCESS_TOKEN)"

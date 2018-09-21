@@ -188,7 +188,7 @@ $ VERSION=dev make publish-dev
 ```
 
 This will create a binary with version `dev` and docker image pushed to
-`digitalocean/do-csi-plugin:dev`
+`cloudscalech/cloudscale-csi-plugin:dev`
 
 
 To run the integration tests run the following:
@@ -224,7 +224,7 @@ $ make publish
 ```
 
 This will create a binary with version `v0.2.0` and docker image pushed to
-`digitalocean/do-csi-plugin:v0.2.0`
+`cloudscalech/cloudscale-csi-plugin:v0.2.0`
 
 ## Contributing
 
