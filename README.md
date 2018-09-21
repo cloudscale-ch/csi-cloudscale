@@ -88,7 +88,7 @@ $ kubectl apply -f https://raw.githubusercontent.com/cloudscale/csi-cloudscale/m
 
 This file will be always updated to point to the latest stable release.
 
-A new storage class will be created with the name `do-block-storage` which is
+A new storage class will be created with the name `cloudscale-volume-ssd` which is
 responsible for dynamic provisioning. This is set to **"default"** for dynamic
 provisioning. If you're using multiple storage classes you might want to remove
 the annotation from the `csi-storageclass.yaml` and re-deploy it. This is
@@ -112,15 +112,15 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: do-block-storage
+  storageClassName: cloudscale-volume-ssd
 ```
 
 Check that a new `PersistentVolume` is created based on your claim:
 
 ```
 $ kubectl get pv
-NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM             STORAGECLASS       REASON    AGE
-pvc-0879b207-9558-11e8-b6b4-5218f75c62b9   5Gi        RWO            Delete           Bound     default/csi-pvc   do-block-storage             3m
+NAME                                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS    CLAIM             STORAGECLASS            REASON    AGE
+pvc-0879b207-9558-11e8-b6b4-5218f75c62b9   5Gi        RWO            Delete           Bound     default/csi-pvc   cloudscale-volume-ssd             3m
 ```
 
 The above output means that the CSI plugin successfully created (provisioned) a

@@ -104,7 +104,7 @@ func TestPod_Single_Volume(t *testing.T) {
 					v1.ResourceStorage: resource.MustParse("5Gi"),
 				},
 			},
-			StorageClassName: strPtr("do-block-storage"),
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
 		},
 	}
 
@@ -198,7 +198,7 @@ func TestDeployment_Single_Volume(t *testing.T) {
 					v1.ResourceStorage: resource.MustParse("5Gi"),
 				},
 			},
-			StorageClassName: strPtr("do-block-storage"),
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
 		},
 	}
 
@@ -307,7 +307,7 @@ func TestPod_Multi_Volume(t *testing.T) {
 					v1.ResourceStorage: resource.MustParse("5Gi"),
 				},
 			},
-			StorageClassName: strPtr("do-block-storage"),
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
 		},
 	}
 	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc1)
@@ -329,7 +329,7 @@ func TestPod_Multi_Volume(t *testing.T) {
 					v1.ResourceStorage: resource.MustParse("5Gi"),
 				},
 			},
-			StorageClassName: strPtr("do-block-storage"),
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
 		},
 	}
 	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc2)
