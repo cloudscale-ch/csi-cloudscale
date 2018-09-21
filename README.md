@@ -143,10 +143,10 @@ spec:
       image: busybox
       volumeMounts:
       - mountPath: "/data"
-        name: my-do-volume
+        name: my-cloudscale-volume
       command: [ "sleep", "1000000" ]
   volumes:
-    - name: my-do-volume
+    - name: my-cloudscale-volume
       persistentVolumeClaim:
         claimName: csi-pvc 
 ```
