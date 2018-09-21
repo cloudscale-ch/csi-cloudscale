@@ -40,18 +40,18 @@ provisioner: ch.cloudscale.csi
 kind: StatefulSet
 apiVersion: apps/v1beta1
 metadata:
-  name: csi-do-controller
+  name: csi-cloudscale-controller
   namespace: kube-system
 spec:
-  serviceName: "csi-do"
+  serviceName: "csi-cloudscale"
   replicas: 1
   template:
     metadata:
       labels:
-        app: csi-do-controller
-        role: csi-do
+        app: csi-cloudscale-controller
+        role: csi-cloudscale
     spec:
-      serviceAccount: csi-do-controller-sa
+      serviceAccount: csi-cloudscale-controller-sa
       containers:
         - name: csi-provisioner
           image: quay.io/k8scsi/csi-provisioner:v0.3.0
@@ -78,7 +78,7 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
-        - name: csi-do-plugin
+        - name: csi-cloudscale-plugin
           image: digitalocean/do-csi-plugin:v0.2.0
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -106,7 +106,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-do-controller-sa
+  name: csi-cloudscale-controller-sa
   namespace: kube-system
 
 ---
@@ -114,11 +114,11 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-controller-provisioner-binding
+  name: csi-cloudscale-controller-provisioner-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-controller-sa
+    name: csi-cloudscale-controller-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
@@ -130,11 +130,11 @@ roleRef:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-controller-attacher-binding
+  name: csi-cloudscale-controller-attacher-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-controller-sa
+    name: csi-cloudscale-controller-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
@@ -153,19 +153,19 @@ roleRef:
 kind: DaemonSet
 apiVersion: apps/v1beta2
 metadata:
-  name: csi-do-node
+  name: csi-cloudscale-node
   namespace: kube-system
 spec:
   selector:
     matchLabels:
-      app: csi-do-node
+      app: csi-cloudscale-node
   template:
     metadata:
       labels:
-        app: csi-do-node
-        role: csi-do
+        app: csi-cloudscale-node
+        role: csi-cloudscale
     spec:
-      serviceAccount: csi-do-node-sa
+      serviceAccount: csi-cloudscale-node-sa
       hostNetwork: true
       containers:
         - name: driver-registrar
@@ -186,7 +186,7 @@ spec:
               # TODO(arslan): the registrar is not implemented yet
               # - name: registrar-socket-dir
               #   mountPath: /var/lib/csi/sockets/
-        - name: csi-do-plugin
+        - name: csi-cloudscale-plugin
           image: digitalocean/do-csi-plugin:v0.2.0
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -240,7 +240,7 @@ spec:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: csi-do-node-sa
+  name: csi-cloudscale-node-sa
   namespace: kube-system
 
 ---
@@ -248,15 +248,15 @@ metadata:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-driver-registrar-binding
+  name: csi-cloudscale-driver-registrar-binding
   namespace: kube-system
 subjects:
   - kind: ServiceAccount
-    name: csi-do-node-sa
+    name: csi-cloudscale-node-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: csi-do-driver-registrar-role
+  name: csi-cloudscale-driver-registrar-role
   apiGroup: rbac.authorization.k8s.io          
 
 
@@ -265,7 +265,7 @@ roleRef:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-do-driver-registrar-role
+  name: csi-cloudscale-driver-registrar-role
   namespace: kube-system
 rules:
   - apiGroups: [""]
