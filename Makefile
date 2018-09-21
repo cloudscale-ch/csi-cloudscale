@@ -7,8 +7,8 @@ else
 endif
 COMMIT ?= $(shell git rev-parse HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
-LDFLAGS ?= -X github.com/cloudscale-csi/csi-cloudscale/driver.version=${VERSION} -X github.com/cloudscale-ch/csi-cloudscale/driver.commit=${COMMIT} -X github.com/cloudscale-ch/csi-cloudscale/driver.gitTreeState=${GIT_TREE_STATE}
-PKG ?= github.com/cloudscale-csi/csi-cloudscale/cmd/do-csi-plugin
+LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} -X github.com/cloudscale-ch/csi-cloudscale/driver.commit=${COMMIT} -X github.com/cloudscale-ch/csi-cloudscale/driver.gitTreeState=${GIT_TREE_STATE}
+PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/do-csi-plugin
 
 ## Bump the version in the version file. Set BUMP to [ patch | major | minor ]
 BUMP := patch
