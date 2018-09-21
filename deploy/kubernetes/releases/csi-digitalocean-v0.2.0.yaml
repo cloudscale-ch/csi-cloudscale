@@ -1,3 +1,4 @@
+# Copyright cloudscale.ch
 # Copyright 2018 DigitalOcean
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
  
-# Configuration to deploy release version of the CSI DigitalOcean
+# Configuration to deploy release version of the CSI cloudscale.ch
 # plugin (https://github.com/cloudscale-ch/csi-cloudscale) compatible with
 # Kubernetes >=v1.10.5
 #
