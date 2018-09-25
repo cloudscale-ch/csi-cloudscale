@@ -1,6 +1,6 @@
 ---
 - hosts: localhost
-  gather_facts: False
+  tags: [install-csi]
   vars:
     ssh_key_files: "{{ lookup('fileglob', '~/.ssh/id*.pub', wantlist=True) }}"
     ssh_keys: "{{ [lookup('file', ssh_key_files[0])] }}"
@@ -42,10 +42,45 @@
       loop: ["{{ created_servers.results[1] }}", "{{ created_servers.results[2] }}"]
 
 - name: Include the play that installs kubernetes
+  tags: [install-kubernetes]
   import_playbook: kubespray/cluster.yml
 
+- hosts: kube-master
+  vars:
+    cloudscale_api_token: "{{ lookup('env','CLOUDSCALE_TOKEN') }}"
+    secret_file: 'secret.yml'
+    config_file: 'csi-config.yml'
+  tags: [install-csi]
+  tasks:
+    - name: Create secrets in cluster
+      template:
+        src: templates/secret.yml.j2
+        dest: "{{ secret_file }}"
+
+    - name: Delete secret if it exists from a previous run
+      shell: "kubectl -n kube-system delete secret cloudscale || true"
+
+    - name: Create secrets in cluster
+      shell: "kubectl create -f {{ secret_file }}"
+
+    - name: Store show secrets
+      shell: kubectl -n kube-system get secrets
+      register: secret_output
+
+    - name: Stored secrets in kubernetes
+      debug:
+        msg: "{{ secret_output.stdout_lines }}"
+
+    - name: Copy default cloudscale-csi config to kubernetes
+      copy:
+        src: kubernetes/releases/csi-cloudscale-dev.yaml
+        dest: "{{ config_file }}"
+
+    - name: Apply default cloudscale-csi config to kubernetes
+      shell: "kubectl apply -f {{ config_file }}"
+
 - hosts: localhost
-  gather_facts: False
+  tags: [cleanup]
   vars:
     base_server_name: 'test-kubernetes-'
     servers:
@@ -59,4 +94,5 @@
       cloudscale_server:
         name: "{{ base_server_name }}{{ item }}"
         api_token: '{{ cloudscale_api_token }}'
+        state: absent
       loop: "{{ servers }}"
