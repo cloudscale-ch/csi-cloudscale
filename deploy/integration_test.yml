@@ -1,0 +1,62 @@
+---
+- hosts: localhost
+  gather_facts: False
+  vars:
+    ssh_key_files: "{{ lookup('fileglob', '~/.ssh/id*.pub', wantlist=True) }}"
+    ssh_keys: "{{ [lookup('file', ssh_key_files[0])] }}"
+    base_server_name: 'test-kubernetes-'
+    servers:
+      - "master"
+      - "node1"
+      - "node2"
+    cloudscale_api_token: "{{ lookup('env','CLOUDSCALE_TOKEN') }}"
+
+  tasks:
+    - debug:
+        msg: "Starting servers with keys found in ~/.ssh/id*.pub': {{ ssh_keys }}"
+
+    - name: Start the cloudscale.ch servers
+      cloudscale_server:
+        name: "{{ base_server_name }}{{ item }}"
+        flavor: flex-4
+        image: centos-7
+        ssh_keys: '{{ ssh_keys }}'
+        api_token: '{{ cloudscale_api_token }}'
+      loop: "{{ servers }}"
+      register: created_servers
+    
+    - name: Register master in inventory
+      add_host:
+        name: '{{ created_servers.results[0].interfaces[0].addresses[0].address }}'
+        groups:
+          - kube-master
+          - etcd
+        ansible_user: 'root'
+
+    - name: Register nodes in inventory
+      add_host:
+        name: '{{ item.interfaces[0].addresses[0].address }}'
+        groups:
+          - kube-node
+        ansible_user: 'root'
+      loop: ["{{ created_servers.results[1] }}", "{{ created_servers.results[2] }}"]
+
+- name: Include the play that installs kubernetes
+  import_playbook: kubespray/cluster.yml
+
+- hosts: localhost
+  gather_facts: False
+  vars:
+    base_server_name: 'test-kubernetes-'
+    servers:
+      - "master"
+      - "node1"
+      - "node2"
+    cloudscale_api_token: "{{ lookup('env','CLOUDSCALE_TOKEN') }}"
+
+  tasks:
+    - name: Delete the cloudscale.ch servers
+      cloudscale_server:
+        name: "{{ base_server_name }}{{ item }}"
+        api_token: '{{ cloudscale_api_token }}'
+      loop: "{{ servers }}"
