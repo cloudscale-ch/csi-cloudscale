@@ -31,10 +31,6 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/digitalocean/go-metadata"
-
-[[constraint]]
-  branch = "master"
   name = "github.com/cloudscale-ch/cloudscale-go-sdk"
 
 [[constraint]]

@@ -59,7 +59,7 @@ func NewMetadataClient(httpClient *http.Client) *MetadataClient {
 // Metadata contains the entire contents of a OpenStack's metadata.
 // This method is unique because it returns all of the
 // metadata at once, instead of individual metadata items.
-func (c *MetadataClient) Metadata() (*Metadata, error) {
+func (c *MetadataClient) GetMetadata() (*Metadata, error) {
 	metadata := new(Metadata)
 	err := c.getResource("meta_data.json", func(r io.Reader) error {
 		return json.NewDecoder(r).Decode(metadata)
@@ -70,7 +70,7 @@ func (c *MetadataClient) Metadata() (*Metadata, error) {
 // ServerID returns the Server's unique identifier. This is
 // automatically generated upon Server creation.
 func (c *MetadataClient) GetServerID() (string, error) {
-	metadata, err := c.Metadata()
+	metadata, err := c.GetMetadata()
 	if err != nil {
 		return "", err
 	}

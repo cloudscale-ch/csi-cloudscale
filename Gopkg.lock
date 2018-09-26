@@ -3,11 +3,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:df0427b050e7e0d66978aafe63cd4fd936d49831ed21d88df6e189fa2bce2b14"
+  digest = "1:023cea25b4b7df51b518d521495da46118c6289d3ed8ee875f518955fb8ade24"
   name = "github.com/cloudscale-ch/cloudscale-go-sdk"
   packages = ["."]
   pruneopts = "UT"
-  revision = "2d259af9937692bdb18c1a40e08253c575e7dd68"
+  revision = "17fbddda00c87b73c5ceb601aeaced294748231b"
 
 [[projects]]
   digest = "1:a54dc69ec3668e0e57ad159a0a8c0ce1ec571174bb4eb6b3915833a8c21d40f3"
@@ -24,14 +24,6 @@
   pruneopts = "UT"
   revision = "8991bc29aa16c548c550c7ff78260e27b9ab7c73"
   version = "v1.1.1"
-
-[[projects]]
-  branch = "master"
-  digest = "1:61de135f4b8df007636577b431ab965672680ebf15ac6c3978f28a3f509a086e"
-  name = "github.com/digitalocean/go-metadata"
-  packages = ["."]
-  pruneopts = "UT"
-  revision = "15bd36e5f6f745f32074d0705a27aee05ae0a216"
 
 [[projects]]
   digest = "1:2cd7915ab26ede7d95b8749e6b1f933f1c6d5398030684e6505940a10f31cfda"
@@ -569,7 +561,6 @@
   input-imports = [
     "github.com/cloudscale-ch/cloudscale-go-sdk",
     "github.com/container-storage-interface/spec/lib/go/csi/v0",
-    "github.com/digitalocean/go-metadata",
     "github.com/golang/protobuf/ptypes/wrappers",
     "github.com/kubernetes-csi/csi-test/pkg/sanity",
     "github.com/sirupsen/logrus",
