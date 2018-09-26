@@ -47,12 +47,12 @@ func TestDriverSuite(t *testing.T) {
 	}
 
 	// fake cloudscale.ch Server, not working yet ...
-	nodeId := "987654"
+	serverId := "987654"
 	fake := &fakeAPI{
 		t:       t,
 		volumes: map[string]*cloudscale.Volume{},
 		servers: map[string]*cloudscale.Server{
-			nodeId: &cloudscale.Server{},
+			serverId: &cloudscale.Server{},
 		},
 	}
 
@@ -65,7 +65,7 @@ func TestDriverSuite(t *testing.T) {
 
 	driver := &Driver{
 		endpoint: endpoint,
-		nodeId:   nodeId,
+		serverId:   serverId,
 		region:   "zrh1",
 		cloudscaleClient: cloudscaleClient,
 		mounter:  &fakeMounter{},

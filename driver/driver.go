@@ -25,7 +25,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 	"sync"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
@@ -53,7 +52,7 @@ var (
 //
 type Driver struct {
 	endpoint string
-	nodeId   string
+	serverId   string
 	region   string
 
 	srv      *grpc.Server
@@ -82,8 +81,10 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 		return nil, fmt.Errorf("couldn't get metadata: %s", err)
 	}
 
+	// We don't have any other information than the availability zone. Just use
+	// it as the region for now.
 	region := metadata.AvailabilityZone
-	nodeId := metadata.Meta.CloudscaleUUID
+	serverId := metadata.Meta.CloudscaleUUID
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
 	if err != nil {
@@ -92,13 +93,13 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 
 	log := logrus.New().WithFields(logrus.Fields{
 		"region":  region,
-		"node_id": nodeId,
+		"node_id": serverId,
 		"version": version,
 	})
 
 	return &Driver{
 		endpoint: ep,
-		nodeId:   nodeId,
+		serverId:   serverId,
 		region:   region,
 		cloudscaleClient: cloudscaleClient,
 		mounter:  newMounter(log),
