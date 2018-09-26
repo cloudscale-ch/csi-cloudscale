@@ -3,11 +3,11 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:64ac263d1cabd67f31fb629cce7460645f6f51fac8afbfa534d82ef6bb5735df"
+  digest = "1:df0427b050e7e0d66978aafe63cd4fd936d49831ed21d88df6e189fa2bce2b14"
   name = "github.com/cloudscale-ch/cloudscale-go-sdk"
   packages = ["."]
   pruneopts = "UT"
-  revision = "43ba2f74931ae1c59a14a6e942cf7fca5d48b64e"
+  revision = "2d259af9937692bdb18c1a40e08253c575e7dd68"
 
 [[projects]]
   digest = "1:a54dc69ec3668e0e57ad159a0a8c0ce1ec571174bb4eb6b3915833a8c21d40f3"
