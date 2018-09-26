@@ -29,7 +29,6 @@ import (
 	"sync"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
-	metadata "github.com/digitalocean/go-metadata"
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
@@ -77,13 +76,14 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 	})
 	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
 
-	all, err := metadata.NewClient().Metadata()
+	metadataClient := cloudscale.NewMetadataClient(nil)
+	metadata, err := metadataClient.GetMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get metadata: %s", err)
 	}
 
-	region := all.Region
-	nodeId := strconv.Itoa(all.DropletID)
+	region := metadata.AvailabilityZone
+	nodeId := metadata.Meta.CloudscaleUUID
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
 	if err != nil {
