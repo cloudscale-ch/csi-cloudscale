@@ -40,7 +40,9 @@ const (
 	diskCloudscalePrefix = "scsi-0_cloudscale_volume_"
 
 	// TODO we're not sure yet what our limit is, so just use this for now.
-	maxVolumesPerNode = 7
+	// It's the limit for Google Compute Engine and I don't see what limits
+	// this more in OpenStack, except per User Quotas.
+	maxVolumesPerNode = 128
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is
