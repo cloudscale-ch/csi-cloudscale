@@ -88,9 +88,10 @@ func TestDriverSuite(t *testing.T) {
 	defer os.RemoveAll(mntStageDir)
 
 	cfg := &sanity.Config{
-		StagingPath: mntStageDir,
-		TargetPath:  mntDir,
-		Address:     endpoint,
+		StagingPath:    mntStageDir,
+		TargetPath:     mntDir,
+		Address:        endpoint,
+		TestVolumeSize: 50 * 1024 * 1024 * 1024,
 	}
 
 	sanity.Test(t, cfg)

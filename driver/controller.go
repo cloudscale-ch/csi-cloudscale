@@ -19,7 +19,6 @@ package driver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -40,7 +39,7 @@ const (
 )
 
 const (
-	defaultVolumeSizeInGB = 100 * GB
+	SSDStepSizeGB = 50
 )
 
 var (
@@ -79,16 +78,16 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 	*/
 
-	size, err := extractStorage(req.CapacityRange)
+	sizeGB, err := calculateStorageGB(req.CapacityRange)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	volumeName := req.Name
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_name":             volumeName,
-		"storage_size_giga_bytes": size / GB,
+		"storage_size_giga_bytes": sizeGB,
 		"method":                  "create_volume",
 		"volume_capabilities":     req.VolumeCapabilities,
 	})
@@ -109,15 +108,15 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 		vol := volumes[0]
 
-		if int64(vol.SizeGB)*GB != size {
-			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", size))
+		if vol.SizeGB != sizeGB {
+			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("invalid option requested size: %d", sizeGB))
 		}
 
 		ll.Info("volume already created")
 		return &csi.CreateVolumeResponse{
 			Volume: &csi.Volume{
 				Id:            vol.UUID,
-				CapacityBytes: int64(vol.SizeGB * GB),
+				CapacityBytes: int64(vol.SizeGB) * GB,
 			},
 		}, nil
 	}
@@ -125,7 +124,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	volumeReq := &cloudscale.Volume{
 		/* Region:        d.region, */
 		Name:   volumeName,
-		SizeGB: int(size / GB), // Don't want int64.
+		SizeGB: sizeGB,
 	}
 
 	if !validateCapabilities(req.VolumeCapabilities) {
@@ -141,7 +140,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	resp := &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			Id:            vol.UUID,
-			CapacityBytes: size,
+			CapacityBytes: int64(sizeGB) * GB,
 			AccessibleTopology: []*csi.Topology{
 				{
 					Segments: map[string]string{
@@ -457,31 +456,35 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
-// extractStorage extracts the storage size in GB from the given capacity
+// calculateStorageGB extracts the storage size in GB from the given capacity
 // range. If the capacity range is not satisfied it returns the default volume
 // size.
-func extractStorage(capRange *csi.CapacityRange) (int64, error) {
+func calculateStorageGB(capRange *csi.CapacityRange) (int, error) {
 	if capRange == nil {
-		return defaultVolumeSizeInGB, nil
+		return SSDStepSizeGB, nil
 	}
 
-	if capRange.RequiredBytes == 0 && capRange.LimitBytes == 0 {
-		return defaultVolumeSizeInGB, nil
-	}
-
-	minSize := capRange.RequiredBytes
-
+	minBytes := capRange.RequiredBytes
 	// limitBytes might be zero
-	maxSize := capRange.LimitBytes
-	if capRange.LimitBytes == 0 {
-		maxSize = minSize
+	maxBytes := capRange.LimitBytes
+	if minBytes == 0 {
+		minBytes = SSDStepSizeGB * GB
+	}
+	maxSet := maxBytes > 0
+
+	if maxSet && minBytes > maxBytes {
+		return 0, fmt.Errorf("Limit bytes %v is less than required bytes %v", minBytes, maxBytes)
 	}
 
-	if minSize == maxSize {
-		return minSize, nil
+	steps := minBytes / GB / SSDStepSizeGB
+	if steps * GB * SSDStepSizeGB < minBytes {
+		steps += 1
 	}
-
-	return 0, errors.New("requiredBytes and LimitBytes are not the same")
+	sizeGB := steps * SSDStepSizeGB
+	if maxSet && sizeGB * GB > maxBytes {
+		return 0, fmt.Errorf("Not possible to allocate %v GB, because the limit is %v bytes", sizeGB, maxBytes)
+	}
+	return int(sizeGB), nil
 }
 
 // validateCapabilities validates the requested capabilities. It returns false
