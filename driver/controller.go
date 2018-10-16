@@ -169,7 +169,15 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		return nil, reraiseNotFound(err)
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok {
+			if errorResponse.StatusCode == http.StatusNotFound {
+				// To make it idempotent, the volume might already have been
+				// deleted, so a 404 is ok.
+				return &csi.DeleteVolumeResponse{}, nil
+			}
+		}
+		return nil, err
 	}
 
 	ll.Info("volume is deleted")
