@@ -40,7 +40,7 @@ const (
 )
 
 const (
-	defaultVolumeSizeInGB = 16 * GB
+	defaultVolumeSizeInGB = 100 * GB
 )
 
 var (
