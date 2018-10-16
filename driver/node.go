@@ -257,7 +257,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 }
 
 // NodeGetId returns the unique id of the node. This should eventually return
-// the droplet ID if possible. This is used so the CO knows where to place the
+// the server ID if possible. This is used so the CO knows where to place the
 // workload. The result of this function will be used by the CO in
 // ControllerPublishVolume.
 func (d *Driver) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi.NodeGetIdResponse, error) {

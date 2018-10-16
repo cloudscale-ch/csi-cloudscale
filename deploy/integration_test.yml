@@ -79,6 +79,12 @@
     - name: Apply default cloudscale-csi config to kubernetes
       shell: "kubectl apply -f {{ config_file }}"
 
+    - name: Copy kubernetes config to localhost
+      fetch:
+        src: /root/.kube/config
+        dest: "kubeconfig.yml"
+        flat: true
+
 - hosts: localhost
   tags: [cleanup]
   vars:

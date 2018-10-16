@@ -238,17 +238,17 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
 	}
 
-	dropletID, err := strconv.Atoi(req.NodeId)
+	serverID, err := strconv.Atoi(req.NodeId)
 	if err != nil {
 		// don't return because the CSI tests passes ID's in non-integer format
-		dropletID = 1 // for testing purposes only. Will fail in real world API
+		serverID = 1 // for testing purposes only. Will fail in real world API
 		d.log.WithField("node_id", req.NodeId).Warn("node ID cannot be converted to an integer")
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
-		"droplet_id": dropletID,
+		"server_id":  serverID,
 		"method":     "controller_unpublish_volume",
 	})
 	ll.Info("controller unpublish volume called")
