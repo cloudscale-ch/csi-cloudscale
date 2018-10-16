@@ -279,7 +279,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 				}
 			}
 		*/
-		return nil, err
+		return nil, reraiseNotFound(err)
 	}
 
 	ll.Info("volume is detached")
