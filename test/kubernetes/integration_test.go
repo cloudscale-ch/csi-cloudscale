@@ -208,6 +208,9 @@ func TestDeployment_Single_Volume(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Give it a few seconds to create the pod
+	time.Sleep(10 * time.Second)
+
 	// get pod associated with the deployment
 	selector, err := appSelector(appName)
 	if err != nil {

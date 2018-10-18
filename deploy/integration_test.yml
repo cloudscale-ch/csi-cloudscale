@@ -85,6 +85,13 @@
         dest: "kubeconfig.yml"
         flat: true
 
+
+- hosts: localhost
+  tags: [test]
+  tasks:
+    - name: "Run the tests"
+      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration ../test/..."
+
 - hosts: localhost
   tags: [cleanup]
   vars:
