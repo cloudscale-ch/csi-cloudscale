@@ -169,7 +169,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.t.Fatal(err)
 		}
 
-		id := randString(10)
+		id := randString(30)
 		vol := &cloudscale.Volume{
 			UUID:   id,
 			Name:   v.Name,

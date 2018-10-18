@@ -28,6 +28,7 @@ package driver
 import (
 	"context"
 	"path/filepath"
+	"os"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/sirupsen/logrus"
@@ -37,7 +38,6 @@ import (
 
 const (
 	diskIDPath   = "/dev/disk/by-id"
-	diskCloudscalePrefix = "scsi-0_cloudscale_volume_"
 
 	// TODO we're not sure yet what our limit is, so just use this for now.
 	// It's the limit for Google Compute Engine and I don't see what limits
@@ -68,7 +68,15 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, reraiseNotFound(err)
 	}
 
-	source := getDiskSource(vol.Name)
+	// Get the first part of the UUID.
+	// The linux kernel limits volume serials to 20 bytes:
+	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
+	linuxSerial := req.VolumeId[:20]
+	source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+	}
+
 	target := req.StagingTargetPath
 
 	mnt := req.VolumeCapability.GetMount()
@@ -305,10 +313,4 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 			},
 		},
 	}, nil
-}
-
-// getDiskSource returns the absolute path of the attached volume for the given
-// cloudscale.ch volume name
-func getDiskSource(volumeName string) string {
-	return filepath.Join(diskIDPath, diskCloudscalePrefix+volumeName)
 }
