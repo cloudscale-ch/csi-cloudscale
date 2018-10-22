@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
@@ -245,17 +244,9 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
 	}
 
-	serverID, err := strconv.Atoi(req.NodeId)
-	if err != nil {
-		// don't return because the CSI tests passes ID's in non-integer format
-		serverID = 1 // for testing purposes only. Will fail in real world API
-		d.log.WithField("node_id", req.NodeId).Warn("node ID cannot be converted to an integer")
-	}
-
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":  req.VolumeId,
 		"node_id":    req.NodeId,
-		"server_id":  serverID,
 		"method":     "controller_unpublish_volume",
 	})
 	ll.Info("controller unpublish volume called")
@@ -263,7 +254,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	detachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{},
 	}
-	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
 		/*
 			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
