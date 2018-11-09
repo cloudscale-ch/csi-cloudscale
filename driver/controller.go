@@ -39,6 +39,7 @@ const (
 
 const (
 	SSDStepSizeGB = 50
+	PublishInfoVolumeName = "ch.cloudscale.csi/volume-name"
 )
 
 var (
@@ -100,6 +101,20 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	csiVolume := csi.Volume{
+		CapacityBytes: int64(sizeGB) * GB,
+		AccessibleTopology: []*csi.Topology{
+			{
+				Segments: map[string]string{
+					"region": d.region,
+				},
+			},
+		},
+		Attributes: map[string]string{
+			PublishInfoVolumeName: volumeName,
+		},
+	}
+
 	// volume already exist, do nothing
 	if len(volumes) != 0 {
 		if len(volumes) > 1 {
@@ -112,12 +127,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 
 		ll.Info("volume already created")
-		return &csi.CreateVolumeResponse{
-			Volume: &csi.Volume{
-				Id:            vol.UUID,
-				CapacityBytes: int64(vol.SizeGB) * GB,
-			},
-		}, nil
+		csiVolume.Id = vol.UUID
+		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
 	}
 
 	volumeReq := &cloudscale.Volume{
@@ -136,19 +147,8 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	resp := &csi.CreateVolumeResponse{
-		Volume: &csi.Volume{
-			Id:            vol.UUID,
-			CapacityBytes: int64(sizeGB) * GB,
-			AccessibleTopology: []*csi.Topology{
-				{
-					Segments: map[string]string{
-						"region": d.region,
-					},
-				},
-			},
-		},
-	}
+	csiVolume.Id = vol.UUID
+	resp := &csi.CreateVolumeResponse{Volume: &csiVolume}
 
 	ll.WithField("response", resp).Info("volume created")
 	return resp, nil

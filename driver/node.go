@@ -63,11 +63,6 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	vol, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
-	if err != nil {
-		return nil, reraiseNotFound(err)
-	}
-
 	// Get the first part of the UUID.
 	// The linux kernel limits volume serials to 20 bytes:
 	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
@@ -75,6 +70,13 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
 	if _, err := os.Stat(source); os.IsNotExist(err) {
 		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+	}
+
+	volumeName := ""
+	if volName, ok := req.GetVolumeAttributes()[PublishInfoVolumeName]; !ok {
+		return nil, status.Error(codes.InvalidArgument, "Could not find the volume by name")
+	} else {
+		volumeName = volName
 	}
 
 	target := req.StagingTargetPath
@@ -89,7 +91,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
-		"volume_name":         vol.Name,
+		"volume_name":         volumeName,
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
 		"fsType":              fsType,
