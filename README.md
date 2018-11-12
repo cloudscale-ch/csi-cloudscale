@@ -83,10 +83,16 @@ release](https://github.com/cloudscale-ch/csi-cloudscale/releases). Always use t
 For example, to use the latest stable version (`v0.2.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.2.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.2.0.yaml
 ```
 
 This file will be always updated to point to the latest stable release.
+
+There are also `dev` images available:
+
+```
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-dev.yaml
+```
 
 A new storage class will be created with the name `cloudscale-volume-ssd` which is
 responsible for dynamic provisioning. This is set to **"default"** for dynamic
