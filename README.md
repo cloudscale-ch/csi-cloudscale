@@ -131,7 +131,7 @@ pvc-0879b207-9558-11e8-b6b4-5218f75c62b9   5Gi        RWO            Delete     
 
 The above output means that the CSI plugin successfully created (provisioned) a
 new Volume on behalf of you. You should be able to see this newly created
-volume under the [Volumes tab in the cloudscale.ch UI](https://control.cloudscale.ch/volumes)
+volumes in the server detail view in the cloudscale.ch UI.
 
 The volume is not attached to any node yet. It'll only attached to a node if a
 workload (i.e: pod) is scheduled to a specific node. Now let us create a Pod
