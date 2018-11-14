@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	driverName = "ch.cloudscale.csi"
+	driverName = "csi.cloudscale.ch"
 )
 
 var (
