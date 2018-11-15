@@ -28,7 +28,7 @@ import (
 
 func main() {
 	var (
-		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/ch.cloudscale.csi/csi.sock", "CSI endpoint")
+		endpoint = flag.String("endpoint", "unix:///var/lib/kubelet/plugins/"+driver.DriverName+"/csi.sock", "CSI endpoint")
 		token    = flag.String("token", "", "cloudscale.ch access token")
 		url      = flag.String("url", "https://api.cloudscale.ch/", "cloudscale.ch API URL")
 		version  = flag.Bool("version", false, "Print the version and exit.")

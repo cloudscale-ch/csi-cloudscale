@@ -35,7 +35,9 @@ import (
 )
 
 const (
-	driverName = "csi.cloudscale.ch"
+	// DriverName defines the name that is used in Kubernetes and the
+	// system for the canonical, official name of this plugin.
+	DriverName = "csi.cloudscale.ch"
 )
 
 var (

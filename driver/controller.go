@@ -39,7 +39,7 @@ const (
 
 const (
 	SSDStepSizeGB = 50
-	PublishInfoVolumeName = "ch.cloudscale.csi/volume-name"
+	PublishInfoVolumeName = DriverName + "/volume-name"
 )
 
 var (
