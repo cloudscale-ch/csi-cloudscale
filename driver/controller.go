@@ -38,7 +38,7 @@ const (
 )
 
 const (
-	SSDStepSizeGB = 50
+	SSDStepSizeGB = 1
 	PublishInfoVolumeName = DriverName + "/volume-name"
 )
 
