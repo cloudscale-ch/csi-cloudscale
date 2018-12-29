@@ -1,7 +1,27 @@
-## unreleased
+## v0.3.0 - XXXX.XX.XX
+
+* Update to CSI spec v1.0.0
 
 * Forked this repository from csi-digitalocean. They have a similar API. Thanks
   a lot to DigitalOcean - mostly Fatih Arslan - for his work.
+  
+### Important
+ 
+This release contains breaking changes, because of the update to the CSI
+spec v1.0.0. Your kubernetes version must be **at least v1.13.0** to support CSI spec v1.0.0.
+
+Make sure you have the following [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) 
+activated:
+
+* `CSINodeInfo=true`
+* `CSIDriverRegistry=true`
+
+The following features are required but are GA in kubernetes v1.13.0. No explicit 
+feature gate activation is needed:
+
+* `CSIPersistentVolume=true`
+* `MountPropagation=true`
+* `KubeletPluginsWatcher=true`
 
 ## v0.2.0 - 2018.09.05
 

@@ -27,7 +27,7 @@
 
 [[constraint]]
   name = "github.com/container-storage-interface/spec"
-  version = "0.3.0"
+  version = "1.0.0"
 
 [[constraint]]
   branch = "master"
@@ -55,11 +55,16 @@
 
 [[constraint]]
   name = "k8s.io/api"
-  version = "kubernetes-1.11.0"
+  version = "kubernetes-1.13.0"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  version = "kubernetes-1.11.0"
+  version = "kubernetes-1.13.0"
+
+[[override]]
+  name = "gopkg.in/fsnotify.v1"
+  version = "1.4.7"
+  source = "https://github.com/fsnotify/fsnotify.git"
 
 [prune]
   go-tests = true

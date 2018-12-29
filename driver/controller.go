@@ -23,7 +23,7 @@ import (
 	"net/http"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -62,21 +62,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
 	}
 
-	/*
-		if req.AccessibilityRequirements != nil {
-			for _, t := range req.AccessibilityRequirements.Requisite {
-				region, ok := t.Segments["region"]
-				if !ok {
-					continue // nothing to do
-				}
-
-				if region != d.region {
-					return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in region: %q, got: %q", d.region, region)
-
-				}
-			}
-		}
-	*/
+	if !validateCapabilities(req.VolumeCapabilities) {
+		return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
+	}
 
 	sizeGB, err := calculateStorageGB(req.CapacityRange)
 	if err != nil {
@@ -110,7 +98,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 				},
 			},
 		},
-		Attributes: map[string]string{
+		VolumeContext: map[string]string{
 			PublishInfoVolumeName: volumeName,
 		},
 	}
@@ -127,18 +115,13 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 
 		ll.Info("volume already created")
-		csiVolume.Id = vol.UUID
+		csiVolume.VolumeId = vol.UUID
 		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
 	}
 
 	volumeReq := &cloudscale.Volume{
-		/* Region:        d.region, */
 		Name:   volumeName,
 		SizeGB: sizeGB,
-	}
-
-	if !validateCapabilities(req.VolumeCapabilities) {
-		return nil, status.Error(codes.AlreadyExists, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
 	}
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
@@ -147,7 +130,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	csiVolume.Id = vol.UUID
+	csiVolume.VolumeId = vol.UUID
 	resp := &csi.CreateVolumeResponse{Volume: &csiVolume}
 
 	ll.WithField("response", resp).Info("volume created")
@@ -173,6 +156,10 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
+				ll.WithFields(logrus.Fields{
+					"error": err,
+					"resp":  errorResponse,
+				}).Warn("assuming volume is already deleted")
 				return &csi.DeleteVolumeResponse{}, nil
 			}
 		}
@@ -212,30 +199,71 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
+	// check if volume exist before trying to attach it
+	vol, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok && errorResponse.StatusCode == http.StatusNotFound {
+			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
+		}
+		return nil, err
+	}
+
+	// check if the server exist before trying to attach the volume to it
+	_, err = d.cloudscaleClient.Servers.Get(ctx, req.NodeId)
+	if err != nil {
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok && errorResponse.StatusCode == http.StatusNotFound {
+			return nil, status.Errorf(codes.NotFound, "server %q not found", req.NodeId)
+		}
+		return nil, err
+	}
+
+	if vol.ServerUUIDs != nil {
+		// check if the volume is already attached to the server
+		for _, serverId := range *vol.ServerUUIDs {
+			if serverId == req.NodeId {
+				ll.Info("volume is already attached")
+				return &csi.ControllerPublishVolumeResponse{
+					PublishContext: map[string]string{
+						PublishInfoVolumeName: vol.Name,
+					},
+				}, nil
+			}
+		}
+		// volume is attached to a different server
+		if len(*vol.ServerUUIDs) > 0 {
+			serverId := (*vol.ServerUUIDs)[0]
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"volume %q is attached to the wrong server (%q), detach the volume to fix it", req.VolumeId, serverId)
+		}
+	}
+
 	attachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
-	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
-		/*
-			// don't do anything if attached
-			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-				if strings.Contains(err.Error(), "Droplet already has a pending event") {
-					ll.WithFields(logrus.Fields{
-						"error": err,
-						"resp":  resp,
-					}).Warn("droplet is not able to detach the volume")
-					// sending an abort makes sure the csi-attacher retries with the next backoff tick
-					return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached. droplet %s is in process of another action",
-						req.VolumeId, req.NodeId)
-				}
-			}
-		*/
-		return nil, reraiseNotFound(err)
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok && errorResponse.StatusCode == http.StatusNotFound {
+			ll.WithFields(logrus.Fields{
+				"error":         err,
+				"errorResponse": errorResponse,
+			}).Warnf("server %q or volume %q not found", req.NodeId, req.VolumeId)
+			return nil, status.Errorf(codes.NotFound, "server %q or volume %q not found", req.NodeId, req.VolumeId)
+		}
+		ll.WithFields(logrus.Fields{
+			"error": err,
+		}).Warnf("volume %q couldn't be attached to server %q", req.VolumeId, req.NodeId)
+		return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached to server %q", req.VolumeId, req.NodeId)
 	}
 
 	ll.Info("volume is attached")
-	return &csi.ControllerPublishVolumeResponse{}, nil
+	return &csi.ControllerPublishVolumeResponse{
+		PublishContext: map[string]string{
+			PublishInfoVolumeName: vol.Name,
+		},
+	}, nil
 }
 
 // ControllerUnpublishVolume deattaches the given volume from the node
@@ -251,26 +279,72 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
+	// check if volume exist before trying to detach it
+	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok && errorResponse.StatusCode == http.StatusNotFound {
+			d.log.WithFields(logrus.Fields{
+				"volume_id": req.VolumeId,
+				"node_id":   req.NodeId,
+				"method":    "controller_unpublish_volume",
+			}).Infof("volume %q not found; assuming it's already detached", req.VolumeId)
+			// assume it's detached
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
+		}
+		d.log.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"node_id":   req.NodeId,
+			"method":    "controller_unpublish_volume",
+		}).Warnf("unable to query status of volume %q", req.VolumeId)
+		return nil, err
+	}
+
+	// check if volume is already detached
+	if volume.ServerUUIDs != nil && len(*volume.ServerUUIDs) == 0 {
+		d.log.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"volume":    volume,
+			"node_id":   req.NodeId,
+			"method":    "controller_unpublish_volume",
+		}).Infof("volume %q is not attached to any servers", req.VolumeId)
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
+	}
+
 	detachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{},
 	}
-	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
-		/*
-			if resp != nil && resp.StatusCode == http.StatusUnprocessableEntity {
-				if strings.Contains(err.Error(), "Droplet already has a pending event") {
-					ll.WithFields(logrus.Fields{
-						"error": err,
-						"resp":  resp,
-					}).Warn("droplet is not able to detach the volume")
-
-					// sending an abort makes sure the csi-attacher retries with the next backoff tick
-					return nil, status.Errorf(codes.Aborted, "volume %q couldn't be detached. droplet %d is in process of another action",
-						req.VolumeId, dropletID)
-				}
-			}
-		*/
-		return nil, reraiseNotFound(err)
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok && errorResponse.StatusCode == http.StatusNotFound {
+			d.log.WithFields(logrus.Fields{
+				"volume_id": req.VolumeId,
+				"volume":    volume,
+				"node_id":   req.NodeId,
+				"method":    "controller_unpublish_volume",
+			}).Infof("volume %q not found; assuming it's already detached", req.VolumeId)
+			// assume it's detached
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
+		} else if ok {
+			d.log.WithFields(logrus.Fields{
+				"volume_id":     req.VolumeId,
+				"volume":        volume,
+				"node_id":       req.NodeId,
+				"errorResponse": errorResponse,
+				"error":         err,
+				"method":        "controller_unpublish_volume",
+			}).Infof("volume %q can't be detached", req.VolumeId)
+			return nil, err
+		}
+		d.log.WithFields(logrus.Fields{
+			"volume_id": req.VolumeId,
+			"volume":    volume,
+			"node_id":   req.NodeId,
+			"error":     err,
+			"method":    "controller_unpublish_volume",
+		}).Infof("volume %q can't be detached", req.VolumeId)
+		return nil, err
 	}
 
 	ll.Info("volume is detached")
@@ -291,7 +365,6 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":              req.VolumeId,
 		"volume_capabilities":    req.VolumeCapabilities,
-		"accessible_topology":    req.AccessibleTopology,
 		"supported_capabilities": supportedAccessMode,
 		"method":                 "validate_volume_capabilities",
 	})
@@ -303,51 +376,24 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 		return nil, reraiseNotFound(err)
 	}
 
-	if req.AccessibleTopology != nil {
-		for _, t := range req.AccessibleTopology {
-			region, ok := t.Segments["region"]
-			if !ok {
-				continue // nothing to do
-			}
-
-			if region != d.region {
-				// return early if a different region is expected
-				ll.WithField("supported", false).Info("supported capabilities")
-				return &csi.ValidateVolumeCapabilitiesResponse{
-					Supported: false,
-				}, nil
-			}
-		}
-	}
-
 	// if it's not supported (i.e: wrong region), we shouldn't override it
 	resp := &csi.ValidateVolumeCapabilitiesResponse{
-		Supported: validateCapabilities(req.VolumeCapabilities),
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeCapabilities: []*csi.VolumeCapability{
+				{
+					AccessMode:supportedAccessMode,
+				},
+			},
+		},
 	}
 
-	ll.WithField("supported", resp.Supported).Info("supported capabilities")
+	ll.WithField("confirmed", resp.Confirmed).Info("supported capabilities")
 	return resp, nil
 }
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	// var page int
-	// var err error
-	// if req.StartingToken != "" {
-	// 	page, err = strconv.Atoi(req.StartingToken)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-
-	/*
-		listOpts := &cloudscale.ListVolumeParams{
-			Region: d.region,
-		}
-	*/
-
 	ll := d.log.WithFields(logrus.Fields{
-		/* "list_opts":          listOpts, */
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
 	})
@@ -362,13 +408,12 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	for _, vol := range volumes {
 		entries = append(entries, &csi.ListVolumesResponse_Entry{
 			Volume: &csi.Volume{
-				Id:            vol.UUID,
+				VolumeId:      vol.UUID,
 				CapacityBytes: int64(vol.SizeGB * GB),
 			},
 		})
 	}
 
-	// TODO(arslan): check that the NextToken logic works fine, might be racy
 	resp := &csi.ListVolumesResponse{
 		Entries: entries,
 	}
@@ -401,7 +446,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 
 	// TODO(arslan): checkout if the capabilities are worth supporting
 	var caps []*csi.ControllerServiceCapability
-	for _, cap := range []csi.ControllerServiceCapability_RPC_Type{
+	for _, capability := range []csi.ControllerServiceCapability_RPC_Type{
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
@@ -409,8 +454,11 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		// TODO(arslan): enable once snapshotting is supported
 		// csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		// csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+
+		// TODO: check if this can be implemented
+		// csi.ControllerServiceCapability_RPC_GET_CAPACITY,
 	} {
-		caps = append(caps, newCap(cap))
+		caps = append(caps, newCap(capability))
 	}
 
 	resp := &csi.ControllerGetCapabilitiesResponse{
@@ -501,8 +549,8 @@ func validateCapabilities(caps []*csi.VolumeCapability) bool {
 	}
 
 	supported := false
-	for _, cap := range caps {
-		if hasSupport(cap.AccessMode.Mode) {
+	for _, capability := range caps {
+		if hasSupport(capability.AccessMode.Mode) {
 			supported = true
 		} else {
 			// we need to make sure all capabilities are supported. Revert back

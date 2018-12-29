@@ -8,19 +8,18 @@ Cloud Foundry. Feel free to test it on other CO's and give us a feedback.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v0.2.0`**. This means that the project is still
-under active development and may not be production ready.
+The current version is: **`v0.3.0`**. The project is still under active development and may not be 
+production ready.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
 * Significant breaking changes makes a `MAJOR` update.
 
-
 ## Installing to Kubernetes
 
 **Requirements:**
 
-* Kubernetes v1.10.5 minimum 
+* Kubernetes v1.13.0 minimum 
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
 * (if you use Docker) the Docker daemon of the cluster nodes must allow shared mounts
 
@@ -79,11 +78,12 @@ cloudscale            Opaque                                1         18h
 #### 2. Deploy the CSI plugin and sidecars:
 
 Before you continue, be sure to checkout to a [tagged
-release](https://github.com/cloudscale-ch/csi-cloudscale/releases). Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v0.2.0`) you can execute the following command:
+release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
+Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
+For example, to use the latest stable version (`v0.3.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.2.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v0.3.0.yaml
 ```
 
 This file will be always updated to point to the latest stable release.

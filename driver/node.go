@@ -30,7 +30,7 @@ import (
 	"path/filepath"
 	"os"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -73,7 +73,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 
 	volumeName := ""
-	if volName, ok := req.GetVolumeAttributes()[PublishInfoVolumeName]; !ok {
+	if volName, ok := req.GetPublishContext()[PublishInfoVolumeName]; !ok {
 		return nil, status.Error(codes.InvalidArgument, "Could not find the volume by name")
 	} else {
 		volumeName = volName
@@ -92,6 +92,8 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
 		"volume_name":         volumeName,
+		"volume_context":      req.VolumeContext,
+		"publish_context":     req.PublishContext,
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
 		"fsType":              fsType,
@@ -268,17 +270,6 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }
 
-// NodeGetId returns the unique id of the node. This should eventually return
-// the server ID if possible. This is used so the CO knows where to place the
-// workload. The result of this function will be used by the CO in
-// ControllerPublishVolume.
-func (d *Driver) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi.NodeGetIdResponse, error) {
-	d.log.WithField("method", "node_get_id").Info("node get id called")
-	return &csi.NodeGetIdResponse{
-		NodeId: d.serverId,
-	}, nil
-}
-
 // NodeGetCapabilities returns the supported capabilities of the node server
 func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	// currently there is a single NodeServer capability according to the spec
@@ -301,7 +292,10 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabi
 	}, nil
 }
 
-// NodeGetInfo returns the supported capabilities of the node server
+// NodeGetInfo returns the supported capabilities of the node server. This
+// should eventually return the droplet ID if possible. This is used so the CO
+// knows where to place the workload. The result of this function will be used
+// by the CO in ControllerPublishVolume.
 func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 	return &csi.NodeGetInfoResponse{
@@ -315,4 +309,13 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 			},
 		},
 	}, nil
+}
+
+// NodeGetVolumeStats returns the volume capacity statistics available for the
+// the given volume.
+func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	d.log.WithField("method", "node_get_volume_stats").
+		Info("node get volume stats called")
+
+	return nil, status.Error(codes.Unimplemented, "")
 }
