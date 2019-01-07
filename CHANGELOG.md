@@ -1,4 +1,4 @@
-## v0.3.0 - XXXX.XX.XX
+## unreleased
 
 * Update to CSI spec v1.0.0
 

@@ -12,57 +12,26 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
- 
+
 # Configuration to deploy release version of the CSI cloudscale.ch
 # plugin (https://github.com/cloudscale-ch/csi-cloudscale) compatible with
-# Kubernetes >=v1.12.1
+# Kubernetes >=v1.13.0
 #
 # example usage: kubectl create -f <this_file>
 
+####################################################
+###########                             ############
+###########  CSI Node and Driver CRDs   ############
+###########                             ############
+####################################################
 ---
+
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
-  creationTimestamp: null
-  name: csinodeinfos.csi.storage.k8s.io
-spec:
-  group: csi.storage.k8s.io
-  names:
-    kind: CSINodeInfo
-    plural: csinodeinfos
-  scope: Cluster
-  validation:
-    openAPIV3Schema:
-      properties:
-        csiDrivers:
-          description: List of CSI drivers running on the node and their properties.
-          items:
-            properties:
-              driver:
-                description: The CSI driver that this object refers to.
-                type: string
-              nodeID:
-                description: The node from the driver point of view.
-                type: string
-              topologyKeys:
-                description: List of keys supported by the driver.
-                items:
-                  type: string
-                type: array
-          type: array
-  version: v1alpha1
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
----
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
-metadata:
-  creationTimestamp: null
   name: csidrivers.csi.storage.k8s.io
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
 spec:
   group: csi.storage.k8s.io
   names:
@@ -85,21 +54,69 @@ spec:
                 information (like podName, podUID, etc.) during mount operations.
               type: string
   version: v1alpha1
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
+
 ---
-# CSIDriverRegistry feature gate needs to be enabled
-apiVersion: csi.storage.k8s.io/v1alpha1
-kind: CSIDriver
+
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
 metadata:
-  name: csi.cloudscale.ch
+  name: csinodeinfos.csi.storage.k8s.io
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
 spec:
-  attachRequired: true
-  podInfoOnMountVersion: "v1"
+  group: csi.storage.k8s.io
+  names:
+    kind: CSINodeInfo
+    plural: csinodeinfos
+  scope: Cluster
+  validation:
+    openAPIV3Schema:
+      properties:
+        spec:
+          description: Specification of CSINodeInfo
+          properties:
+            drivers:
+              description: List of CSI drivers running on the node and their specs.
+              type: array
+              items:
+                properties:
+                  name:
+                    description: The CSI driver that this object refers to.
+                    type: string
+                  nodeID:
+                    description: The node from the driver point of view.
+                    type: string
+                  topologyKeys:
+                    description: List of keys supported by the driver.
+                    items:
+                      type: string
+                    type: array
+        status:
+          description: Status of CSINodeInfo
+          properties:
+            drivers:
+              description: List of CSI drivers running on the node and their statuses.
+              type: array
+              items:
+                properties:
+                  name:
+                    description: The CSI driver that this object refers to.
+                    type: string
+                  available:
+                    description: Whether the CSI driver is installed.
+                    type: boolean
+                  volumePluginMechanism:
+                    description: Indicates to external components the required mechanism
+                      to use for any in-tree plugins replaced by this driver.
+                    pattern: in-tree|csi
+                    type: string
+  version: v1alpha1
+
+##########################################
+###########                   ############
+###########   Storage Class   ############
+###########                   ############
+##########################################
 
 ---
 
@@ -110,7 +127,7 @@ metadata:
   namespace: kube-system
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: csi.cloudscale.ch
+provisioner: ch.cloudscale.csi
 
 ---
 
@@ -134,31 +151,43 @@ spec:
         app: csi-cloudscale-controller
         role: csi-cloudscale
     spec:
+      priorityClassName: system-cluster-critical
       serviceAccount: csi-cloudscale-controller-sa
-      hostNetwork: true
       containers:
         - name: csi-provisioner
-          image: quay.io/k8scsi/csi-provisioner:v0.4.1
+          image: quay.io/k8scsi/csi-provisioner:v1.0.1
+          imagePullPolicy: "Always"
           args:
-            - "--provisioner=csi.cloudscale.ch"
+            - "--provisioner=ch.cloudscale.csi"
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
-          imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-attacher
-          image: quay.io/k8scsi/csi-attacher:v0.4.1
+          image: quay.io/k8scsi/csi-attacher:v1.0.1
+          imagePullPolicy: "Always"
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
-          imagePullPolicy: "Always"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-cluster-driver-registrar
+          image: quay.io/k8scsi/csi-cluster-driver-registrar:v1.0.1
+          args:
+            - "--v=5"
+            - "--pod-info-mount-version=\"v1\""
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
@@ -185,6 +214,7 @@ spec:
       volumes:
         - name: socket-dir
           emptyDir: {}
+
 ---
 
 apiVersion: v1
@@ -195,34 +225,108 @@ metadata:
 
 ---
 
-kind: ClusterRoleBinding
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-cloudscale-controller-provisioner-binding
-  namespace: kube-system
-subjects:
-  - kind: ServiceAccount
-    name: csi-cloudscale-controller-sa
-    namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: system:csi-external-provisioner
-  apiGroup: rbac.authorization.k8s.io
+  name: csi-cloudscale-provisioner-role
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshots"]
+    verbs: ["get", "list"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "create"]
 
 ---
 
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-cloudscale-controller-attacher-binding
-  namespace: kube-system
+  name: csi-cloudscale-provisioner-binding
 subjects:
   - kind: ServiceAccount
     name: csi-cloudscale-controller-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: system:csi-external-attacher
+  name: csi-cloudscale-provisioner-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Attacher must be able to work with PVs, nodes and VolumeAttachments
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cloudscale-attacher-role
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["csi.storage.k8s.io"]
+    resources: ["csinodeinfos"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch", "update"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cloudscale-attacher-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-cloudscale-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-cloudscale-attacher-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cloudscale-cluster-driver-registrar-role
+rules:
+  - apiGroups: ["csi.storage.k8s.io"]
+    resources: ["csidrivers"]
+    verbs: ["create", "delete"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cloudscale-cluster-driver-registrar-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-cloudscale-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-cloudscale-cluster-driver-registrar-role
   apiGroup: rbac.authorization.k8s.io
 
 ---
@@ -253,14 +357,15 @@ spec:
       hostNetwork: true
       containers:
         - name: driver-registrar
-          image: quay.io/k8scsi/driver-registrar:v0.4.1
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.0.2
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
-            - "--mode=node-register"
-            - "--driver-requires-attachment=true"
-            - "--pod-info-mount-version=\"v1\""
             - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/csi.cloudscale.ch /registration/csi.cloudscale.ch-reg.sock"]
           env:
             - name: ADDRESS
               value: /csi/csi.sock
@@ -277,6 +382,7 @@ spec:
               mountPath: /registration/
         - name: csi-cloudscale-plugin
           image: cloudscalech/cloudscale-csi-plugin:dev
+          imagePullPolicy: "Always"
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--token=$(CLOUDSCALE_ACCESS_TOKEN)"
@@ -291,7 +397,6 @@ spec:
                 secretKeyRef:
                   name: cloudscale
                   key: access-token
-          imagePullPolicy: "Always"
           securityContext:
             privileged: true
             capabilities:
@@ -310,7 +415,7 @@ spec:
       volumes:
         - name: registration-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/
+            path: /var/lib/kubelet/plugins_registry/
             type: DirectoryOrCreate
         - name: plugin-dir
           hostPath:
@@ -345,8 +450,7 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: csi-cloudscale-driver-registrar-role
-  apiGroup: rbac.authorization.k8s.io          
-
+  apiGroup: rbac.authorization.k8s.io
 
 ---
 
@@ -357,9 +461,5 @@ metadata:
   namespace: kube-system
 rules:
   - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list", "update"]
-  - apiGroups: [""]
     resources: ["events"]
     verbs: ["list", "watch", "create", "update", "patch"]
-

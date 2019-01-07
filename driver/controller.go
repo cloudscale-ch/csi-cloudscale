@@ -66,6 +66,22 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
 	}
 
+	/*
+	TODO: cloudscale.ch will start supporting different regions soon
+
+	if req.AccessibilityRequirements != nil {
+		for _, t := range req.AccessibilityRequirements.Requisite {
+			region, ok := t.Segments["region"]
+			if !ok {
+				continue // nothing to do
+			}
+			if region != d.region {
+				return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in region: %q, got: %q", d.region, region)
+			}
+		}
+	}
+	*/
+
 	sizeGB, err := calculateStorageGB(req.CapacityRange)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -120,6 +136,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	}
 
 	volumeReq := &cloudscale.Volume{
+		/*
+		TODO: cloudscale.ch will start supporting different regions soon
+
+		Region: d.region
+		 */
 		Name:   volumeName,
 		SizeGB: sizeGB,
 	}
