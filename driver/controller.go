@@ -66,9 +66,6 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
 	}
 
-	/*
-	TODO: cloudscale.ch will start supporting different regions soon
-
 	if req.AccessibilityRequirements != nil {
 		for _, t := range req.AccessibilityRequirements.Requisite {
 			region, ok := t.Segments["region"]
@@ -80,7 +77,6 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 			}
 		}
 	}
-	*/
 
 	sizeGB, err := calculateStorageGB(req.CapacityRange)
 	if err != nil {
@@ -220,63 +216,12 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
-	// check if volume exist before trying to attach it
-	vol, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
-	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok && errorResponse.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "volume %q not found", req.VolumeId)
-		}
-		return nil, err
-	}
-
-	// check if the server exist before trying to attach the volume to it
-	_, err = d.cloudscaleClient.Servers.Get(ctx, req.NodeId)
-	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok && errorResponse.StatusCode == http.StatusNotFound {
-			return nil, status.Errorf(codes.NotFound, "server %q not found", req.NodeId)
-		}
-		return nil, err
-	}
-
-	if vol.ServerUUIDs != nil {
-		// check if the volume is already attached to the server
-		for _, serverId := range *vol.ServerUUIDs {
-			if serverId == req.NodeId {
-				ll.Info("volume is already attached")
-				return &csi.ControllerPublishVolumeResponse{
-					PublishContext: map[string]string{
-						PublishInfoVolumeName: vol.Name,
-					},
-				}, nil
-			}
-		}
-		// volume is attached to a different server
-		if len(*vol.ServerUUIDs) > 0 {
-			serverId := (*vol.ServerUUIDs)[0]
-			return nil, status.Errorf(codes.FailedPrecondition,
-				"volume %q is attached to the wrong server (%q), detach the volume to fix it", req.VolumeId, serverId)
-		}
-	}
-
 	attachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
-	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
+	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok && errorResponse.StatusCode == http.StatusNotFound {
-			ll.WithFields(logrus.Fields{
-				"error":         err,
-				"errorResponse": errorResponse,
-			}).Warnf("server %q or volume %q not found", req.NodeId, req.VolumeId)
-			return nil, status.Errorf(codes.NotFound, "server %q or volume %q not found", req.NodeId, req.VolumeId)
-		}
-		ll.WithFields(logrus.Fields{
-			"error": err,
-		}).Warnf("volume %q couldn't be attached to server %q", req.VolumeId, req.NodeId)
-		return nil, status.Errorf(codes.Aborted, "volume %q couldn't be attached to server %q", req.VolumeId, req.NodeId)
+		return nil, reraiseNotFound(err, ll, "attaching volume")
 	}
 
 	ll.Info("volume is attached")
@@ -300,72 +245,12 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	// check if volume exist before trying to detach it
-	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
-	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok && errorResponse.StatusCode == http.StatusNotFound {
-			d.log.WithFields(logrus.Fields{
-				"volume_id": req.VolumeId,
-				"node_id":   req.NodeId,
-				"method":    "controller_unpublish_volume",
-			}).Infof("volume %q not found; assuming it's already detached", req.VolumeId)
-			// assume it's detached
-			return &csi.ControllerUnpublishVolumeResponse{}, nil
-		}
-		d.log.WithFields(logrus.Fields{
-			"volume_id": req.VolumeId,
-			"node_id":   req.NodeId,
-			"method":    "controller_unpublish_volume",
-		}).Warnf("unable to query status of volume %q", req.VolumeId)
-		return nil, err
-	}
-
-	// check if volume is already detached
-	if volume.ServerUUIDs != nil && len(*volume.ServerUUIDs) == 0 {
-		d.log.WithFields(logrus.Fields{
-			"volume_id": req.VolumeId,
-			"volume":    volume,
-			"node_id":   req.NodeId,
-			"method":    "controller_unpublish_volume",
-		}).Infof("volume %q is not attached to any servers", req.VolumeId)
-		return &csi.ControllerUnpublishVolumeResponse{}, nil
-	}
-
 	detachRequest := &cloudscale.Volume{
 		ServerUUIDs: &[]string{},
 	}
-	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok && errorResponse.StatusCode == http.StatusNotFound {
-			d.log.WithFields(logrus.Fields{
-				"volume_id": req.VolumeId,
-				"volume":    volume,
-				"node_id":   req.NodeId,
-				"method":    "controller_unpublish_volume",
-			}).Infof("volume %q not found; assuming it's already detached", req.VolumeId)
-			// assume it's detached
-			return &csi.ControllerUnpublishVolumeResponse{}, nil
-		} else if ok {
-			d.log.WithFields(logrus.Fields{
-				"volume_id":     req.VolumeId,
-				"volume":        volume,
-				"node_id":       req.NodeId,
-				"errorResponse": errorResponse,
-				"error":         err,
-				"method":        "controller_unpublish_volume",
-			}).Infof("volume %q can't be detached", req.VolumeId)
-			return nil, err
-		}
-		d.log.WithFields(logrus.Fields{
-			"volume_id": req.VolumeId,
-			"volume":    volume,
-			"node_id":   req.NodeId,
-			"error":     err,
-			"method":    "controller_unpublish_volume",
-		}).Infof("volume %q can't be detached", req.VolumeId)
-		return nil, err
+		return nil, reraiseNotFound(err, ll, "unpublish volume")
 	}
 
 	ll.Info("volume is detached")
@@ -394,7 +279,7 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	// check if volume exist before trying to validate it it
 	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		return nil, reraiseNotFound(err)
+		return nil, reraiseNotFound(err, ll, "fetch volume to validate capabilities")
 	}
 
 	// if it's not supported (i.e: wrong region), we shouldn't override it
@@ -583,12 +468,21 @@ func validateCapabilities(caps []*csi.VolumeCapability) bool {
 	return supported
 }
 
-func reraiseNotFound(err error) error {
+func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
 	errorResponse, ok := err.(*cloudscale.ErrorResponse)
 	if ok {
+		lt := log.WithFields(logrus.Fields{
+			"error":         err,
+			"errorResponse": errorResponse,
+		})
 		if errorResponse.StatusCode == http.StatusNotFound {
+			lt.Warnf("%q: Server or volume not found", operation)
 			return status.Errorf(codes.NotFound, err.Error())
+		} else {
+			lt.Warnf("%q: operation failed", operation)
+			return status.Errorf(codes.Aborted, operation + ": Request failed",)
 		}
 	}
-	return err
+	log.Warnf("%q: random error", operation)
+	return status.Errorf(codes.Aborted, operation + ": Random error")
 }
