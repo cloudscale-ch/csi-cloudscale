@@ -225,9 +225,13 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	ll.Info("volume is attached")
+	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		return nil, reraiseNotFound(err, ll, "fetch volume")
+	}
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
-			PublishInfoVolumeName: vol.Name,
+			PublishInfoVolumeName: volume.Name,
 		},
 	}, nil
 }
