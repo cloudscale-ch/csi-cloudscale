@@ -306,6 +306,7 @@ spec:
         app: csi-cloudscale-node
         role: csi-cloudscale
     spec:
+      priorityClassName: system-node-critical
       serviceAccount: csi-cloudscale-node-sa
       hostNetwork: true
       containers:
