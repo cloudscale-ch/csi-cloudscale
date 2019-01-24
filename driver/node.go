@@ -72,11 +72,9 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
 	}
 
-	volumeName := ""
-	if volName, ok := req.GetPublishContext()[PublishInfoVolumeName]; !ok {
+	volumeName, ok := req.GetPublishContext()[PublishInfoVolumeName]
+	if !ok {
 		return nil, status.Error(codes.InvalidArgument, "Could not find the volume by name")
-	} else {
-		volumeName = volName
 	}
 
 	target := req.StagingTargetPath
