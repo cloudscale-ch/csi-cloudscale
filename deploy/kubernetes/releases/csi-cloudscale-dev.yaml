@@ -204,6 +204,12 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
+  # cluster-driver-registrar currently needs permissions to create the CSIDriver CRD
+  # see https://github.com/kubernetes-csi/cluster-driver-registrar/issues/3
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "create"]
+
 
 ---
 
