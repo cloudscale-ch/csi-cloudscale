@@ -24,6 +24,10 @@
         api_token: '{{ cloudscale_api_token }}'
       loop: "{{ servers }}"
       register: created_servers
+
+    - name: Waiting for servers to come up
+      pause:
+        seconds: 30
     
     - name: Register master in inventory
       add_host:
