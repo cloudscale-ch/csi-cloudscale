@@ -90,7 +90,7 @@
   tags: [test]
   tasks:
     - name: "Run the tests"
-      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration ../test/..."
+      shell: "GOCACHE=off KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration ../test/..."
 
 - hosts: localhost
   tags: [cleanup]
