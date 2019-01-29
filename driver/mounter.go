@@ -97,7 +97,11 @@ func (m *mounter) Format(source, fsType string) error {
 
 	mkfsArgs = append(mkfsArgs, source)
 	if fsType == "ext4" || fsType == "ext3" {
-		mkfsArgs = []string{"-F", source}
+		mkfsArgs = []string{
+			"-F",  // Force flag
+			"-m0", // Zero blocks reserved for privileged processes
+			source,
+		}
 	}
 
 	m.log.WithFields(logrus.Fields{
