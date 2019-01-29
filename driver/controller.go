@@ -21,6 +21,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -38,8 +40,18 @@ const (
 )
 
 const (
+	// allowed size increments for SSDs
 	SSDStepSizeGB = 1
+
+	// allowed size increments for bulk disks
+	BulkStepSizeGB = 100
+
+	// PublishInfoVolumeName is used to pass the volume name from
+	// `ControllerPublishVolume` to `NodeStageVolume or `NodePublishVolume`
 	PublishInfoVolumeName = DriverName + "/volume-name"
+
+	// Storage type of the volume, must be either "ssd" or "bulk"
+	StorageTypeAttribute = DriverName + "/volume-type"
 )
 
 var (
@@ -78,7 +90,16 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		}
 	}
 
-	sizeGB, err := calculateStorageGB(req.CapacityRange)
+	storageType := req.Parameters[StorageTypeAttribute]
+	if storageType == "" {
+		// default storage type unless specified otherwise
+		storageType = "ssd"
+	}
+	if storageType != "ssd" && storageType != "bulk" {
+		return nil, status.Error(codes.InvalidArgument, "invalid volume type requested. Only 'ssd' or 'bulk' are supported")
+	}
+
+	sizeGB, err := calculateStorageGB(req.CapacityRange, storageType)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -90,6 +111,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		"storage_size_giga_bytes": sizeGB,
 		"method":                  "create_volume",
 		"volume_capabilities":     req.VolumeCapabilities,
+		"type":                    storageType,
 	})
 	ll.Info("create volume called")
 
@@ -139,6 +161,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		 */
 		Name:   volumeName,
 		SizeGB: sizeGB,
+		Type: 	storageType,
 	}
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
@@ -416,32 +439,79 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 // calculateStorageGB extracts the storage size in GB from the given capacity
 // range. If the capacity range is not satisfied it returns the default volume
 // size.
-func calculateStorageGB(capRange *csi.CapacityRange) (int, error) {
+func calculateStorageGB(capRange *csi.CapacityRange, storageType string) (int, error) {
+	sizeIncrements := SSDStepSizeGB
+	if storageType == "bulk" {
+		sizeIncrements = BulkStepSizeGB
+	}
 	if capRange == nil {
-		return SSDStepSizeGB, nil
+		return sizeIncrements, nil
 	}
 
-	minBytes := capRange.RequiredBytes
-	// limitBytes might be zero
-	maxBytes := capRange.LimitBytes
-	if minBytes == 0 {
-		minBytes = SSDStepSizeGB * GB
-	}
-	maxSet := maxBytes > 0
+	// Volume MUST be at least this big. This field is OPTIONAL.
+	// A value of 0 is equal to an unspecified field value.
+	// The value of this field MUST NOT be negative.
+	requiredBytes := capRange.GetRequiredBytes()
+	requiredSet := 0 < requiredBytes
 
-	if maxSet && minBytes > maxBytes {
-		return 0, fmt.Errorf("Limit bytes %v is less than required bytes %v", minBytes, maxBytes)
+	// Volume MUST not be bigger than this. This field is OPTIONAL.
+	// A value of 0 is equal to an unspecified field value.
+	// The value of this field MUST NOT be negative.
+	limitBytes := capRange.GetLimitBytes()
+	limitSet := 0 < limitBytes
+
+	if !requiredSet && !limitSet {
+		return sizeIncrements, nil
+	}
+	if requiredSet && limitSet && limitBytes < requiredBytes {
+		return 0, fmt.Errorf("limit (%v) can not be less than required (%v) size", formatBytes(limitBytes), formatBytes(requiredBytes))
 	}
 
-	steps := minBytes / GB / SSDStepSizeGB
-	if steps * GB * SSDStepSizeGB < minBytes {
+	if requiredSet && !limitSet && requiredBytes < (int64(sizeIncrements)*GB) {
+		return 0, fmt.Errorf("required (%v) can not be less than minimum supported volume size for type '%s' (%v)", formatBytes(requiredBytes), storageType, formatBytes(int64(sizeIncrements)*GB))
+	}
+
+	if limitSet && limitBytes < (int64(sizeIncrements)*GB) {
+		return 0, fmt.Errorf("limit (%v) can not be less than minimum supported volume size for type '%s' (%v)", formatBytes(limitBytes), storageType, formatBytes(int64(sizeIncrements)*GB))
+	}
+
+	steps := requiredBytes / GB / int64(sizeIncrements)
+	if steps * GB * int64(sizeIncrements) < requiredBytes {
 		steps += 1
 	}
-	sizeGB := steps * SSDStepSizeGB
-	if maxSet && sizeGB * GB > maxBytes {
-		return 0, fmt.Errorf("Not possible to allocate %v GB, because the limit is %v bytes", sizeGB, maxBytes)
+
+	sizeGB := steps * int64(sizeIncrements)
+
+	if limitSet && limitBytes < (int64(sizeGB) * GB) {
+		return 0, fmt.Errorf("for required (%v) limit (%v) must be at least %v for type '%s'", formatBytes(requiredBytes), formatBytes(limitBytes), formatBytes(int64(sizeGB)*GB), storageType)
 	}
 	return int(sizeGB), nil
+}
+
+func formatBytes(inputBytes int64) string {
+	output := float64(inputBytes)
+	unit := ""
+
+	switch {
+	case inputBytes >= TB:
+		output = output / TB
+		unit = "Ti"
+	case inputBytes >= GB:
+		output = output / GB
+		unit = "Gi"
+	case inputBytes >= MB:
+		output = output / MB
+		unit = "Mi"
+	case inputBytes >= KB:
+		output = output / KB
+		unit = "Ki"
+	case inputBytes == 0:
+		return "0"
+	}
+
+	result := strconv.FormatFloat(output, 'f', 1, 64)
+	result = strings.TrimSuffix(result, ".0")
+	return result + unit
 }
 
 // validateCapabilities validates the requested capabilities. It returns false

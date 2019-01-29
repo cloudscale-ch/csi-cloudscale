@@ -64,12 +64,12 @@ func TestDriverSuite(t *testing.T) {
 	cloudscaleClient.BaseURL = url
 
 	driver := &Driver{
-		endpoint: endpoint,
-		serverId:   serverId,
-		region:   "zrh1",
+		endpoint:         endpoint,
+		serverId:         serverId,
+		region:           "zrh1",
 		cloudscaleClient: cloudscaleClient,
-		mounter:  &fakeMounter{},
-		log:      logrus.New().WithField("test_enabed", true),
+		mounter:          &fakeMounter{},
+		log:              logrus.New().WithField("test_enabed", true),
 	}
 	defer driver.Stop()
 
@@ -99,9 +99,9 @@ func TestDriverSuite(t *testing.T) {
 
 // fakeAPI implements a fake, cached cloudscale.ch API
 type fakeAPI struct {
-	t        *testing.T
-	volumes  map[string]*cloudscale.Volume
-	servers  map[string]*cloudscale.Server
+	t       *testing.T
+	volumes map[string]*cloudscale.Volume
+	servers map[string]*cloudscale.Server
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -174,6 +174,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			UUID:   id,
 			Name:   v.Name,
 			SizeGB: v.SizeGB,
+			Type:   v.Type,
 		}
 
 		f.volumes[id] = vol
