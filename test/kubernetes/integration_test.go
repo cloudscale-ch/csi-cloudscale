@@ -3,8 +3,15 @@
 package integration
 
 import (
+	"context"
+	"crypto/rand"
 	"errors"
+	"fmt"
+	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/oauth2"
 	"log"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -27,8 +34,21 @@ const (
 	namespace = "csi-test"
 )
 
+type TestPodVolume struct {
+	ClaimName    string
+	SizeGB       int
+	StorageClass string
+}
+
+type TestPodDescriptor struct {
+	Kind    string
+	Name    string
+	Volumes []TestPodVolume
+}
+
 var (
-	client kubernetes.Interface
+	client           kubernetes.Interface
+	cloudscaleClient *cloudscale.Client
 )
 
 func TestMain(m *testing.M) {
@@ -47,305 +67,213 @@ func TestMain(m *testing.M) {
 	os.Exit(exitStatus)
 }
 
-func TestPod_Single_Volume(t *testing.T) {
-	volumeName := "my-cloudscale-volume"
-	claimName := "csi-pod-pvc"
-
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-csi-app",
-		},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Name:  "my-csi-app",
-					Image: "busybox",
-					VolumeMounts: []v1.VolumeMount{
-						{
-							MountPath: "/data",
-							Name:      volumeName,
-						},
-					},
-					Command: []string{
-						"sleep",
-						"1000000",
-					},
-				},
-			},
-			Volumes: []v1.Volume{
-				{
-					Name: volumeName,
-					VolumeSource: v1.VolumeSource{
-						PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-							ClaimName: claimName,
-						},
-					},
-				},
+func TestPod_Single_SSD_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
 			},
 		},
 	}
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
 
-	t.Log("Creating pod")
-	_, err := client.CoreV1().Pods(namespace).Create(pod)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
 
-	pvc := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: claimName,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("5Gi"),
-				},
-			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
-		},
-	}
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, volume.SizeGB)
+	assert.Equal(t, "ssd", volume.Type)
 
-	t.Log("Creating pvc")
-	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("Waiting pod %q to be running ...\n", pod.Name)
-	if err := waitForPod(client, pod.Name); err != nil {
-		t.Error(err)
-	}
-
-	t.Log("Finished!")
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account; this check is necessary to test that the
+	// csi-plugin properly deletes the volume from cloudscale.ch
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
-func TestDeployment_Single_Volume(t *testing.T) {
-	volumeName := "my-cloudscale-volume"
-	claimName := "csi-deployment-pvc"
-	appName := "my-csi-app"
-
-	replicaCount := new(int32)
-	*replicaCount = 1
-
-	dep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: appName,
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: replicaCount,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": appName,
-				},
-			},
-			Template: v1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": appName,
-					},
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{
-							Name:  "my-busybox",
-							Image: "busybox",
-							VolumeMounts: []v1.VolumeMount{
-								{
-									MountPath: "/data",
-									Name:      volumeName,
-								},
-							},
-							Command: []string{
-								"sleep",
-								"1000000",
-							},
-						},
-					},
-					Volumes: []v1.Volume{
-						{
-							Name: volumeName,
-							VolumeSource: v1.VolumeSource{
-								PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-									ClaimName: claimName,
-								},
-							},
-						},
-					},
-				},
+func TestPod_Single_Bulk_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-bulk-pvc",
+				SizeGB:       100,
+				StorageClass: "cloudscale-volume-bulk",
 			},
 		},
 	}
 
-	t.Log("Creating deployment")
-	_, err := client.AppsV1().Deployments(namespace).Create(dep)
-	if err != nil {
-		t.Fatal(err)
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 100, volume.SizeGB)
+	assert.Equal(t, "bulk", volume.Type)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestDeployment_Single_SSD_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Deployment",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-pvc-0",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
 	}
 
-	pvc := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: claimName,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("5Gi"),
-				},
-			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
-		},
-	}
-
-	t.Log("Creating pvc")
-	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc)
-	if err != nil {
-		t.Fatal(err)
-	}
+	deployment := makeKubernetesDeployment(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
 
 	// Give it a few seconds to create the pod
 	time.Sleep(10 * time.Second)
 
 	// get pod associated with the deployment
-	selector, err := appSelector(appName)
-	if err != nil {
-		t.Fatal(err)
-	}
+	selector, err := appSelector(deployment.Name)
+	assert.NoError(t, err)
 
 	pods, err := client.CoreV1().Pods(namespace).
 		List(metav1.ListOptions{LabelSelector: selector.String()})
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	if len(pods.Items) != 1 || len(pods.Items) > 1 {
-		t.Fatalf("expected to have a 1 pod, got %d pods for the given deployment", len(pods.Items))
-
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(pods.Items))
 	pod := pods.Items[0]
 
-	t.Logf("Waiting pod %q to be running ...\n", pod.Name)
-	if err := waitForPod(client, pod.Name); err != nil {
-		t.Error(err)
-	}
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
 
-	t.Log("Finished!")
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, volume.SizeGB)
+	assert.Equal(t, "ssd", volume.Type)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
-func TestPod_Multi_Volume(t *testing.T) {
-	volumeName1 := "my-cloudscale-volume-1"
-	volumeName2 := "my-cloudscale-volume-2"
-	claimName1 := "csi-pod-pvc-1"
-	claimName2 := "csi-pod-pvc-2"
-	appName := "my-multi-csi-app"
-
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: appName,
-		},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Name:  appName,
-					Image: "busybox",
-					VolumeMounts: []v1.VolumeMount{
-						{
-							MountPath: "/data/pod-1/",
-							Name:      volumeName1,
-						},
-						{
-							MountPath: "/data/pod-2/",
-							Name:      volumeName2,
-						},
-					},
-					Command: []string{
-						"sleep",
-						"1000000",
-					},
-				},
+func TestPod_Multi_SSD_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-pvc-1",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
 			},
-			Volumes: []v1.Volume{
-				{
-					Name: volumeName1,
-					VolumeSource: v1.VolumeSource{
-						PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-							ClaimName: claimName1,
-						},
-					},
-				},
-				{
-					Name: volumeName2,
-					VolumeSource: v1.VolumeSource{
-						PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
-							ClaimName: claimName2,
-						},
-					},
-				},
+			{
+				ClaimName:    "csi-pod-pvc-2",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
 			},
 		},
 	}
 
-	t.Log("Creating pod")
-	_, err := client.CoreV1().Pods(namespace).Create(pod)
-	if err != nil {
-		t.Fatal(err)
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 2, len(pvcs))
+
+	loadedPVCs := make([]*v1.PersistentVolumeClaim, 0)
+	waitForPod(t, client, pod.Name)
+	for _, requestedPVC := range pvcs {
+		pvc := getPVC(t, client, requestedPVC.Name)
+		loadedPVCs = append(loadedPVCs, pvc)
+		assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+		volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+		assert.Equal(t, 5, volume.SizeGB)
+		assert.Equal(t, "ssd", volume.Type)
 	}
 
-	t.Log("Creating pvc1")
-	pvc1 := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: claimName1,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("5Gi"),
-				},
-			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
-		},
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	for _, pvc := range loadedPVCs {
+		waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 	}
-	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc1)
-	if err != nil {
-		t.Fatal(err)
-	}
+}
 
-	t.Log("Creating pvc2")
-	pvc2 := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: claimName2,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
+func TestPod_Multiple_Volumes(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-multi-pvc-1",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
 			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("5Gi"),
-				},
+			{
+				ClaimName:    "csi-pod-multi-pvc-2",
+				SizeGB:       100,
+				StorageClass: "cloudscale-volume-bulk",
 			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
+			{
+				ClaimName:    "csi-pod-multi-pvc-3",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+			{
+				ClaimName:    "csi-pod-multi-pvc-4",
+				SizeGB:       100,
+				StorageClass: "cloudscale-volume-bulk",
+			},
 		},
 	}
-	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 4, len(pvcs))
 
-	t.Logf("Waiting pod %q to be running ...\n", pod.Name)
-	if err := waitForPod(client, pod.Name); err != nil {
-		t.Error(err)
+	loadedPVCs := make([]*v1.PersistentVolumeClaim, 0)
+	waitForPod(t, client, pod.Name)
+	for _, requestedPVC := range pvcs {
+		pvc := getPVC(t, client, requestedPVC.Name)
+		loadedPVCs = append(loadedPVCs, pvc)
+		assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+		volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+		if *pvc.Spec.StorageClassName == "cloudscale-volume-bulk" {
+			assert.Equal(t, "bulk", volume.Type)
+			assert.Equal(t, 100, volume.SizeGB)
+		} else {
+			assert.Equal(t, "ssd", volume.Type)
+			assert.Equal(t, 5, volume.SizeGB)
+		}
 	}
-
-	t.Log("Finished!")
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	for _, pvc := range loadedPVCs {
+		waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+	}
 }
 
 func setup() error {
@@ -380,6 +308,19 @@ func setup() error {
 		return err
 	}
 
+	// create cloudscale client with the secret deployed into the kube-system namespace
+	secret, err := client.CoreV1().Secrets("kube-system").Get("cloudscale", metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	cloudscaleToken := string(secret.Data["access-token"])
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: cloudscaleToken,
+	})
+	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
+
+	cloudscaleClient = cloudscale.NewClient(oauthClient)
+
 	return nil
 }
 
@@ -397,10 +338,195 @@ func strPtr(s string) *string {
 	return &s
 }
 
+// deletes resources (pods, deployment, pvcs) for the given TestPodDescriptor from kubernetes
+// NOTE: does not wait for the resources to be deleted
+func cleanup(t *testing.T, pod TestPodDescriptor) {
+	if pod.Kind == "Deployment" {
+		err := client.AppsV1().Deployments(namespace).Delete(pod.Name, &metav1.DeleteOptions{})
+		assert.NoError(t, err)
+	} else {
+		err := client.CoreV1().Pods(namespace).Delete(pod.Name, &metav1.DeleteOptions{})
+		assert.NoError(t, err)
+	}
+	for _, volume := range pod.Volumes {
+		err := client.CoreV1().PersistentVolumeClaims(namespace).Delete(volume.ClaimName, &metav1.DeleteOptions{})
+		assert.NoError(t, err)
+	}
+}
+
+// creates a kubernetes pod from the given TestPodDescriptor
+func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
+
+	volumeMounts := make([]v1.VolumeMount, 0)
+	volumes := make([]v1.Volume, 0)
+
+	for i, volume := range pod.Volumes {
+		volumeName := fmt.Sprintf("volume-%v", i)
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
+			MountPath: fmt.Sprintf("/data-%v", i),
+			Name:      volumeName,
+		})
+		volumes = append(volumes, v1.Volume{
+			Name: volumeName,
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					ClaimName: volume.ClaimName,
+				},
+			},
+		})
+	}
+
+	kubernetesPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pod.Name,
+		},
+		Spec: v1.PodSpec{
+			// use google's pause container instead of a sleeping busybox
+			// reasoning: the pause container properly terminates when the container runtime
+			// signals TERM; a sleeping busybox will not and it will take a while before the
+			// container is killed, unless we were to explicitly handle the TERM signal
+			Containers: []v1.Container{
+				{
+					Name:         "pause",
+					Image:        "gcr.io/google-containers/pause-amd64:3.1",
+					VolumeMounts: volumeMounts,
+				},
+			},
+			Volumes: volumes,
+		},
+	}
+
+	t.Log("Creating pod")
+	_, err := client.CoreV1().Pods(namespace).Create(kubernetesPod)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return kubernetesPod
+}
+
+// creates a kubernetes deployment from the given TestPodDescriptor
+func makeKubernetesDeployment(t *testing.T, pod TestPodDescriptor) *appsv1.Deployment {
+	replicaCount := new(int32)
+	*replicaCount = 1
+
+	volumeMounts := make([]v1.VolumeMount, 0)
+	volumes := make([]v1.Volume, 0)
+
+	for i, volume := range pod.Volumes {
+		volumeName := fmt.Sprintf("volume-%v", i)
+		volumeMounts = append(volumeMounts, v1.VolumeMount{
+			MountPath: fmt.Sprintf("/data-%v", i),
+			Name:      volumeName,
+		})
+		volumes = append(volumes, v1.Volume{
+			Name: volumeName,
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					ClaimName: volume.ClaimName,
+				},
+			},
+		})
+	}
+
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: pod.Name,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: replicaCount,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": pod.Name,
+				},
+			},
+			Template: v1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app": pod.Name,
+					},
+				},
+				Spec: v1.PodSpec{
+					// use google's pause container instead of a sleeping busybox
+					// reasoning: the pause container properly terminates when the container runtime
+					// signals TERM; a sleeping busybox will not and it will take a while before the
+					// container is killed, unless we were to explicitly handle the TERM signal
+					Containers: []v1.Container{
+						{
+							Name:         "pause",
+							Image:        "gcr.io/google-containers/pause-amd64:3.1",
+							VolumeMounts: volumeMounts,
+						},
+					},
+					Volumes: volumes,
+				},
+			},
+		},
+	}
+
+	t.Logf("Creating deployment %v", pod.Name)
+	_, err := client.AppsV1().Deployments(namespace).Create(deployment)
+	assert.NoError(t, err)
+
+	return deployment
+}
+
+// creates kubernetes pvcs from the given TestPodDescriptor
+func makeKubernetesPVCs(t *testing.T, pod TestPodDescriptor) []*v1.PersistentVolumeClaim {
+	pvcs := make([]*v1.PersistentVolumeClaim, 0)
+
+	for _, volume := range pod.Volumes {
+		pvcs = append(pvcs, &v1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: volume.ClaimName,
+			},
+			Spec: v1.PersistentVolumeClaimSpec{
+				AccessModes: []v1.PersistentVolumeAccessMode{
+					v1.ReadWriteOnce,
+				},
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceStorage: resource.MustParse(fmt.Sprintf("%vGi", volume.SizeGB)),
+					},
+				},
+				StorageClassName: strPtr(volume.StorageClass),
+			},
+		})
+	}
+
+	t.Log("Creating pvc")
+	for _, pvc := range pvcs {
+		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return pvcs
+}
+
+// taken from https://stackoverflow.com/a/25736155
+// adapted to make uuids lowercase
+func pseudoUuid() (uuid string) {
+
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return
+	}
+
+	uuid = fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+
+	return
+}
+
 // waitForPod waits for the given pod name to be running
-func waitForPod(client kubernetes.Interface, name string) error {
+func waitForPod(t *testing.T, client kubernetes.Interface, name string) {
 	var err error
 	stopCh := make(chan struct{})
+
+	t.Logf("Waiting for pod %q to be running ...\n", name)
 
 	go func() {
 		select {
@@ -435,7 +561,7 @@ func waitForPod(client kubernetes.Interface, name string) error {
 		})
 
 	controller.Run(stopCh)
-	return err
+	assert.NoError(t, err)
 }
 
 // appSelector returns a selector that selects deployed applications with the
@@ -452,4 +578,54 @@ func appSelector(appName string) (labels.Selector, error) {
 	)
 
 	return selector, nil
+}
+
+// loads the pvc with the given name from kubernetes
+func getPVC(t *testing.T, client kubernetes.Interface, name string) *v1.PersistentVolumeClaim {
+	claim, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	return claim
+}
+
+// loads the volume with the given name from the cloudscale.ch API
+func getCloudscaleVolume(t *testing.T, volumeName string) cloudscale.Volume {
+	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	volumes, err := cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
+		Name: volumeName,
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(volumes))
+	return volumes[0]
+}
+
+// waits until the volume with the given name was deleted from the cloudscale.ch account
+func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
+	start := time.Now()
+
+	for {
+		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+		volumes, err := cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
+			Name: volumeName,
+		})
+		if len(volumes) == 0 {
+			t.Logf("volume %v is deleted on cloudscale", volumeName)
+			return
+		}
+		if err != nil {
+			if cloudscaleErr, ok := err.(*cloudscale.ErrorResponse); ok {
+				if cloudscaleErr.StatusCode == http.StatusNotFound {
+					t.Logf("volume %v is deleted on cloudscale", volumeName)
+					return
+				}
+			}
+		}
+		if time.Now().UnixNano() - start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+			t.Errorf("timeout exceeded while waiting for volume %v to be deleted from cloudscale", volumeName)
+			return
+		} else {
+			t.Logf("volume %v not deleted on cloudscale yet; awaiting deletion", volumeName)
+			time.Sleep(5 * time.Second)
+		}
+	}
 }

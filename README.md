@@ -2,8 +2,23 @@
 A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
 
 The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
-should also work on other Container Orchestrator's, such as Mesos or
-Cloud Foundry. Feel free to test it on other CO's and give us a feedback.
+should also work on other Container Orchestrators, such as Mesos or
+Cloud Foundry. Feel free to test it on other COs and give us a feedback.
+
+## Volume parameters
+
+This plugin supports the following volume parameters (in case of kubernetes: parameters on the 
+`StorageClass` object):
+
+* `csi.cloudscale.ch/volume-type`: `ssd` or `bulk`; defaults to `ssd` if not set
+
+## Pre-defined storage classes
+
+The default deployment bundled in the `deploy/kubernetes/releases` folder includes two storage
+classes:
+
+* `cloudscale-volume-ssd` - the default storage class; uses an ssd volume, no luks encryption
+* `cloudscale-volume-bulk` - uses a bulk volume, no luks encryption
 
 ## Releases
 
@@ -94,10 +109,9 @@ There are also `dev` images available:
 $ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-dev.yaml
 ```
 
-A new storage class will be created with the name `cloudscale-volume-ssd` which is
-responsible for dynamic provisioning. This is set to **"default"** for dynamic
-provisioning. If you're using multiple storage classes you might want to remove
-the annotation from the `csi-storageclass.yaml` and re-deploy it. This is
+The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
+storage class `cloudscale-volume-ssd` is set to **"default"** for dynamic provisioning. If you're 
+using multiple storage classes you might want to remove the annotation and re-deploy it. This is
 based on the [recommended mechanism](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md#recommended-mechanism-for-deploying-csi-drivers-on-kubernetes) of deploying CSI drivers on Kubernetes
 
 *Note that the deployment proposal to Kubernetes is still a work in progress and not all of the written

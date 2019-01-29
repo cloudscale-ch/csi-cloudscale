@@ -1,5 +1,7 @@
 ## unreleased
 
+* Add support for `bulk` volumes
+
 * Read cloudscale.ch access token from environment variable
 
 * Disable reserved blocks for privileged processes for `ext3` and `ext4` volumes
@@ -12,7 +14,14 @@
 ### Important
  
 This release contains breaking changes, because of the update to the CSI
-spec v1.0.0. Your kubernetes version must be **at least v1.13.0** to support CSI spec v1.0.0.
+spec v1.0.0 and the introduction of the `csi.cloudscale.ch/volume-type` parameter.
+ 
+Your kubernetes version must be **at least v1.13.0** to support CSI spec v1.0.0.
+
+If you have deployed previous versions of the CSI plugin, you cannot update the existing
+`cloudscale-volume-ssd` storage class, because parameters of a storage class cannot be changed.
+However, the default behaviour of the CSI plugin is to use volumes of type ssd unless specified
+otherwise, so you can just leave the `cloudscale-volume-ssd` storage class as it is. 
 
 Make sure you have the following [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) 
 activated:
