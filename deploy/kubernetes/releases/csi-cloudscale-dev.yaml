@@ -148,7 +148,6 @@ spec:
           image: cloudscalech/cloudscale-csi-plugin:dev
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--token=$(CLOUDSCALE_ACCESS_TOKEN)"
             - "--url=$(CLOUDSCALE_API_URL)"
           env:
             - name: CSI_ENDPOINT
@@ -342,7 +341,6 @@ spec:
           imagePullPolicy: "Always"
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
-            - "--token=$(CLOUDSCALE_ACCESS_TOKEN)"
             - "--url=$(CLOUDSCALE_API_URL)"
           env:
             - name: CSI_ENDPOINT

@@ -1,5 +1,7 @@
 ## unreleased
 
+* Read cloudscale.ch access token from environment variable
+
 * Disable reserved blocks for privileged processes for `ext3` and `ext4` volumes
 
 * Update to CSI spec v1.0.0

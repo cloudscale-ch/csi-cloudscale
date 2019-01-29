@@ -35,6 +35,10 @@ func main() {
 	)
 	flag.Parse()
 
+	if *token == "" {
+		*token = os.Getenv("CLOUDSCALE_ACCESS_TOKEN")
+	}
+
 	if *version {
 		fmt.Printf("%s - %s (%s)\n", driver.GetVersion(), driver.GetCommit(), driver.GetTreeState())
 		os.Exit(0)
