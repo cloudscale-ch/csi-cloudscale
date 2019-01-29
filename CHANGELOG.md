@@ -1,5 +1,7 @@
 ## unreleased
 
+* Disable reserved blocks for privileged processes for `ext3` and `ext4` volumes
+
 * Update to CSI spec v1.0.0
 
 * Forked this repository from csi-digitalocean. They have a similar API. Thanks
