@@ -467,10 +467,6 @@ func calculateStorageGB(capRange *csi.CapacityRange, storageType string) (int, e
 		return 0, fmt.Errorf("limit (%v) can not be less than required (%v) size", formatBytes(limitBytes), formatBytes(requiredBytes))
 	}
 
-	if requiredSet && !limitSet && requiredBytes < (int64(sizeIncrements)*GB) {
-		return 0, fmt.Errorf("required (%v) can not be less than minimum supported volume size for type '%s' (%v)", formatBytes(requiredBytes), storageType, formatBytes(int64(sizeIncrements)*GB))
-	}
-
 	if limitSet && limitBytes < (int64(sizeIncrements)*GB) {
 		return 0, fmt.Errorf("limit (%v) can not be less than minimum supported volume size for type '%s' (%v)", formatBytes(limitBytes), storageType, formatBytes(int64(sizeIncrements)*GB))
 	}
