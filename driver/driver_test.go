@@ -222,19 +222,19 @@ func randString(n int) string {
 
 type fakeMounter struct{}
 
-func (f *fakeMounter) Format(source string, fsType string) error {
+func (f *fakeMounter) Format(source string, fsType string, luksContext LuksContext) error {
 	return nil
 }
 
-func (f *fakeMounter) Mount(source string, target string, fsType string, options ...string) error {
+func (f *fakeMounter) Mount(source string, target string, fsType string, isBind bool, luksContext LuksContext, options ...string) error {
 	return nil
 }
 
-func (f *fakeMounter) Unmount(target string) error {
+func (f *fakeMounter) Unmount(target string, isStaging bool) error {
 	return nil
 }
 
-func (f *fakeMounter) IsFormatted(source string) (bool, error) {
+func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
 	return true, nil
 }
 func (f *fakeMounter) IsMounted(target string) (bool, error) {

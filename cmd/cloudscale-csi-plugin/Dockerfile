@@ -14,8 +14,9 @@
 
 FROM alpine:3.7
 
-RUN apk add --no-cache ca-certificates e2fsprogs findmnt
+RUN apk add --no-cache ca-certificates e2fsprogs findmnt cryptsetup
 
 ADD cloudscale-csi-plugin /bin/
+ADD csi-diskinfo.sh /bin/
 
 ENTRYPOINT ["/bin/cloudscale-csi-plugin"]
