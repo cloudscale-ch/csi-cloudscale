@@ -12,13 +12,36 @@ This plugin supports the following volume parameters (in case of kubernetes: par
 
 * `csi.cloudscale.ch/volume-type`: `ssd` or `bulk`; defaults to `ssd` if not set
 
+For LUKS encryption:
+
+* `csi.cloudscale.ch/luks-encrypted`: set to the string `"true"` if the volume should be encrypted
+  with LUKS
+* `csi.cloudscale.ch/luks-cipher`: cipher to use; must be supported by the kernel and luks, we
+  suggest `aes-xts-plain64`
+* `csi.cloudscale.ch/luks-key-size`: key-size to use; we suggest `512` for `aes-xts-plain64`
+
+For LUKS encrypted volumes, a secret that contains the LUKS key needs to be referenced through
+the `csiNodeStageSecretName` and `csiNodeStageSecretNamespace` parameter. See the included 
+`StorageClass` definitions and the `examples/kubernetes/luks-encrypted-volumes` folder for examples.
+
 ## Pre-defined storage classes
 
-The default deployment bundled in the `deploy/kubernetes/releases` folder includes two storage
-classes:
+The default deployment bundled in the `deploy/kubernetes/releases` folder includes the following
+storage classes:
 
 * `cloudscale-volume-ssd` - the default storage class; uses an ssd volume, no luks encryption
 * `cloudscale-volume-bulk` - uses a bulk volume, no luks encryption
+* `cloudscale-volume-ssd-luks` - uses an ssd volume that will be encrypyted with luks; a luks-key
+  must be supplied
+* `cloudscale-volume-bulk-luks` - uses a bulk volume that will be encrypyted with luks; a luks-key
+  must be supplied
+
+To use one of the shipped luks storage classes, you need to create a secret named 
+`${pvc.name}-luks-key` in the same namespace as the persistent volume claim. The secret must
+contain an element called `luksKey` that will be used as the luks encryption key.
+
+Example: If you create a persistent volume claim with the name `my-pvc`, you need to create a
+secret `my-pvc-luks-key`.
 
 ## Releases
 
@@ -37,7 +60,8 @@ production ready.
 * Kubernetes v1.13.0 minimum 
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
 * (if you use Docker) the Docker daemon of the cluster nodes must allow shared mounts
-
+* If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
+  `device mapper` infrastructure with the `crypt target` and the appropriate cryptographic APIs
 
 ### [Rancher](https://rancher.com/) users:
 

@@ -45,6 +45,15 @@
         ansible_user: 'root'
       loop: ["{{ created_servers.results[1] }}", "{{ created_servers.results[2] }}"]
 
+# this is not needed for the plugin or the integration tests to work, but helps if you want
+# to take a closer look at the LUKS volumes with SSH on a node
+- hosts: k8s-cluster
+  tags: [install-cryptsetup]
+  tasks:
+    - name: "Install cryptsetup on nodes"
+      yum:
+        name: cryptsetup
+
 - name: Include the play that installs kubernetes
   tags: [install-kubernetes]
   import_playbook: kubespray/cluster.yml

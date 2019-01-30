@@ -1,5 +1,7 @@
 ## unreleased
 
+* Add support for luks-encrypted volumes
+
 * Add support for `bulk` volumes
 
 * Read cloudscale.ch access token from environment variable

@@ -96,6 +96,38 @@ parameters:
 
 ---
 
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: cloudscale-volume-ssd-luks
+  namespace: kube-system
+provisioner: ch.cloudscale.csi
+parameters:
+  csi.cloudscale.ch/volume-type: ssd
+  csi.cloudscale.ch/luks-encrypted: "true"
+  csi.cloudscale.ch/luks-cipher: "aes-xts-plain64"
+  csi.cloudscale.ch/luks-key-size: "512"
+  csiNodeStageSecretNamespace: ${pvc.namespace}
+  csiNodeStageSecretName: ${pvc.name}-luks-key
+
+---
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: cloudscale-volume-bulk-luks
+  namespace: kube-system
+provisioner: ch.cloudscale.csi
+parameters:
+  csi.cloudscale.ch/volume-type: bulk
+  csi.cloudscale.ch/luks-encrypted: "true"
+  csi.cloudscale.ch/luks-cipher: "aes-xts-plain64"
+  csi.cloudscale.ch/luks-key-size: "512"
+  csiNodeStageSecretNamespace: ${pvc.namespace}
+  csiNodeStageSecretName: ${pvc.name}-luks-key
+
+---
+
 ##############################################
 ###########                       ############
 ###########   Controller plugin   ############
@@ -380,6 +412,8 @@ spec:
               mountPropagation: "Bidirectional"
             - name: device-dir
               mountPath: /dev
+            - name: tmpfs
+              mountPath: /tmp
       volumes:
         - name: registration-dir
           hostPath:
@@ -396,6 +430,11 @@ spec:
         - name: device-dir
           hostPath:
             path: /dev
+        # to make sure temporary stored luks keys never touch a disk
+        - name: tmpfs
+          emptyDir:
+            medium: Memory
+
 ---
 
 apiVersion: v1

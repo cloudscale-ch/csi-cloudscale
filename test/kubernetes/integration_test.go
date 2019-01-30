@@ -3,16 +3,21 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/cloudscale-ch/csi-cloudscale/driver"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"
+	"k8s.io/client-go/rest"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +32,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 const (
@@ -38,6 +44,7 @@ type TestPodVolume struct {
 	ClaimName    string
 	SizeGB       int
 	StorageClass string
+	LuksKey      string
 }
 
 type TestPodDescriptor struct {
@@ -46,8 +53,20 @@ type TestPodDescriptor struct {
 	Volumes []TestPodVolume
 }
 
+type DiskInfo struct {
+	PVCName      string `json:"pvcName"`
+	DeviceName   string `json:"deviceName"`
+	DeviceSize   int    `json:"deviceSize"`
+	Filesystem   string `json:"filesystem"`
+	DeviceSource string `json:"deviceSource"`
+	Luks         string `json:"luks,omitempty"`
+	Cipher       string `json:"cipher,omitempty"`
+	Keysize      int    `json:"keysize,omitempty"`
+}
+
 var (
 	client           kubernetes.Interface
+	config           *rest.Config
 	cloudscaleClient *cloudscale.Client
 )
 
@@ -79,6 +98,7 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 			},
 		},
 	}
+
 	// submit the pod and the pvc
 	pod := makeKubernetesPod(t, podDescriptor)
 	pvcs := makeKubernetesPVCs(t, podDescriptor)
@@ -94,6 +114,13 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
 	assert.Equal(t, 5, volume.SizeGB)
 	assert.Equal(t, "ssd", volume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account; this check is necessary to test that the
@@ -130,6 +157,13 @@ func TestPod_Single_Bulk_Volume(t *testing.T) {
 	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
 	assert.Equal(t, 100, volume.SizeGB)
 	assert.Equal(t, "bulk", volume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account
@@ -249,6 +283,7 @@ func TestPod_Multiple_Volumes(t *testing.T) {
 			},
 		},
 	}
+
 	pod := makeKubernetesPod(t, podDescriptor)
 	pvcs := makeKubernetesPVCs(t, podDescriptor)
 	assert.Equal(t, 4, len(pvcs))
@@ -276,6 +311,97 @@ func TestPod_Multiple_Volumes(t *testing.T) {
 	}
 }
 
+func TestPod_Single_SSD_Luks_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-luks-pvc",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, volume.SizeGB)
+	assert.Equal(t, "ssd", volume.Type)
+
+	// verify that our disk is luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, "LUKS1", disk.Luks)
+	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
+	assert.Equal(t, 512, disk.Keysize)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account; this check is necessary to test that the
+	// csi-plugin properly deletes the volume from cloudscale.ch
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-bulk-luks-pvc",
+				SizeGB:       100,
+				StorageClass: "cloudscale-volume-bulk-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 100, volume.SizeGB)
+	assert.Equal(t, "bulk", volume.Type)
+
+	// verify that our disk is luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
+	assert.Equal(t, "LUKS1", disk.Luks)
+	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
+	assert.Equal(t, 512, disk.Keysize)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
 func setup() error {
 	// if you want to change the loading rules (which files in which order),
 	// you can do so here
@@ -286,7 +412,8 @@ func setup() error {
 	configOverrides := &clientcmd.ConfigOverrides{}
 
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	config, err := kubeConfig.ClientConfig()
+	var err error
+	config, err = kubeConfig.ClientConfig()
 	if err != nil {
 		return err
 	}
@@ -359,6 +486,7 @@ func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 
 	volumeMounts := make([]v1.VolumeMount, 0)
 	volumes := make([]v1.Volume, 0)
+	luksSecrets := make([]v1.Secret, 0)
 
 	for i, volume := range pod.Volumes {
 		volumeName := fmt.Sprintf("volume-%v", i)
@@ -374,11 +502,32 @@ func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 				},
 			},
 		})
+		if volume.LuksKey != "" {
+			luksSecrets = append(luksSecrets, v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fmt.Sprintf("%v-luks-key", volume.ClaimName),
+					Namespace: namespace,
+				},
+				Type: v1.SecretTypeOpaque,
+				StringData: map[string]string{
+					"luksKey": volume.LuksKey,
+				},
+			})
+		}
+	}
+
+	for _, secret := range luksSecrets {
+		t.Logf("Creating luks-secret %v", secret.Name)
+		_, err := client.CoreV1().Secrets(namespace).Create(&secret)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	kubernetesPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: pod.Name,
+			Name:      pod.Name,
+			Namespace: namespace,
 		},
 		Spec: v1.PodSpec{
 			// use google's pause container instead of a sleeping busybox
@@ -628,4 +777,126 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 			time.Sleep(5 * time.Second)
 		}
 	}
+}
+
+// returns the name of the node where the given pod is running on
+func getNodeName(podNamespace string, podName string) (string, error) {
+	pod, err := client.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	return pod.Spec.NodeName, nil
+}
+
+// returns the diskinfo for the volume with the given name mounted into the given pod
+func getVolumeInfo(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, error) {
+	node, err := getNodeName(pod.Namespace, pod.Name)
+	if err != nil {
+		return DiskInfo{}, err
+	}
+	diskInfo, err := getVolumeInfoFromNode(t, node)
+	if err != nil {
+		return DiskInfo{}, err
+	}
+	for _, disk := range diskInfo {
+		if disk.PVCName == volumeName {
+			return disk, nil
+		}
+	}
+	return DiskInfo{}, fmt.Errorf("cannot find volume with name %v on node %v", volumeName, node)
+}
+
+// inspects the node and returns information about the disks from the node's perspective
+func getVolumeInfoFromNode(t *testing.T, nodeName string) ([]DiskInfo, error) {
+	diskInfo := make([]DiskInfo, 0)
+
+	pods, err := client.CoreV1().Pods("kube-system").List(metav1.ListOptions{
+		LabelSelector: "app=csi-cloudscale-node, role=csi-cloudscale",
+	})
+	if err != nil {
+		t.Errorf("unable to list pods in namespace kube-system: %v", err)
+		return diskInfo, err
+	}
+	var csiPluginPod *v1.Pod
+	for _, pod := range pods.Items {
+		tmpPod := pod
+		if tmpPod.Spec.NodeName == nodeName {
+			csiPluginPod = &tmpPod
+			break
+		}
+	}
+	if csiPluginPod == nil {
+		t.Errorf("unable to find csi-cloudscale-node pod on node %v", nodeName)
+		return diskInfo, errors.New("unable to find csi-cloudscale-node pod on node " + nodeName)
+	}
+
+	output, err := ExecCommand(csiPluginPod.Namespace, csiPluginPod.Name, "/bin/csi-diskinfo.sh")
+	if err != nil {
+		return diskInfo, err
+	}
+	err = json.Unmarshal([]byte(output), &diskInfo)
+	return diskInfo, err
+}
+
+// taken from https://github.com/zalando-incubator/postgres-operator/blob/master/pkg/cluster/exec.go
+// and adapted to work for this scenario
+// ExecCommand executes arbitrary command inside the pod
+func ExecCommand(podNamespace string, podName string, command ...string) (string, error) {
+	log.Printf("executing command %q", strings.Join(command, " "))
+
+	var (
+		execOut bytes.Buffer
+		execErr bytes.Buffer
+	)
+
+	pod, err := client.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("could not get pod info: %v", err)
+	}
+
+	// iterate through all containers looking for the one running the csi plugin
+	targetContainer := -1
+	for i, cr := range pod.Spec.Containers {
+		if cr.Name == "csi-cloudscale-plugin" {
+			targetContainer = i
+			break
+		}
+	}
+
+	if targetContainer < 0 {
+		return "", fmt.Errorf("could not find %s container to exec to", "csi-cloudscale-plugin")
+	}
+
+	req := client.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(podNamespace).
+		SubResource("exec").
+		Param("container", pod.Spec.Containers[targetContainer].Name).
+		Param("command", strings.Join(command, " ")).
+		Param("stdin", "false").
+		Param("stdout", "true").
+		Param("stderr", "true").
+		Param("tty", "false")
+
+	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	if err != nil {
+		return "", fmt.Errorf("failed to init executor: %v", err)
+	}
+
+	err = exec.Stream(remotecommand.StreamOptions{
+		Stdout: &execOut,
+		Stderr: &execErr,
+		Tty:    false,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("could not execute: %v", err)
+	}
+
+	if execErr.Len() > 0 {
+		return "", fmt.Errorf("stderr: %v", execErr.String())
+	}
+
+	return execOut.String(), nil
 }

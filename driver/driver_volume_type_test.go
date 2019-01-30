@@ -97,6 +97,48 @@ func TestCreateVolumeInvalidType(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestLuksEncryptionAttributeIsSetInContext(t *testing.T) {
+	driver, server := createDriverForTest(t)
+	defer server.Close()
+
+	// explicitly set luks encryption to false
+	volumeName := randString(32)
+	response, err := driver.CreateVolume(
+		context.Background(),
+		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", false),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, "false", response.Volume.VolumeContext[LuksEncryptedAttribute])
+
+	// explicitly set luks encryption to true
+	volumeName = randString(32)
+	response, err = driver.CreateVolume(
+		context.Background(),
+		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", true),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, "true", response.Volume.VolumeContext[LuksEncryptedAttribute])
+
+	// don't set the luks encryption parameter - must implicitly default to false
+	volumeName = randString(32)
+	response, err = driver.CreateVolume(
+		context.Background(),
+		makeCreateVolumeRequest(volumeName, 100, "bulk"),
+	)
+	assert.NoError(t, err)
+	assert.Equal(t, "false", response.Volume.VolumeContext[LuksEncryptedAttribute])
+}
+
+func makeLuksCreateVolumeRequest(volumeName string, sizeGb int, volumeType string, luksEncryptionEnabled bool) *csi.CreateVolumeRequest {
+	request := makeCreateVolumeRequest(volumeName, sizeGb, volumeType)
+	if luksEncryptionEnabled {
+		request.Parameters[LuksEncryptedAttribute] = "true"
+	} else {
+		request.Parameters[LuksEncryptedAttribute] = "false"
+	}
+	return request
+}
+
 func makeCreateVolumeRequest(volumeName string, sizeGb int, volumeType string) *csi.CreateVolumeRequest {
 	return &csi.CreateVolumeRequest{
 		Name: volumeName,
