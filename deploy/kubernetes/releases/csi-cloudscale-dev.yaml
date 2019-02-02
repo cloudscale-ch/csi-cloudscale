@@ -107,8 +107,8 @@ parameters:
   csi.cloudscale.ch/luks-encrypted: "true"
   csi.cloudscale.ch/luks-cipher: "aes-xts-plain64"
   csi.cloudscale.ch/luks-key-size: "512"
-  csiNodeStageSecretNamespace: ${pvc.namespace}
-  csiNodeStageSecretName: ${pvc.name}-luks-key
+  csi.storage.k8s.io/node-stage-secret-namespace: ${pvc.namespace}
+  csi.storage.k8s.io/node-stage-secret-name: ${pvc.name}-luks-key
 
 ---
 
@@ -123,8 +123,8 @@ parameters:
   csi.cloudscale.ch/luks-encrypted: "true"
   csi.cloudscale.ch/luks-cipher: "aes-xts-plain64"
   csi.cloudscale.ch/luks-key-size: "512"
-  csiNodeStageSecretNamespace: ${pvc.namespace}
-  csiNodeStageSecretName: ${pvc.name}-luks-key
+  csi.storage.k8s.io/node-stage-secret-namespace: ${pvc.namespace}
+  csi.storage.k8s.io/node-stage-secret-name: ${pvc.name}-luks-key
 
 ---
 
