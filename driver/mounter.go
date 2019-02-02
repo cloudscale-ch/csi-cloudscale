@@ -46,10 +46,10 @@ type Mounter interface {
 	Format(source, fsType string, luksContext LuksContext) error
 
 	// Mount mounts source to target with the given fstype and options.
-	Mount(source, target, fsType string, isBind bool, luksContext LuksContext, options ...string) error
+	Mount(source, target, fsType string, luksContext LuksContext, options ...string) error
 
 	// Unmount unmounts the given target
-	Unmount(target string, isStaging bool) error
+	Unmount(target string, luksContext LuksContext) error
 
 	// IsFormatted checks whether the source device is formatted or not. It
 	// returns true if the source device is already formatted.
@@ -131,7 +131,7 @@ func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
 	}
 }
 
-func (m *mounter) Mount(source, target, fsType string, isBind bool, luksContext LuksContext, opts ...string) error {
+func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, opts ...string) error {
 	mountCmd := "mount"
 	mountArgs := []string{}
 
@@ -153,7 +153,7 @@ func (m *mounter) Mount(source, target, fsType string, isBind bool, luksContext 
 		mountArgs = append(mountArgs, "-o", strings.Join(opts, ","))
 	}
 
-	if !isBind && luksContext.EncryptionEnabled {
+	if luksContext.EncryptionEnabled && luksContext.VolumeLifecycle == VolumeLifecycleNodeStageVolume {
 		luksSource, err := luksPrepareMount(source, luksContext, m.log)
 		if err != nil {
 			m.log.WithFields(logrus.Fields{
@@ -189,7 +189,7 @@ func (m *mounter) Mount(source, target, fsType string, isBind bool, luksContext 
 	return nil
 }
 
-func (m *mounter) Unmount(target string, isStaging bool) error {
+func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 	if target == "" {
 		return errors.New("target is not specified for unmounting the volume")
 	}
@@ -219,8 +219,8 @@ func (m *mounter) Unmount(target string, isStaging bool) error {
 			err, umountCmd, target, string(out))
 	}
 
-	// if this us the unstaging process, check if the source is a luks volume and close it
-	if isStaging {
+	// if this is the unstaging process, check if the source is a luks volume and close it
+	if luksContext.VolumeLifecycle == VolumeLifecycleNodeUnstageVolume {
 		for _, source := range mountSources {
 			isLuksMapping, mappingName, err := isLuksMapping(source)
 			if err != nil {

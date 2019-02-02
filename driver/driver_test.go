@@ -226,11 +226,11 @@ func (f *fakeMounter) Format(source string, fsType string, luksContext LuksConte
 	return nil
 }
 
-func (f *fakeMounter) Mount(source string, target string, fsType string, isBind bool, luksContext LuksContext, options ...string) error {
+func (f *fakeMounter) Mount(source string, target string, fsType string, luksContext LuksContext, options ...string) error {
 	return nil
 }
 
-func (f *fakeMounter) Unmount(target string, isStaging bool) error {
+func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
 	return nil
 }
 
