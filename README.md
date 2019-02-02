@@ -21,8 +21,9 @@ For LUKS encryption:
 * `csi.cloudscale.ch/luks-key-size`: key-size to use; we suggest `512` for `aes-xts-plain64`
 
 For LUKS encrypted volumes, a secret that contains the LUKS key needs to be referenced through
-the `csiNodeStageSecretName` and `csiNodeStageSecretNamespace` parameter. See the included 
-`StorageClass` definitions and the `examples/kubernetes/luks-encrypted-volumes` folder for examples.
+the `csi.storage.k8s.io/node-stage-secret-name` and `csi.storage.k8s.io/node-stage-secret-namespace` 
+parameter. See the included `StorageClass` definitions and the `examples/kubernetes/luks-encrypted-volumes`
+folder for examples.
 
 ## Pre-defined storage classes
 
