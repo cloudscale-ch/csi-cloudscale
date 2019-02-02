@@ -44,12 +44,22 @@ const (
 	LuksKeyAttribute = "luksKey"
 )
 
+type VolumeLifecycle string
+
+const (
+	VolumeLifecycleNodeStageVolume VolumeLifecycle = "NodeStageVolume"
+	VolumeLifecycleNodePublishVolume VolumeLifecycle = "NodePublishVolume"
+	VolumeLifecycleNodeUnstageVolume VolumeLifecycle = "NodeUnstageVolume"
+	VolumeLifecycleNodeUnpublishVolume VolumeLifecycle = "NodeUnpublishVolume"
+)
+
 type LuksContext struct {
 	EncryptionEnabled bool
 	EncryptionKey     string
 	EncryptionCipher  string
 	EncryptionKeySize string
 	VolumeName		  string
+	VolumeLifecycle   VolumeLifecycle
 }
 
 func (ctx *LuksContext) validate() error {
@@ -84,13 +94,12 @@ func (ctx *LuksContext) validate() error {
 	return errors.New(errorMsg)
 }
 
-var NoLuksEncryption = LuksContext{
-	EncryptionEnabled: false,
-}
-
-func getLuksContext(secrets map[string]string, context map[string]string) LuksContext {
+func getLuksContext(secrets map[string]string, context map[string]string, lifecycle VolumeLifecycle) LuksContext {
 	if context[LuksEncryptedAttribute] != "true" {
-		return NoLuksEncryption
+		return LuksContext{
+			EncryptionEnabled:	false,
+			VolumeLifecycle:	lifecycle,
+		}
 	}
 
 	luksKey := secrets[LuksKeyAttribute]
@@ -104,6 +113,7 @@ func getLuksContext(secrets map[string]string, context map[string]string) LuksCo
 		EncryptionCipher: 	luksCipher,
 		EncryptionKeySize: 	luksKeySize,
 		VolumeName: 		volumeName,
+		VolumeLifecycle:	lifecycle,
 	}
 }
 

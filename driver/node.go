@@ -82,7 +82,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "Could not find the volume by name")
 	}
 
-	luksContext := getLuksContext(req.Secrets, publishContext)
+	luksContext := getLuksContext(req.Secrets, publishContext, VolumeLifecycleNodeStageVolume)
 
 	target := req.StagingTargetPath
 
@@ -129,7 +129,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 
 	if !mounted {
-		if err := d.mounter.Mount(source, target, fsType, false, luksContext, options...); err != nil {
+		if err := d.mounter.Mount(source, target, fsType, luksContext, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -150,6 +150,8 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Staging Target Path must be provided")
 	}
 
+	luksContext := LuksContext{VolumeLifecycle: VolumeLifecycleNodeUnstageVolume}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
 		"staging_target_path": req.StagingTargetPath,
@@ -164,7 +166,7 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 
 	if mounted {
 		ll.Info("unmounting the staging target path")
-		err := d.mounter.Unmount(req.StagingTargetPath, true)
+		err := d.mounter.Unmount(req.StagingTargetPath, luksContext)
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +202,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 		return nil, status.Error(codes.InvalidArgument, "PublishContext must be provided")
 	}
 
-	luksContext := getLuksContext(req.Secrets, publishContext)
+	luksContext := getLuksContext(req.Secrets, publishContext, VolumeLifecycleNodePublishVolume)
 
 	source := req.StagingTargetPath
 	target := req.TargetPath
@@ -237,7 +239,7 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 
 	if !mounted {
 		ll.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target, fsType, true, luksContext, options...); err != nil {
+		if err := d.mounter.Mount(source, target, fsType, luksContext, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -258,6 +260,8 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume Target Path must be provided")
 	}
 
+	luksContext := LuksContext{VolumeLifecycle: VolumeLifecycleNodeUnpublishVolume}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":   req.VolumeId,
 		"target_path": req.TargetPath,
@@ -272,7 +276,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 
 	if mounted {
 		ll.Info("unmounting the target path")
-		err := d.mounter.Unmount(req.TargetPath, false)
+		err := d.mounter.Unmount(req.TargetPath, luksContext)
 		if err != nil {
 			return nil, err
 		}
