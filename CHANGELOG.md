@@ -1,5 +1,7 @@
 ## unreleased
 
+## v1.0.0 - 2019.02.05
+
 * Add support for luks-encrypted volumes
 
 * Add support for `bulk` volumes

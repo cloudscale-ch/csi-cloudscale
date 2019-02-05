@@ -11,7 +11,7 @@ LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} 
 PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 
 ## Bump the version in the version file. Set BUMP to [ patch | major | minor ]
-BUMP := patch
+BUMP ?= patch
 VERSION ?= $(shell cat VERSION)
 
 all: test
@@ -30,7 +30,6 @@ bump-version:
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
 	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md 
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
-	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml-e
 
 .PHONY: compile
 compile:
