@@ -63,6 +63,7 @@
     cloudscale_api_token: "{{ lookup('env','CLOUDSCALE_TOKEN') }}"
     secret_file: 'secret.yml'
     config_file: 'csi-config.yml'
+    version: "{{ lookup('env', 'version')|default('dev', true) }}"
   tags: [install-csi]
   tasks:
     - name: Create secrets in cluster
@@ -86,7 +87,7 @@
 
     - name: Copy default cloudscale-csi config to kubernetes
       copy:
-        src: kubernetes/releases/csi-cloudscale-dev.yaml
+        src: "kubernetes/releases/csi-cloudscale-{{ version }}.yaml"
         dest: "{{ config_file }}"
 
     - name: Apply default cloudscale-csi config to kubernetes

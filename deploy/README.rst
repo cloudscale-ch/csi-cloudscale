@@ -18,6 +18,8 @@ After this you run::
 to install kubernetes on cloudscale.ch and run the integration tests. The
 playbook will also clean up VMs after the test.
 
+If you want to test a fresh release, you can use an additional ``-e version=v1.0.0``.
+
 Debugging
 ---------
 
