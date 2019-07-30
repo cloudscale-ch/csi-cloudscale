@@ -64,25 +64,6 @@ production ready.
 * If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
   `device mapper` infrastructure with the `crypt target` and the appropriate cryptographic APIs
 
-### [Rancher](https://rancher.com/) users:
-
-`Mount Propagation` is [disabled by
-default](https://github.com/rancher/rke/issues/765) on latest `v2.0.6` version
-of Rancher, which prevents the `csi-cloudscale` to function correctly. To fix
-the issue temporary, make sure to add the following settings to your cluster
-configuration YAML file:
-
-```
-services:
-  kube-api:
-    extra_args:
-      feature-gates: MountPropagation=true
-
-  kubelet:
-    extra_args:
-      feature-gates: MountPropagation=true
-```
-
 
 #### 1. Create a secret with your cloudscale.ch API Access Token:
 
@@ -125,8 +106,6 @@ For example, to use the latest stable version (`v1.0.0`) you can execute the fol
 ```
 $ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.0.0.yaml
 ```
-
-This file will be always updated to point to the latest stable release.
 
 There are also `dev` images available:
 
