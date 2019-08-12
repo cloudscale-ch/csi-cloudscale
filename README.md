@@ -5,6 +5,8 @@ The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
 should also work on other Container Orchestrators, such as Mesos or
 Cloud Foundry. Feel free to test it on other COs and give us a feedback.
 
+**Note:** If you're using CSI with Ubuntu (typical for **Rancher**), it might sometimes not work, because of [this issue](https://bugs.launchpad.net/ubuntu/+source/udev/+bug/1838992).
+
 ## Volume parameters
 
 This plugin supports the following volume parameters (in case of kubernetes: parameters on the 
