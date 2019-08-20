@@ -71,7 +71,7 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing cloudscale.ch Volumes
-func NewDriver(ep, token, url string) (*Driver, error) {
+func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: token,
 	})
@@ -89,9 +89,11 @@ func NewDriver(ep, token, url string) (*Driver, error) {
 	serverId := metadata.Meta.CloudscaleUUID
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
+	baseURL, err := url.Parse(urlstr)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't initialize cloudscale.ch client: %s", err)
+		return nil, fmt.Errorf("couldn't parse url: %s", err)
 	}
+	cloudscaleClient.BaseURL = baseURL
 
 	log := logrus.New().WithFields(logrus.Fields{
 		"region":  region,
