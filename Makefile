@@ -35,7 +35,6 @@ compile:
 	@echo "==> Building the project"
 	@env CGO_ENABLED=0 GOOS=${OS} GOARCH=amd64 go build -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}
 
-
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
@@ -43,10 +42,8 @@ test:
 
 .PHONY: test-integration
 test-integration:
-
 	@echo "==> Started integration tests"
-	@env go test -v -tags integration -timeout 20m ./test/...
-
+	@env go test -count 1 -v -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
