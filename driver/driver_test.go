@@ -55,8 +55,10 @@ func TestDriverSuite(t *testing.T) {
 		serverId:         serverId,
 		region:           DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
-		mounter:          &fakeMounter{},
-		log:              logrus.New().WithField("test_enabed", true),
+		mounter: &fakeMounter{
+			mounted: map[string]string{},
+		},
+		log: logrus.New().WithField("test_enabed", true),
 	}
 	defer driver.Stop()
 
@@ -92,17 +94,21 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 	return fakeClient
 }
 
-type fakeMounter struct{}
+type fakeMounter struct {
+	mounted map[string]string
+}
 
 func (f *fakeMounter) Format(source string, fsType string, luksContext LuksContext) error {
 	return nil
 }
 
 func (f *fakeMounter) Mount(source string, target string, fsType string, luksContext LuksContext, options ...string) error {
+	f.mounted[target] = source
 	return nil
 }
 
 func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
+	delete(f.mounted, target)
 	return nil
 }
 
@@ -110,7 +116,20 @@ func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool,
 	return true, nil
 }
 func (f *fakeMounter) IsMounted(target string) (bool, error) {
-	return true, nil
+	_, ok := f.mounted[target]
+	return ok, nil
+}
+
+func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error) {
+	return volumeStatistics{
+		availableBytes: 3 * GB,
+		totalBytes:     10 * GB,
+		usedBytes:      7 * GB,
+
+		availableInodes: 3000,
+		totalInodes:     10000,
+		usedInodes:      7000,
+	}, nil
 }
 func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
 	path := "SomePath"
