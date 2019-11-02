@@ -53,9 +53,11 @@ build: compile
 
 .PHONY: push
 push:
-ifneq ($(BRANCH),master)
-  ifneq ($(VERSION),dev)
-	$(error "Only the `dev` tag can be published from non-master branches")
+ifeq ($(DOCKER_REPO),cloudscalech/cloudscale-csi-plugin)
+  ifneq ($(BRANCH),master)
+    ifneq ($(VERSION),dev)
+	  $(error "Only the `dev` tag can be published from non-master branches")
+    endif
   endif
 endif
 	@echo "==> Publishing $(DOCKER_REPO):$(VERSION)"
