@@ -31,6 +31,8 @@ import (
 	"os"
 	"os/exec"
 	"io/ioutil"
+	"errors"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -65,18 +67,18 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	// Apparently sometimes we need to call udevadm trigger to get the volume
-	// properly registered in /dev/disk. More information can be found here:
-	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	probeAttachedVolume(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}))
 	// Get the first part of the UUID.
 	// The linux kernel limits volume serials to 20 bytes:
 	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
 	linuxSerial := req.VolumeId[:20]
-	source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
-	if _, err := os.Stat(source); os.IsNotExist(err) {
-		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+	// Apparently sometimes we need to call udevadm trigger to get the volume
+	// properly registered in /dev/disk. More information can be found here:
+	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
+	sourcePtr, err := findPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
+	if err != nil {
+		return nil, err
 	}
+	source := *sourcePtr
 
 	publishContext := req.GetPublishContext()
 	if publishContext == nil {
@@ -362,6 +364,38 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+func findPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
+	numTries := 0
+	for {
+		probeAttachedVolume(logger)
+
+		source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
+		_, err := os.Stat(source);
+		if err == nil {
+			return &source, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+		_, err = os.Stat(source);
+		if err == nil {
+			return &source, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		numTries++
+		if numTries == 10 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	return nil, errors.New("Could not attach disk: Timeout after 60s")
+}
 
 func probeAttachedVolume(logger *logrus.Entry) error {
 	// rescan scsi bus
