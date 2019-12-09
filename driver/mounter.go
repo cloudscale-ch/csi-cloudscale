@@ -21,11 +21,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	diskIDPath   = "/dev/disk/by-id"
 )
 
 type findmntResponse struct {
@@ -59,6 +66,10 @@ type Mounter interface {
 	// propagated). It returns true if it's mounted. An error is returned in
 	// case of system errors or if it's mounted incorrectly.
 	IsMounted(target string) (bool, error)
+
+	// Used to find a path in /dev/disk/by-id with a serial that we have from
+	// the cloudscale API.
+	FindPath(logger *logrus.Entry, linuxSerial string) (*string, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -362,4 +373,91 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 	}
 
 	return targetFound, nil
+}
+
+// Copyright note for the functions below. Originally taken from
+// https://github.com/kubernetes/cloud-provider-openstack/blob/v1.16.0/pkg/volume/cinder/cinder_util.go
+// Sleightly modified.
+/*
+Copyright 2015 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+func (m *mounter) FindPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
+	numTries := 0
+	for {
+		probeAttachedVolume(logger)
+
+		source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
+		_, err := os.Stat(source);
+		if err == nil {
+			return &source, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+		_, err = os.Stat(source);
+		if err == nil {
+			return &source, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+
+		numTries++
+		if numTries == 10 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	return nil, errors.New("Could not attach disk: Timeout after 10s")
+}
+
+func probeAttachedVolume(logger *logrus.Entry) error {
+	// rescan scsi bus
+	scsiHostRescan()
+
+	// udevadm settle waits for udevd to process the device creation
+	// events for all hardware devices, thus ensuring that any device
+	// nodes have been created successfully before proceeding.
+	argsSettle := []string{"settle"}
+	cmdSettle := exec.Command("udevadm", argsSettle...)
+	_, errSettle := cmdSettle.CombinedOutput()
+	if errSettle != nil {
+		logger.Errorf("error running udevadm settle %v\n", errSettle)
+	}
+
+	args := []string{"trigger"}
+	cmd := exec.Command("udevadm", args...)
+	_, err := cmd.CombinedOutput()
+	if err != nil {
+		logger.Errorf("error running udevadm trigger %v\n", err)
+		return err
+	}
+	logger.Infof("Successfully probed all attachments")
+	return nil
+}
+
+func scsiHostRescan() {
+	scsiPath := "/sys/class/scsi_host/"
+	if dirs, err := ioutil.ReadDir(scsiPath); err == nil {
+		for _, f := range dirs {
+			name := scsiPath + f.Name() + "/scan"
+			data := []byte("- - -")
+			ioutil.WriteFile(name, data, 0666)
+		}
+	}
 }

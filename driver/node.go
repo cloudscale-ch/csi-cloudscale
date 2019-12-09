@@ -27,12 +27,6 @@ package driver
 
 import (
 	"context"
-	"path/filepath"
-	"os"
-	"os/exec"
-	"io/ioutil"
-	"errors"
-	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -41,8 +35,6 @@ import (
 )
 
 const (
-	diskIDPath   = "/dev/disk/by-id"
-
 	// TODO we're not sure yet what our limit is, so just use this for now.
 	// It's the limit for Google Compute Engine and I don't see what limits
 	// this more in OpenStack, except per User Quotas.
@@ -74,7 +66,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// Apparently sometimes we need to call udevadm trigger to get the volume
 	// properly registered in /dev/disk. More information can be found here:
 	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	sourcePtr, err := findPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
+	sourcePtr, err := d.mounter.FindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
 	if err != nil {
 		return nil, err
 	}
@@ -344,91 +336,4 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 		Info("node get volume stats called")
 
 	return nil, status.Error(codes.Unimplemented, "")
-}
-
-// Copyright note for the functions below. Originally taken from
-// https://github.com/kubernetes/cloud-provider-openstack/blob/v1.16.0/pkg/volume/cinder/cinder_util.go
-// Sleightly modified.
-/*
-Copyright 2015 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
-func findPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
-	numTries := 0
-	for {
-		probeAttachedVolume(logger)
-
-		source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
-		_, err := os.Stat(source);
-		if err == nil {
-			return &source, nil
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
-		_, err = os.Stat(source);
-		if err == nil {
-			return &source, nil
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		numTries++
-		if numTries == 10 {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-	return nil, errors.New("Could not attach disk: Timeout after 60s")
-}
-
-func probeAttachedVolume(logger *logrus.Entry) error {
-	// rescan scsi bus
-	scsiHostRescan()
-
-	// udevadm settle waits for udevd to process the device creation
-	// events for all hardware devices, thus ensuring that any device
-	// nodes have been created successfully before proceeding.
-	argsSettle := []string{"settle"}
-	cmdSettle := exec.Command("udevadm", argsSettle...)
-	_, errSettle := cmdSettle.CombinedOutput()
-	if errSettle != nil {
-		logger.Errorf("error running udevadm settle %v\n", errSettle)
-	}
-
-	args := []string{"trigger"}
-	cmd := exec.Command("udevadm", args...)
-	_, err := cmd.CombinedOutput()
-	if err != nil {
-		logger.Errorf("error running udevadm trigger %v\n", err)
-		return err
-	}
-	logger.Infof("Successfully probed all attachments")
-	return nil
-}
-
-func scsiHostRescan() {
-	scsiPath := "/sys/class/scsi_host/"
-	if dirs, err := ioutil.ReadDir(scsiPath); err == nil {
-		for _, f := range dirs {
-			name := scsiPath + f.Name() + "/scan"
-			data := []byte("- - -")
-			ioutil.WriteFile(name, data, 0666)
-		}
-	}
 }
