@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	diskIDPath   = "/dev/disk/by-id"
+	diskIDPath = "/dev/disk/by-id"
 )
 
 type findmntResponse struct {
@@ -40,7 +40,7 @@ type findmntResponse struct {
 }
 
 type fileSystem struct {
-	Source		string `json:"source"`
+	Source      string `json:"source"`
 	Target      string `json:"target"`
 	Propagation string `json:"propagation"`
 	FsType      string `json:"fstype"`
@@ -400,7 +400,7 @@ func (m *mounter) FindPath(logger *logrus.Entry, linuxSerial string) (*string, e
 		probeAttachedVolume(logger)
 
 		source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
-		_, err := os.Stat(source);
+		_, err := os.Stat(source)
 		if err == nil {
 			return &source, nil
 		}
@@ -409,7 +409,7 @@ func (m *mounter) FindPath(logger *logrus.Entry, linuxSerial string) (*string, e
 		}
 
 		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
-		_, err = os.Stat(source);
+		_, err = os.Stat(source)
 		if err == nil {
 			return &source, nil
 		}

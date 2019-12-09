@@ -104,7 +104,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"fsType":              fsType,
 		"mount_options":       options,
 		"method":              "node_stage_volume",
-		"luks_encrypted":	   luksContext.EncryptionEnabled,
+		"luks_encrypted":      luksContext.EncryptionEnabled,
 	})
 
 	formatted, err := d.mounter.IsFormatted(source, luksContext)
@@ -223,13 +223,13 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":		req.VolumeId,
-		"source":			source,
-		"target":			target,
-		"fsType":			fsType,
-		"mount_options":	options,
-		"method":			"node_publish_volume",
-		"luks_encrypted":	luksContext.EncryptionEnabled,
+		"volume_id":      req.VolumeId,
+		"source":         source,
+		"target":         target,
+		"fsType":         fsType,
+		"mount_options":  options,
+		"method":         "node_publish_volume",
+		"luks_encrypted": luksContext.EncryptionEnabled,
 	})
 
 	mounted, err := d.mounter.IsMounted(target)

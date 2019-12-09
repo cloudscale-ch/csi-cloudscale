@@ -47,9 +47,9 @@ const (
 type VolumeLifecycle string
 
 const (
-	VolumeLifecycleNodeStageVolume VolumeLifecycle = "NodeStageVolume"
-	VolumeLifecycleNodePublishVolume VolumeLifecycle = "NodePublishVolume"
-	VolumeLifecycleNodeUnstageVolume VolumeLifecycle = "NodeUnstageVolume"
+	VolumeLifecycleNodeStageVolume     VolumeLifecycle = "NodeStageVolume"
+	VolumeLifecycleNodePublishVolume   VolumeLifecycle = "NodePublishVolume"
+	VolumeLifecycleNodeUnstageVolume   VolumeLifecycle = "NodeUnstageVolume"
 	VolumeLifecycleNodeUnpublishVolume VolumeLifecycle = "NodeUnpublishVolume"
 )
 
@@ -58,7 +58,7 @@ type LuksContext struct {
 	EncryptionKey     string
 	EncryptionCipher  string
 	EncryptionKeySize string
-	VolumeName		  string
+	VolumeName        string
 	VolumeLifecycle   VolumeLifecycle
 }
 
@@ -97,8 +97,8 @@ func (ctx *LuksContext) validate() error {
 func getLuksContext(secrets map[string]string, context map[string]string, lifecycle VolumeLifecycle) LuksContext {
 	if context[LuksEncryptedAttribute] != "true" {
 		return LuksContext{
-			EncryptionEnabled:	false,
-			VolumeLifecycle:	lifecycle,
+			EncryptionEnabled: false,
+			VolumeLifecycle:   lifecycle,
 		}
 	}
 
@@ -108,12 +108,12 @@ func getLuksContext(secrets map[string]string, context map[string]string, lifecy
 	volumeName := context[PublishInfoVolumeName]
 
 	return LuksContext{
-		EncryptionEnabled: 	true,
-		EncryptionKey: 		luksKey,
-		EncryptionCipher: 	luksCipher,
-		EncryptionKeySize: 	luksKeySize,
-		VolumeName: 		volumeName,
-		VolumeLifecycle:	lifecycle,
+		EncryptionEnabled: true,
+		EncryptionKey:     luksKey,
+		EncryptionCipher:  luksCipher,
+		EncryptionKeySize: luksKeySize,
+		VolumeName:        volumeName,
+		VolumeLifecycle:   lifecycle,
 	}
 }
 
@@ -378,7 +378,7 @@ func writeLuksKey(key string, log *logrus.Entry) (string, error) {
 
 // makes sure that the given directory is a tmpfs
 func checkTmpFs(dir string) bool {
-	out, err := exec.Command("sh", "-c", "df -T " + dir + " | tail -n1 | awk '{print $2}'").CombinedOutput()
+	out, err := exec.Command("sh", "-c", "df -T "+dir+" | tail -n1 | awk '{print $2}'").CombinedOutput()
 	if err != nil {
 		return false
 	}
