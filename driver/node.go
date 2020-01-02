@@ -27,9 +27,7 @@ package driver
 
 import (
 	"context"
-	"os"
-	"strconv"
-
+	"fmt"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -37,14 +35,23 @@ import (
 	"k8s.io/kubernetes/pkg/util/resizefs"
 	"k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const (
+	diskDOPrefix = "scsi-0DO_Volume_"
+
 	// Current technical limit is 128
 	//   - 1 for root
 	//   - 1 for /var/lib/docker
 	//   - 1 additional volume outside of CSI
 	defaultMaxVolumesPerNode = 125
+
+	volumeModeBlock      = "block"
+	volumeModeFilesystem = "filesystem"
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is
@@ -86,6 +93,13 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	luksContext := getLuksContext(req.Secrets, publishContext, VolumeLifecycleNodeStageVolume)
 
+	// If it is a block volume, we do nothing for stage volume
+	// because we bind mount the absolute device path to a file
+	switch req.VolumeCapability.GetAccessType().(type) {
+	case *csi.VolumeCapability_Block:
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+
 	target := req.StagingTargetPath
 
 	mnt := req.VolumeCapability.GetMount()
@@ -98,12 +112,13 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id":           req.VolumeId,
+		"volume_mode":         volumeModeFilesystem,
 		"volume_name":         volumeName,
 		"volume_context":      req.VolumeContext,
 		"publish_context":     req.PublishContext,
 		"staging_target_path": req.StagingTargetPath,
 		"source":              source,
-		"fsType":              fsType,
+		"fs_type":             fsType,
 		"mount_options":       options,
 		"method":              "node_stage_volume",
 		"luks_encrypted":      luksContext.EncryptionEnabled,
@@ -203,52 +218,36 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	if publishContext == nil {
 		return nil, status.Error(codes.InvalidArgument, "PublishContext must be provided")
 	}
-
 	luksContext := getLuksContext(req.Secrets, publishContext, VolumeLifecycleNodePublishVolume)
 
-	source := req.StagingTargetPath
-	target := req.TargetPath
+	ll := d.log.WithFields(logrus.Fields{
+		"volume_id":           req.VolumeId,
+		"staging_target_path": req.StagingTargetPath,
+		"target_path":         req.TargetPath,
+		"method":              "node_publish_volume",
+		"luks_encrypted":      luksContext.EncryptionEnabled,
+	})
 
-	mnt := req.VolumeCapability.GetMount()
-	options := mnt.MountFlags
-
-	// TODO(arslan): do we need bind here? check it out
-	// Perform a bind mount to the full path to allow duplicate mounts of the same PD.
-	options = append(options, "bind")
+	options := []string{"bind"}
 	if req.Readonly {
 		options = append(options, "ro")
 	}
 
-	fsType := "ext4"
-	if mnt.FsType != "" {
-		fsType = mnt.FsType
+	var err error
+	switch req.GetVolumeCapability().GetAccessType().(type) {
+	case *csi.VolumeCapability_Block:
+		err = d.nodePublishVolumeForBlock(req, luksContext, options, ll)
+	case *csi.VolumeCapability_Mount:
+		err = d.nodePublishVolumeForFileSystem(req, luksContext, options, ll)
+	default:
+		return nil, status.Error(codes.InvalidArgument, "Unknown access type")
 	}
 
-	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":      req.VolumeId,
-		"source":         source,
-		"target":         target,
-		"fsType":         fsType,
-		"mount_options":  options,
-		"method":         "node_publish_volume",
-		"luks_encrypted": luksContext.EncryptionEnabled,
-	})
-
-	mounted, err := d.mounter.IsMounted(target)
 	if err != nil {
 		return nil, err
 	}
 
-	if !mounted {
-		ll.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target, fsType, luksContext, options...); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-	} else {
-		ll.Info("volume is already mounted")
-	}
-
-	ll.Info("bind mounting the volume is finished")
+	logrus.Info("bind mounting the volume is finished")
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
@@ -380,12 +379,35 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 		return nil, status.Errorf(codes.NotFound, "volume path %q is not mounted", volumePath)
 	}
 
+	isBlock, err := d.mounter.IsBlockDevice(volumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to determine if %q is block device: %s", volumePath, err)
+	}
+
 	stats, err := d.mounter.GetStatistics(volumePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to retrieve capacity statistics for volume path %q: %s", volumePath, err)
 	}
 
+	// only can retrieve total capacity for a block device
+	if isBlock {
+		ll.WithFields(logrus.Fields{
+			"volume_mode": volumeModeBlock,
+			"bytes_total": stats.totalBytes,
+		}).Info("node capacity statistics retrieved")
+
+		return &csi.NodeGetVolumeStatsResponse{
+			Usage: []*csi.VolumeUsage{
+				{
+					Unit:  csi.VolumeUsage_BYTES,
+					Total: stats.totalBytes,
+				},
+			},
+		}, nil
+	}
+
 	ll.WithFields(logrus.Fields{
+		"volume_mode":      volumeModeFilesystem,
 		"bytes_available":  stats.availableBytes,
 		"bytes_total":      stats.totalBytes,
 		"bytes_used":       stats.usedBytes,
@@ -430,7 +452,13 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	})
 	log.Info("node expand volume called")
 
-	// return here once we support block volumes and the current volume is a block volume
+	if req.GetVolumeCapability() != nil {
+		switch req.GetVolumeCapability().GetAccessType().(type) {
+		case *csi.VolumeCapability_Block:
+			log.Info("filesystem expansion is skipped for block volumes")
+			return &csi.NodeExpandVolumeResponse{}, nil
+		}
+	}
 
 	mounter := mount.New("")
 	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, volumePath)
@@ -469,4 +497,96 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 
 	log.Info("volume was resized")
 	return &csi.NodeExpandVolumeResponse{}, nil
+}
+
+func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, log *logrus.Entry) error {
+	source := req.StagingTargetPath
+	target := req.TargetPath
+
+	mnt := req.VolumeCapability.GetMount()
+	for _, flag := range mnt.MountFlags {
+		mountOptions = append(mountOptions, flag)
+	}
+
+	fsType := "ext4"
+	if mnt.FsType != "" {
+		fsType = mnt.FsType
+	}
+
+	mounted, err := d.mounter.IsMounted(target)
+	if err != nil {
+		return err
+	}
+
+	log = log.WithFields(logrus.Fields{
+		"source_path":   source,
+		"volume_mode":   volumeModeFilesystem,
+		"fs_type":       fsType,
+		"mount_options": mountOptions,
+	})
+
+	if !mounted {
+		log.Info("mounting the volume")
+		if err := d.mounter.Mount(source, target, fsType, luksContext, mountOptions...); err != nil {
+			return status.Error(codes.Internal, err.Error())
+		}
+	} else {
+		log.Info("volume is already mounted")
+	}
+
+	return nil
+}
+
+func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, log *logrus.Entry) error {
+	volumeId := req.VolumeId
+
+	source, err := findAbsoluteDeviceByIDPath(volumeId)
+	if err != nil {
+		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeId, err)
+	}
+
+	target := req.TargetPath
+
+	mounted, err := d.mounter.IsMounted(target)
+	if err != nil {
+		return err
+	}
+
+	log = log.WithFields(logrus.Fields{
+		"source_path":   source,
+		"volume_mode":   volumeModeBlock,
+		"mount_options": mountOptions,
+	})
+
+	if !mounted {
+		log.Info("mounting the volume")
+		if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
+			return status.Errorf(codes.Internal, err.Error())
+		}
+	} else {
+		log.Info("volume is already mounted")
+	}
+
+	return nil
+}
+
+// findAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
+func findAbsoluteDeviceByIDPath(volumeName string) (string, error) {
+	path := guessDiskIDPathByVolumeID(volumeName)
+	if path == nil {
+		return "", fmt.Errorf("could not find device-path for volume: %s", volumeName)
+	}
+
+	// EvalSymlinks returns relative link if the file is not a symlink
+	// so we do not have to check if it is symlink prior to evaluation
+	resolved, err := filepath.EvalSymlinks(*path)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve symlink %q: %v", *path, err)
+	}
+
+	if !strings.HasPrefix(resolved, "/dev") {
+		return "", fmt.Errorf("resolved symlink %q for %q was unexpected", resolved, *path)
+	}
+
+	return resolved, nil
 }

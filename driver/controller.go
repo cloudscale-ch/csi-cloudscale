@@ -30,6 +30,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -58,7 +60,7 @@ const (
 var (
 	// cloudscale.ch currently only support a single node to be attached to a
 	// single node in read/write mode. This corresponds to
-	// `accessModes.ReadWriteOnce` in a PVC resource on Kubernets
+	// `accessModes.ReadWriteOnce` in a PVC resource on Kubernetes
 	supportedAccessMode = &csi.VolumeCapability_AccessMode{
 		Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 	}
@@ -79,7 +81,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
 	}
 
-	if !validateCapabilities(req.VolumeCapabilities) {
+	if violations := validateCapabilities(req.VolumeCapabilities); len(violations) > 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested. Only SINGLE_NODE_WRITER is supported ('accessModes.ReadWriteOnce' on Kubernetes)")
 	}
 
@@ -511,7 +513,14 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	log.Info("volume was resized")
 
 	nodeExpansionRequired := true
-	// set to false once we support block volumes and this is a block volume
+	if req.GetVolumeCapability() != nil {
+		switch req.GetVolumeCapability().GetAccessType().(type) {
+		case *csi.VolumeCapability_Block:
+			log.Info("node expansion is not required for block volumes")
+			nodeExpansionRequired = false
+		}
+	}
+
 	return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: nodeExpansionRequired}, nil
 }
 
@@ -589,32 +598,25 @@ func formatBytes(inputBytes int64) string {
 	return result + unit
 }
 
-// validateCapabilities validates the requested capabilities. It returns false
-// if it doesn't satisfy the currently supported modes of cloudscale.ch Volumes
-func validateCapabilities(caps []*csi.VolumeCapability) bool {
-	vcaps := []*csi.VolumeCapability_AccessMode{supportedAccessMode}
-
-	hasSupport := func(mode csi.VolumeCapability_AccessMode_Mode) bool {
-		for _, m := range vcaps {
-			if mode == m.Mode {
-				return true
-			}
+// validateCapabilities validates the requested capabilities. It returns a list
+// of violations which may be empty if no violatons were found.
+func validateCapabilities(caps []*csi.VolumeCapability) []string {
+	violations := sets.NewString()
+	for _, cap := range caps {
+		if cap.GetAccessMode().GetMode() != supportedAccessMode.GetMode() {
+			violations.Insert(fmt.Sprintf("unsupported access mode %s", cap.GetAccessMode().GetMode().String()))
 		}
-		return false
-	}
 
-	supported := false
-	for _, capability := range caps {
-		if hasSupport(capability.AccessMode.Mode) {
-			supported = true
-		} else {
-			// we need to make sure all capabilities are supported. Revert back
-			// in case we have a cap that is supported, but is invalidated now
-			return false
+		accessType := cap.GetAccessType()
+		switch accessType.(type) {
+		case *csi.VolumeCapability_Block:
+		case *csi.VolumeCapability_Mount:
+		default:
+			violations.Insert("unsupported access type")
 		}
 	}
 
-	return supported
+	return violations.List()
 }
 
 func reraiseNotFound(err error, log *logrus.Entry, operation string) error {

@@ -272,6 +272,10 @@ type FakeServerServiceOperations struct {
 	servers    map[string]*cloudscale.Server
 }
 
+func (f *fakeMounter) IsBlockDevice(volumePath string) (bool, error) {
+	return false, nil
+}
+
 func (f FakeServerServiceOperations) Create(ctx context.Context, createRequest *cloudscale.ServerRequest) (*cloudscale.Server, error) {
 	panic("implement me")
 }

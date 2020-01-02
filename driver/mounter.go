@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -88,6 +89,9 @@ type Mounter interface {
 	// GetStatistics returns capacity-related volume statistics for the given
 	// volume path.
 	GetStatistics(volumePath string) (volumeStatistics, error)
+
+	// IsBlockDevice checks whether the device at the path is a block device
+	IsBlockDevice(volumePath string) (bool, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -164,10 +168,6 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 	mountCmd := "mount"
 	mountArgs := []string{}
 
-	if fsType == "" {
-		return errors.New("fs type is not specified for mounting the volume")
-	}
-
 	if source == "" {
 		return errors.New("source is not specified for mounting the volume")
 	}
@@ -176,7 +176,29 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		return errors.New("target is not specified for mounting the volume")
 	}
 
-	mountArgs = append(mountArgs, "-t", fsType)
+	// This is a raw block device mount. Create the mount point as a file
+	// since bind mount device node requires it to be a file
+	if fsType == "" {
+		// create directory for target, os.Mkdirall is noop if directory exists
+		err := os.MkdirAll(filepath.Dir(target), 0750)
+		if err != nil {
+			return fmt.Errorf("failed to create target directory for raw block bind mount: %v", err)
+		}
+
+		file, err := os.OpenFile(target, os.O_CREATE, 0660)
+		if err != nil {
+			return fmt.Errorf("failed to create target file for raw block bind mount: %v", err)
+		}
+		file.Close()
+	} else {
+		mountArgs = append(mountArgs, "-t", fsType)
+
+		// create target, os.Mkdirall is noop if directory exists
+		err := os.MkdirAll(target, 0750)
+		if err != nil {
+			return err
+		}
+	}
 
 	if len(opts) > 0 {
 		mountArgs = append(mountArgs, "-o", strings.Join(opts, ","))
@@ -197,12 +219,6 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 	}
 
 	mountArgs = append(mountArgs, target)
-
-	// create target, os.Mkdirall is noop if it exists
-	err := os.MkdirAll(target, 0750)
-	if err != nil {
-		return err
-	}
 
 	m.log.WithFields(logrus.Fields{
 		"cmd":  mountCmd,
@@ -489,9 +505,31 @@ func scsiHostRescan() {
 }
 
 func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {
+	isBlock, err := m.IsBlockDevice(volumePath)
+	if err != nil {
+		return volumeStatistics{}, fmt.Errorf("failed to determine if volume %s is block device: %v", volumePath, err)
+	}
+
+	if isBlock {
+		// See http://man7.org/linux/man-pages/man8/blockdev.8.html for details
+		output, err := exec.Command("blockdev", "getsize64", volumePath).CombinedOutput()
+		if err != nil {
+			return volumeStatistics{}, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", volumePath, string(output), err)
+		}
+		strOut := strings.TrimSpace(string(output))
+		gotSizeBytes, err := strconv.ParseInt(strOut, 10, 64)
+		if err != nil {
+			return volumeStatistics{}, fmt.Errorf("failed to parse size %s into int", strOut)
+		}
+
+		return volumeStatistics{
+			totalBytes: gotSizeBytes,
+		}, nil
+	}
+
 	var statfs unix.Statfs_t
 	// See http://man7.org/linux/man-pages/man2/statfs.2.html for details.
-	err := unix.Statfs(volumePath, &statfs)
+	err = unix.Statfs(volumePath, &statfs)
 	if err != nil {
 		return volumeStatistics{}, err
 	}
@@ -507,4 +545,14 @@ func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {
 	}
 
 	return volStats, nil
+}
+
+func (m *mounter) IsBlockDevice(devicePath string) (bool, error) {
+	var stat unix.Stat_t
+	err := unix.Stat(devicePath, &stat)
+	if err != nil {
+		return false, err
+	}
+
+	return (stat.Mode & unix.S_IFMT) == unix.S_IFBLK, nil
 }

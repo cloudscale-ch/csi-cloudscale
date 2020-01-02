@@ -4,6 +4,7 @@
 * Use quay.io instead of Docker Hub.
 * Run unit tests from Github Actions instead of Travis.
 * Ensure go.mod and modules.txt are up to date. Revendor github.com/googleapis.
+* Support raw block volume mode
 
 ## v3.0.0 - 2021.08.31
 
