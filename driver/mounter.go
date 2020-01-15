@@ -447,7 +447,7 @@ func probeAttachedVolume(logger *logrus.Entry) error {
 		logger.Errorf("error running udevadm trigger %v\n", err)
 		return err
 	}
-	logger.Infof("Successfully probed all attachments")
+	logger.Debugf("Successfully probed all attachments")
 	return nil
 }
 
