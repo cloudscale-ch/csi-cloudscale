@@ -27,8 +27,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
 	"google.golang.org/grpc"
@@ -54,13 +54,13 @@ var (
 //
 type Driver struct {
 	endpoint string
-	serverId   string
+	serverId string
 	region   string
 
-	srv      *grpc.Server
+	srv              *grpc.Server
 	cloudscaleClient *cloudscale.Client
-	mounter  Mounter
-	log      *logrus.Entry
+	mounter          Mounter
+	log              *logrus.Entry
 
 	// ready defines whether the driver is ready to function. This value will
 	// be used by the `Identity` service via the `Probe()` method.
@@ -102,12 +102,12 @@ func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	})
 
 	return &Driver{
-		endpoint: ep,
-		serverId:   serverId,
-		region:   region,
+		endpoint:         ep,
+		serverId:         serverId,
+		region:           region,
 		cloudscaleClient: cloudscaleClient,
-		mounter:  newMounter(log),
-		log:      log,
+		mounter:          newMounter(log),
+		log:              log,
 	}, nil
 }
 

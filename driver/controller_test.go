@@ -69,8 +69,7 @@ func TestRequestedBytesSmallerThanMinimumSizeUsesMinimumBulkStorageSize(t *testi
 func calcStorageGbBulk(reqGb int, limitGb int) (int, error) {
 	if reqGb == -1 {
 		if limitGb == -1 {
-			return calculateStorageGB(&csi.CapacityRange{
-			}, "bulk")
+			return calculateStorageGB(&csi.CapacityRange{}, "bulk")
 		} else {
 			return calculateStorageGB(&csi.CapacityRange{
 				LimitBytes: int64(limitGb * GB),

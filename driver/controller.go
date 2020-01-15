@@ -117,7 +117,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		"method":                  "create_volume",
 		"volume_capabilities":     req.VolumeCapabilities,
 		"type":                    storageType,
-		"luks_encrypted":		   luksEncrypted,
+		"luks_encrypted":          luksEncrypted,
 	})
 	ll.Info("create volume called")
 
@@ -167,13 +167,13 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	volumeReq := &cloudscale.Volume{
 		/*
-		TODO: cloudscale.ch will start supporting different regions soon
+			TODO: cloudscale.ch will start supporting different regions soon
 
-		Region: d.region
-		 */
+			Region: d.region
+		*/
 		Name:   volumeName,
 		SizeGB: sizeGB,
-		Type:	storageType,
+		Type:   storageType,
 	}
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
@@ -266,10 +266,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
-			PublishInfoVolumeName: 		volume.Name,
-			LuksEncryptedAttribute: 	req.VolumeContext[LuksEncryptedAttribute],
-			LuksCipherAttribute: 		req.VolumeContext[LuksCipherAttribute],
-			LuksKeySizeAttribute: 		req.VolumeContext[LuksKeySizeAttribute],
+			PublishInfoVolumeName:  volume.Name,
+			LuksEncryptedAttribute: req.VolumeContext[LuksEncryptedAttribute],
+			LuksCipherAttribute:    req.VolumeContext[LuksCipherAttribute],
+			LuksKeySizeAttribute:   req.VolumeContext[LuksKeySizeAttribute],
 		},
 	}, nil
 }
@@ -281,9 +281,9 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":  req.VolumeId,
-		"node_id":    req.NodeId,
-		"method":     "controller_unpublish_volume",
+		"volume_id": req.VolumeId,
+		"node_id":   req.NodeId,
+		"method":    "controller_unpublish_volume",
 	})
 	ll.Info("controller unpublish volume called")
 
@@ -329,7 +329,7 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
 			VolumeCapabilities: []*csi.VolumeCapability{
 				{
-					AccessMode:supportedAccessMode,
+					AccessMode: supportedAccessMode,
 				},
 			},
 		},
@@ -487,13 +487,13 @@ func calculateStorageGB(capRange *csi.CapacityRange, storageType string) (int, e
 	}
 
 	steps := requiredBytes / GB / int64(sizeIncrements)
-	if steps * GB * int64(sizeIncrements) < requiredBytes {
+	if steps*GB*int64(sizeIncrements) < requiredBytes {
 		steps += 1
 	}
 
 	sizeGB := steps * int64(sizeIncrements)
 
-	if limitSet && limitBytes < (int64(sizeGB) * GB) {
+	if limitSet && limitBytes < (int64(sizeGB)*GB) {
 		return 0, fmt.Errorf("for required (%v) limit (%v) must be at least %v for type '%s'", formatBytes(requiredBytes), formatBytes(limitBytes), formatBytes(int64(sizeGB)*GB), storageType)
 	}
 	return int(sizeGB), nil
@@ -565,9 +565,9 @@ func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
 			return status.Errorf(codes.NotFound, err.Error())
 		} else {
 			lt.Warnf("%q: operation failed", operation)
-			return status.Errorf(codes.Aborted, operation + ": Request failed",)
+			return status.Errorf(codes.Aborted, operation+": Request failed")
 		}
 	}
 	log.Warnf("%q: random error", operation)
-	return status.Errorf(codes.Aborted, operation + ": Random error")
+	return status.Errorf(codes.Aborted, operation+": Random error")
 }

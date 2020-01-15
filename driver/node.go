@@ -27,8 +27,6 @@ package driver
 
 import (
 	"context"
-	"path/filepath"
-	"os"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -37,8 +35,6 @@ import (
 )
 
 const (
-	diskIDPath   = "/dev/disk/by-id"
-
 	// TODO we're not sure yet what our limit is, so just use this for now.
 	// It's the limit for Google Compute Engine and I don't see what limits
 	// this more in OpenStack, except per User Quotas.
@@ -67,10 +63,14 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// The linux kernel limits volume serials to 20 bytes:
 	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
 	linuxSerial := req.VolumeId[:20]
-	source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
-	if _, err := os.Stat(source); os.IsNotExist(err) {
-		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
+	// Apparently sometimes we need to call udevadm trigger to get the volume
+	// properly registered in /dev/disk. More information can be found here:
+	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
+	sourcePtr, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
+	if err != nil {
+		return nil, err
 	}
+	source := *sourcePtr
 
 	publishContext := req.GetPublishContext()
 	if publishContext == nil {
@@ -104,7 +104,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"fsType":              fsType,
 		"mount_options":       options,
 		"method":              "node_stage_volume",
-		"luks_encrypted":	   luksContext.EncryptionEnabled,
+		"luks_encrypted":      luksContext.EncryptionEnabled,
 	})
 
 	formatted, err := d.mounter.IsFormatted(source, luksContext)
@@ -223,13 +223,13 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
-		"volume_id":		req.VolumeId,
-		"source":			source,
-		"target":			target,
-		"fsType":			fsType,
-		"mount_options":	options,
-		"method":			"node_publish_volume",
-		"luks_encrypted":	luksContext.EncryptionEnabled,
+		"volume_id":      req.VolumeId,
+		"source":         source,
+		"target":         target,
+		"fsType":         fsType,
+		"mount_options":  options,
+		"method":         "node_publish_volume",
+		"luks_encrypted": luksContext.EncryptionEnabled,
 	})
 
 	mounted, err := d.mounter.IsMounted(target)

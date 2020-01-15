@@ -14,7 +14,7 @@
 
 FROM alpine:3.7
 
-RUN apk add --no-cache ca-certificates e2fsprogs findmnt cryptsetup
+RUN apk add --no-cache ca-certificates e2fsprogs findmnt cryptsetup udev
 
 ADD cloudscale-csi-plugin /bin/
 ADD csi-diskinfo.sh /bin/
