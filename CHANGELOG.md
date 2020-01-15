@@ -1,5 +1,10 @@
 ## unreleased
 
+## v1.0.1 - 2020.01.15
+
+* Fix: Volume Attaching sometimes didn't work, please see
+  https://github.com/cloudscale-ch/csi-cloudscale/issues/9
+
 ## v1.0.0 - 2019.02.05
 
 * Add support for luks-encrypted volumes
