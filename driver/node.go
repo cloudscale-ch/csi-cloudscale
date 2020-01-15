@@ -66,7 +66,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// Apparently sometimes we need to call udevadm trigger to get the volume
 	// properly registered in /dev/disk. More information can be found here:
 	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	sourcePtr, err := d.mounter.FindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
+	sourcePtr, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
 	if err != nil {
 		return nil, err
 	}

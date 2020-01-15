@@ -69,7 +69,7 @@ type Mounter interface {
 
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
-	FindPath(logger *logrus.Entry, linuxSerial string) (*string, error)
+	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, linuxSerial string) (*string, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -394,7 +394,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-func (m *mounter) FindPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
+func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
 	numTries := 0
 	for {
 		probeAttachedVolume(logger)

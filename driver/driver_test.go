@@ -240,7 +240,7 @@ func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool,
 func (f *fakeMounter) IsMounted(target string) (bool, error) {
 	return true, nil
 }
-func (f *fakeMounter) FindPath(logger *logrus.Entry, target string) (*string, error) {
+func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
 	path := "SomePath"
 	return &path, nil
 }
