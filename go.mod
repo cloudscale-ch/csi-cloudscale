@@ -21,7 +21,7 @@ require (
 	k8s.io/api v0.0.0
 	k8s.io/apimachinery v0.0.0
 	k8s.io/client-go v0.0.0
-	k8s.io/kubernetes v1.16.2 // indirect
+	k8s.io/kubernetes v1.16.2
 	k8s.io/utils v0.0.0-20191218082557-f07c713de883 // indirect
 )
 
