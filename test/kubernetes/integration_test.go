@@ -402,6 +402,94 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+func TestPersistentVolume_Resize(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	//start
+	claimName := pvc.Name
+	createdPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(claimName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pvName := createdPVC.Spec.VolumeName
+	pv, err := client.CoreV1().PersistentVolumes().Get(pvName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if pv.Spec.Capacity["storage"] != resource.MustParse("5Gi") {
+		t.Fatalf("initial volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], resource.MustParse("5Gi"))
+	}
+
+	t.Log("Updating pvc to request more size")
+	createdPVC.Spec.Resources.Requests = v1.ResourceList{
+		v1.ResourceStorage: resource.MustParse("6Gi"),
+	}
+
+	//updatedPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Update(createdPVC)
+	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Update(createdPVC)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("Waiting for volume %q to be resized ...", pvName)
+	//resizedPv, err := waitForVolumeCapacityChange(client, pvName, pv.Spec.Capacity)
+	_, err = waitForVolumeCapacityChange(client, pvName, pv.Spec.Capacity)
+	if err != nil {
+		t.Error(err)
+	}
+
+	//if resizedPv.Spec.Capacity["storage"] != resource.MustParse("6Gi") {
+	//	t.Fatalf("volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], resource.MustParse("6Gi"))
+	//}
+
+	//t.Logf("Waiting for volume claim %q to be resized ...", claimName)
+	//resizedPVC, err := waitForVolumeClaimCapacityChange(client, claimName, updatedPVC.Status.Capacity)
+	//if err != nil {
+	//	t.Error(err)
+	//}
+
+	//if resizedPVC.Status.Capacity["storage"] != resource.MustParse("6Gi") {
+	//	t.Fatalf("claim capacity (%v) is not equal to requested capacity (%v)", resizedPVC.Status.Capacity["storage"], resource.MustParse("6Gi"))
+	//}
+
+	//end
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 13 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 6*driver.GB, disk.DeviceSize)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account; this check is necessary to test that the
+	// csi-plugin properly deletes the volume from cloudscale.ch
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
 func setup() error {
 	// if you want to change the loading rules (which files in which order),
 	// you can do so here
@@ -713,6 +801,48 @@ func waitForPod(t *testing.T, client kubernetes.Interface, name string) {
 	assert.NoError(t, err)
 }
 
+// waitForVolumeCapacityChange waits for the given volume's capacity to be changed
+func waitForVolumeCapacityChange(client kubernetes.Interface, name string, resourceList v1.ResourceList) (*v1.PersistentVolume, error) {
+	var err error
+	var pv *v1.PersistentVolume
+	stopCh := make(chan struct{})
+
+	go func() {
+		select {
+		case <-time.After(time.Minute * 2):
+			err = errors.New("timing out waiting for pv capcity change")
+			close(stopCh)
+		case <-stopCh:
+		}
+	}()
+
+	watchlist := cache.NewListWatchFromClient(client.CoreV1().RESTClient(),
+		"persistentvolumes", v1.NamespaceAll, fields.Everything())
+	_, controller := cache.NewInformer(watchlist, &v1.PersistentVolume{}, time.Second*1,
+		cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(o, n interface{}) {
+				volume := n.(*v1.PersistentVolume)
+				if name != volume.Name {
+					return
+				}
+				if volume.Status.Phase == v1.VolumeFailed {
+					err = errors.New("Persistent volume status is Failed")
+					close(stopCh)
+					return
+				}
+
+				if volume.Status.Phase == v1.VolumeBound && volume.Spec.Capacity["storage"] != resourceList["storage"] {
+					pv = volume
+					close(stopCh)
+					return
+				}
+			},
+		})
+
+	controller.Run(stopCh)
+	return pv, err
+}
+
 // appSelector returns a selector that selects deployed applications with the
 // given name
 func appSelector(appName string) (labels.Selector, error) {
@@ -769,7 +899,7 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 				}
 			}
 		}
-		if time.Now().UnixNano() - start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
 			t.Errorf("timeout exceeded while waiting for volume %v to be deleted from cloudscale", volumeName)
 			return
 		} else {
