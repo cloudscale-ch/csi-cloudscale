@@ -1,0 +1,12 @@
+language: go
+go:
+  - stable
+
+env:
+  - GO111MODULE=on
+
+script:
+  - make test
+  # the following tests require a token
+  - if [ -z "$CLOUDSCALE_TOKEN" ]; then exit 0; fi
+  - CLOUDSCALE_TOKEN=$CLOUDSCALE_TOKEN make integration
