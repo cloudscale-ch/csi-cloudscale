@@ -122,9 +122,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.Info("create volume called")
 
 	// get volume first, if it's created do no thing
-	volumes, err := d.cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
-		Name: volumeName,
-	})
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -165,7 +163,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
 	}
 
-	volumeReq := &cloudscale.Volume{
+	volumeReq := &cloudscale.VolumeRequest{
 		/*
 			TODO: cloudscale.ch will start supporting different regions soon
 
@@ -251,7 +249,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
-	attachRequest := &cloudscale.Volume{
+	attachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
@@ -287,7 +285,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	detachRequest := &cloudscale.Volume{
+	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
@@ -486,7 +484,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: true}, nil
 	}
 
-	volumeReq := &cloudscale.Volume{
+	volumeReq := &cloudscale.VolumeRequest{
 		SizeGB: resizeGigaBytes,
 	}
 	err = d.cloudscaleClient.Volumes.Update(ctx, volume.UUID, volumeReq)

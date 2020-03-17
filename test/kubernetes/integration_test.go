@@ -869,9 +869,7 @@ func getPVC(t *testing.T, client kubernetes.Interface, name string) *v1.Persiste
 // loads the volume with the given name from the cloudscale.ch API
 func getCloudscaleVolume(t *testing.T, volumeName string) cloudscale.Volume {
 	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-	volumes, err := cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
-		Name: volumeName,
-	})
+	volumes, err := cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
@@ -884,9 +882,7 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 
 	for {
 		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-		volumes, err := cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
-			Name: volumeName,
-		})
+		volumes, err := cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 		if len(volumes) == 0 {
 			t.Logf("volume %v is deleted on cloudscale", volumeName)
 			return
