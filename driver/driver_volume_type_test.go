@@ -28,7 +28,7 @@ func TestCreateVolumeTypeSsdWithoutExplicitlySpecifyingTheType(t *testing.T) {
 	assert.Equal(t, int64(1)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 1, volumes[0].SizeGB)
@@ -52,7 +52,7 @@ func TestCreateVolumeTypeSsdExplicitlySpecifyingTheType(t *testing.T) {
 	assert.Equal(t, int64(5)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 5, volumes[0].SizeGB)
@@ -76,7 +76,7 @@ func TestCreateVolumeTypeBulk(t *testing.T) {
 	assert.Equal(t, int64(100)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 100, volumes[0].SizeGB)
