@@ -402,87 +402,109 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+var resizeCases = []struct {
+	storageClass  string
+	initialSizeGB int
+	newSizeGB     int
+	LuksKey       string
+}{
+	{"cloudscale-volume-ssd", 5, 6, ""},
+	{"cloudscale-volume-bulk", 100, 200, ""},
+	{"cloudscale-volume-ssd-luks", 1, 3, "secret"},
+}
+
 func TestPersistentVolume_Resize(t *testing.T) {
-	podDescriptor := TestPodDescriptor{
-		Kind: "Pod",
-		Name: pseudoUuid(),
-		Volumes: []TestPodVolume{
-			{
-				ClaimName:    "csi-pod-ssd-pvc",
-				SizeGB:       5,
-				StorageClass: "cloudscale-volume-ssd",
-			},
-		},
+	for _, tt := range resizeCases {
+		t.Run(tt.storageClass, func(t *testing.T) {
+			podDescriptor := TestPodDescriptor{
+				Kind: "Pod",
+				Name: pseudoUuid(),
+				Volumes: []TestPodVolume{
+					{
+						ClaimName:    "csi-pod-ssd-pvc",
+						SizeGB:       tt.initialSizeGB,
+						StorageClass: tt.storageClass,
+						LuksKey:      tt.LuksKey,
+					},
+				},
+			}
+
+			// submit the pod and the pvc
+			pod := makeKubernetesPod(t, podDescriptor)
+			pvcs := makeKubernetesPVCs(t, podDescriptor)
+			assert.Equal(t, 1, len(pvcs))
+
+			// wait for the pod to be running and verify that the pvc is bound
+			waitForPod(t, client, pod.Name)
+			pvc := getPVC(t, client, pvcs[0].Name)
+			assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+			claimName := pvc.Name
+			createdPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(claimName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			pvName := createdPVC.Spec.VolumeName
+			pv, err := client.CoreV1().PersistentVolumes().Get(pvName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if expectedSize := resource.MustParse(fmt.Sprintf("%vGi", tt.initialSizeGB)); pv.Spec.Capacity["storage"] != expectedSize {
+				t.Fatalf("initial volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], expectedSize)
+			}
+
+			newSize := resource.MustParse(fmt.Sprintf("%vGi", tt.newSizeGB))
+
+			t.Log("Updating pvc to request more size")
+			createdPVC.Spec.Resources.Requests = v1.ResourceList{
+				v1.ResourceStorage: newSize,
+			}
+
+			updatedPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Update(createdPVC)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			t.Logf("Waiting for volume %q to be resized ...", pvName)
+			resizedPv, err := waitForVolumeCapacityChange(client, pvName, pv.Spec.Capacity)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if resizedPv.Spec.Capacity["storage"] != newSize {
+				t.Fatalf("volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], newSize)
+			}
+
+			t.Logf("Waiting for volume claim %q to be resized ...", claimName)
+			resizedPVC, err := waitForVolumeClaimCapacityChange(client, claimName, updatedPVC.Status.Capacity)
+			if err != nil {
+				t.Error(err)
+			}
+
+			if resizedPVC.Status.Capacity["storage"] != newSize {
+				t.Fatalf("claim capacity (%v) is not equal to requested capacity (%v)", resizedPVC.Status.Capacity["storage"], newSize)
+			}
+
+			// verify that our disk
+			disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+			assert.NoError(t, err)
+			if tt.LuksKey == "" {
+				assert.Equal(t, "", disk.Luks)
+			} else {
+				assert.Equal(t, "LUKS1", disk.Luks)
+			}
+			assert.Equal(t, "ext4", disk.Filesystem)
+			assert.Equal(t, tt.newSizeGB*driver.GB, disk.DeviceSize)
+
+			// delete the pod and the pvcs and wait until the volume was deleted from
+			// the cloudscale.ch account; this check is necessary to test that the
+			// csi-plugin properly deletes the volume from cloudscale.ch
+			cleanup(t, podDescriptor)
+			waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+		})
 	}
-
-	// submit the pod and the pvc
-	pod := makeKubernetesPod(t, podDescriptor)
-	pvcs := makeKubernetesPVCs(t, podDescriptor)
-	assert.Equal(t, 1, len(pvcs))
-
-	// wait for the pod to be running and verify that the pvc is bound
-	waitForPod(t, client, pod.Name)
-	pvc := getPVC(t, client, pvcs[0].Name)
-	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
-
-	claimName := pvc.Name
-	createdPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(claimName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pvName := createdPVC.Spec.VolumeName
-	pv, err := client.CoreV1().PersistentVolumes().Get(pvName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if pv.Spec.Capacity["storage"] != resource.MustParse("5Gi") {
-		t.Fatalf("initial volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], resource.MustParse("5Gi"))
-	}
-
-	t.Log("Updating pvc to request more size")
-	createdPVC.Spec.Resources.Requests = v1.ResourceList{
-		v1.ResourceStorage: resource.MustParse("6Gi"),
-	}
-
-	updatedPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Update(createdPVC)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	t.Logf("Waiting for volume %q to be resized ...", pvName)
-	resizedPv, err := waitForVolumeCapacityChange(client, pvName, pv.Spec.Capacity)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if resizedPv.Spec.Capacity["storage"] != resource.MustParse("6Gi") {
-		t.Fatalf("volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], resource.MustParse("6Gi"))
-	}
-
-	t.Logf("Waiting for volume claim %q to be resized ...", claimName)
-	resizedPVC, err := waitForVolumeClaimCapacityChange(client, claimName, updatedPVC.Status.Capacity)
-	if err != nil {
-		t.Error(err)
-	}
-
-	if resizedPVC.Status.Capacity["storage"] != resource.MustParse("6Gi") {
-		t.Fatalf("claim capacity (%v) is not equal to requested capacity (%v)", resizedPVC.Status.Capacity["storage"], resource.MustParse("6Gi"))
-	}
-
-	// verify that our disk is not luks-encrypted, formatted with ext4 and 6 GB big
-	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
-	assert.NoError(t, err)
-	assert.Equal(t, "", disk.Luks)
-	assert.Equal(t, "ext4", disk.Filesystem)
-	assert.Equal(t, 6*driver.GB, disk.DeviceSize)
-
-	// delete the pod and the pvcs and wait until the volume was deleted from
-	// the cloudscale.ch account; this check is necessary to test that the
-	// csi-plugin properly deletes the volume from cloudscale.ch
-	cleanup(t, podDescriptor)
-	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
 func setup() error {
