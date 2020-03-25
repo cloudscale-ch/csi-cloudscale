@@ -1,10 +1,17 @@
 # cloudscale.ch Go API SDK
+[![Build Status](https://travis-ci.org/cloudscale-ch/cloudscale-go-sdk.svg?branch=master)](https://travis-ci.org/cloudscale-ch/cloudscale-go-sdk)
 
 If you want to manage your cloudscale.ch server resources with Go, you are at
 the right place.
 
 There's a possibility to specify the `CLOUDSCALE_URL` environment variable to
 change the default url of https://api.cloudscale.ch.
+
+## Download from Github
+
+```console
+GO111MODULE=on go get github.com/cloudscale-ch/cloudscale-go-sdk
+```
 
 ## Testing
 

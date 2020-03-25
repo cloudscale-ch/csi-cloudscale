@@ -9,6 +9,7 @@ package cloudscale
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +17,6 @@ import (
 	"net/url"
 	"path"
 	"time"
-	"errors"
 )
 
 const (
