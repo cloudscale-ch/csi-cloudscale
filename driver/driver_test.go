@@ -19,7 +19,6 @@ package driver
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -75,21 +74,7 @@ func TestDriverSuite(t *testing.T) {
 
 	go driver.Run()
 
-	mntDir, err := ioutil.TempDir("", "mnt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(mntDir)
-
-	mntStageDir, err := ioutil.TempDir("", "mnt-stage")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(mntStageDir)
-
 	cfg := &sanity.Config{
-		StagingPath:    mntStageDir,
-		TargetPath:     mntDir,
 		Address:        endpoint,
 		TestVolumeSize: 50 * 1024 * 1024 * 1024,
 	}
