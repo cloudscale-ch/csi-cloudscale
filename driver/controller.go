@@ -345,7 +345,7 @@ func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (
 	})
 	ll.Info("list volumes called")
 
-	volumes, err := d.cloudscaleClient.Volumes.List(ctx, nil)
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx)
 	if err != nil {
 		return nil, err
 	}

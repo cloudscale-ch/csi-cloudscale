@@ -18,9 +18,12 @@ limitations under the License.
 package driver
 
 import (
+	"context"
+	"errors"
 	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -33,6 +36,8 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
+var DefaultZone = cloudscale.Zone{Slug: "dev1"}
+
 func TestDriverSuite(t *testing.T) {
 	socket := "/tmp/csi.sock"
 	endpoint := "unix://" + socket
@@ -40,13 +45,15 @@ func TestDriverSuite(t *testing.T) {
 		t.Fatalf("failed to remove unix domain socket file %s, error: %s", socket, err)
 	}
 
-	serverId := 987654
-
-	cloudscaleClient := NewFakeClient()
+	serverId := "987654"
+	initialServers := map[string]*cloudscale.Server{
+		serverId: {UUID: serverId},
+	}
+	cloudscaleClient := NewFakeClient(initialServers)
 	driver := &Driver{
 		endpoint:         endpoint,
-		serverId:         strconv.Itoa(serverId),
-		region:           "zrh1",
+		serverId:         serverId,
+		region:           DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          &fakeMounter{},
 		log:              logrus.New().WithField("test_enabed", true),
@@ -63,9 +70,19 @@ func TestDriverSuite(t *testing.T) {
 	sanity.Test(t, cfg)
 }
 
-func NewFakeClient() *cloudscale.Client {
+func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Client {
 	userAgent := "cloudscale/" + "fake"
 	fakeClient := &cloudscale.Client{BaseURL: nil, UserAgent: userAgent}
+
+	fakeClient.Servers = FakeServerServiceOperations{
+		fakeClient: fakeClient,
+		servers:    initialServers,
+	}
+	fakeClient.Volumes = FakeVolumeServiceOperations{
+		fakeClient: fakeClient,
+		volumes:    make(map[string]*cloudscale.Volume),
+	}
+
 	return fakeClient
 }
 
@@ -92,6 +109,162 @@ func (f *fakeMounter) IsMounted(target string) (bool, error) {
 func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
 	path := "SomePath"
 	return &path, nil
+}
+
+type FakeVolumeServiceOperations struct {
+	fakeClient *cloudscale.Client
+	volumes    map[string]*cloudscale.Volume
+}
+
+func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
+	id := randString(10)
+	vol := &cloudscale.Volume{
+		UUID:        id,
+		Name:        createRequest.Name,
+		SizeGB:      createRequest.SizeGB,
+		Type:        createRequest.Type,
+		ServerUUIDs: createRequest.ServerUUIDs,
+	}
+	vol.Zone = DefaultZone
+	if vol.ServerUUIDs == nil {
+		noservers := make([]string, 0, 1)
+		vol.ServerUUIDs = &noservers
+	}
+
+	f.volumes[id] = vol
+
+	return vol, nil
+}
+
+func (f FakeVolumeServiceOperations) Get(ctx context.Context, volumeID string) (*cloudscale.Volume, error) {
+	vol, ok := f.volumes[volumeID]
+	if ok != true {
+		return nil, generateNotFoundError()
+	}
+	return vol, nil
+}
+
+func (f FakeVolumeServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Volume, error) {
+	var volumes []cloudscale.Volume
+
+	for _, vol := range f.volumes {
+		volumes = append(volumes, *vol)
+	}
+
+	if len(modifiers) == 0 {
+		return volumes, nil
+	}
+	if len(modifiers) > 1 {
+		panic("implement me (support for more than one modifier)")
+	}
+
+	params := extractParams(modifiers)
+
+	if filterName := params.Get("name"); filterName != "" {
+		filtered := make([]cloudscale.Volume, 0, 1)
+		for _, vol := range volumes {
+			if vol.Name == filterName {
+				filtered = append(filtered, vol)
+			}
+		}
+		return filtered, nil
+	}
+
+	panic("implement me (support for unknown param)")
+}
+
+func extractParams(modifiers []cloudscale.ListRequestModifier) url.Values {
+	// undoing the cloudscale.WithNameFilter(volumeName) magic
+
+	modifierFunc := modifiers[0]
+	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	modifierFunc(req)
+	params, err := url.ParseQuery(req.URL.RawQuery)
+	if err != nil {
+		panic("unexpected error")
+	}
+	return params
+}
+
+func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeRequest) error {
+	vol, ok := f.volumes[volumeID]
+	if ok != true {
+		return generateNotFoundError()
+	}
+
+	if updateRequest.ServerUUIDs != nil {
+		if serverUUIDs := *updateRequest.ServerUUIDs; serverUUIDs != nil {
+			if len(serverUUIDs) > 1 {
+				return errors.New("multi attach is not implemented")
+			}
+			for _, serverUUID := range serverUUIDs {
+				_, err := f.fakeClient.Servers.Get(nil, serverUUID)
+				if err != nil {
+					return err
+				}
+			}
+			vol.ServerUUIDs = &serverUUIDs
+			return nil
+		}
+	}
+	if vol.SizeGB < updateRequest.SizeGB {
+		vol.SizeGB = updateRequest.SizeGB
+		return nil
+	}
+	panic("implement me")
+}
+
+func (f FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
+	delete(f.volumes, volumeID)
+	return nil
+}
+
+type FakeServerServiceOperations struct {
+	fakeClient *cloudscale.Client
+	servers    map[string]*cloudscale.Server
+}
+
+func (f FakeServerServiceOperations) Create(ctx context.Context, createRequest *cloudscale.ServerRequest) (*cloudscale.Server, error) {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) Get(ctx context.Context, serverID string) (*cloudscale.Server, error) {
+	server, ok := f.servers[serverID]
+	if ok != true {
+		return nil, generateNotFoundError()
+	}
+	return server, nil
+}
+
+func (f FakeServerServiceOperations) Update(ctx context.Context, serverID string, updateRequest *cloudscale.ServerUpdateRequest) error {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) Delete(ctx context.Context, serverID string) error {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Server, error) {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) Reboot(ctx context.Context, serverID string) error {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) Start(ctx context.Context, serverID string) error {
+	panic("implement me")
+}
+
+func (f FakeServerServiceOperations) Stop(ctx context.Context, serverID string) error {
+	panic("implement me")
+}
+
+func generateNotFoundError() *cloudscale.ErrorResponse {
+	return &cloudscale.ErrorResponse{
+		StatusCode: 404,
+		Message:    map[string]string{"detail": "not found"},
+	}
 }
 
 func randString(n int) string {
