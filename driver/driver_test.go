@@ -62,9 +62,14 @@ func TestDriverSuite(t *testing.T) {
 
 	go driver.Run()
 
+	targetDir := os.TempDir() + "/csi-target"
+	stagingDir := os.TempDir() + "/csi-staging"
+
 	cfg := &sanity.Config{
 		Address:        endpoint,
 		TestVolumeSize: 50 * 1024 * 1024 * 1024,
+		TargetPath:     targetDir,
+		StagingPath:    stagingDir,
 	}
 
 	sanity.Test(t, cfg)
@@ -117,7 +122,7 @@ type FakeVolumeServiceOperations struct {
 }
 
 func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
-	id := randString(10)
+	id := randString(32)
 	vol := &cloudscale.Volume{
 		UUID:        id,
 		Name:        createRequest.Name,
