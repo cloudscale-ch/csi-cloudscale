@@ -339,6 +339,13 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+	if req.StartingToken != "" {
+		_, err := strconv.Atoi(req.StartingToken)
+		if err != nil {
+			return nil, status.Errorf(codes.Aborted, "starting_token is invalid: %s", err)
+		}
+	}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
