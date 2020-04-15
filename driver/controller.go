@@ -488,7 +488,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		}).Info("skipping volume resize because current volume size exceeds requested volume size")
 		// even if the volume is resized independently from the control panel, we still need to resize the node fs when resize is requested
 		// in this case, the claim capacity will be resized to the volume capacity, requested capcity will be ignored to make the PV and PVC capacities consistent
-		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: true}, nil
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(volume.SizeGB) * GB, NodeExpansionRequired: true}, nil
 	}
 
 	volumeReq := &cloudscale.VolumeRequest{
