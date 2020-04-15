@@ -364,7 +364,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	})
 	log.Info("node expand volume called")
 
-	// return we support block volumes and this is a block volume
+	// return here once we support block volumes and the current volume is a block volume
 
 	mounter := mount.New("")
 	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, volumePath)
