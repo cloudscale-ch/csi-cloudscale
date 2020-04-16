@@ -340,10 +340,13 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
 	if req.StartingToken != "" {
-		_, err := strconv.Atoi(req.StartingToken)
-		if err != nil {
-			return nil, status.Errorf(codes.Aborted, "starting_token is invalid: %s", err)
-		}
+		// StartingToken is for pagination, which we don't use, but csi-test checks it
+		//  see also: https://github.com/kubernetes-csi/csi-test/issues/222
+
+		// According to spec:
+		//    Caller SHOULD start the ListVolumes operation again with an empty starting_token.
+		// when sending aborted code see https://github.com/container-storage-interface/spec/blob/master/spec.md
+		return nil, status.Errorf(codes.Aborted, "pagination not supported")
 	}
 
 	ll := d.log.WithFields(logrus.Fields{
