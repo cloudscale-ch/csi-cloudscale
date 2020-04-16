@@ -54,14 +54,15 @@ type TestPodDescriptor struct {
 }
 
 type DiskInfo struct {
-	PVCName      string `json:"pvcName"`
-	DeviceName   string `json:"deviceName"`
-	DeviceSize   int    `json:"deviceSize"`
-	Filesystem   string `json:"filesystem"`
-	DeviceSource string `json:"deviceSource"`
-	Luks         string `json:"luks,omitempty"`
-	Cipher       string `json:"cipher,omitempty"`
-	Keysize      int    `json:"keysize,omitempty"`
+	PVCName        string `json:"pvcName"`
+	DeviceName     string `json:"deviceName"`
+	DeviceSize     int    `json:"deviceSize"`
+	Filesystem     string `json:"filesystem"`
+	FilesystemUUID string `json:"filesystemUUID"`
+	DeviceSource   string `json:"deviceSource"`
+	Luks           string `json:"luks,omitempty"`
+	Cipher         string `json:"cipher,omitempty"`
+	Keysize        int    `json:"keysize,omitempty"`
 }
 
 var (
@@ -455,6 +456,10 @@ func TestPersistentVolume_Resize(t *testing.T) {
 				t.Fatalf("initial volume size (%v) is not equal to requested volume size (%v)", pv.Spec.Capacity["storage"], expectedSize)
 			}
 
+			disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+			assert.NoError(t, err)
+			originalFilesystemUUID := disk.FilesystemUUID
+
 			newSize := resource.MustParse(fmt.Sprintf("%vGi", tt.newSizeGB))
 
 			t.Log("Updating pvc to request more size")
@@ -488,7 +493,7 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			}
 
 			// verify that our disk
-			disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+			disk, err = getVolumeInfo(t, pod, pvc.Spec.VolumeName)
 			assert.NoError(t, err)
 			if tt.LuksKey == "" {
 				assert.Equal(t, "", disk.Luks)
@@ -497,6 +502,8 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			}
 			assert.Equal(t, "ext4", disk.Filesystem)
 			assert.Equal(t, tt.newSizeGB*driver.GB, disk.DeviceSize)
+			// assert file system uuid has not changed
+			assert.Equal(t, originalFilesystemUUID, disk.FilesystemUUID)
 
 			// delete the pod and the pvcs and wait until the volume was deleted from
 			// the cloudscale.ch account; this check is necessary to test that the
@@ -1015,6 +1022,8 @@ func getVolumeInfoFromNode(t *testing.T, nodeName string) ([]DiskInfo, error) {
 	}
 
 	output, err := ExecCommand(csiPluginPod.Namespace, csiPluginPod.Name, "/bin/csi-diskinfo.sh")
+	log.Print("output:")
+	log.Print(output)
 	if err != nil {
 		return diskInfo, err
 	}
