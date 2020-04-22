@@ -1,5 +1,9 @@
 ## unreleased
 
+* Update to CSI spec v1.1.0
+
+* Add support for [Volume Expansion](https://kubernetes-csi.github.io/docs/volume-expansion.html). 
+
 ## v1.0.1 - 2020.01.15
 
 * Fix: Volume Attaching sometimes didn't work, please see
