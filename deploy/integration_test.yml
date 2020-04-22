@@ -31,7 +31,8 @@
     
     - name: Register master in inventory
       add_host:
-        name: '{{ created_servers.results[0].interfaces[0].addresses[0].address }}'
+        hostname: "{{ created_servers.results[0].name }}"
+        ansible_ssh_host: "{{ created_servers.results[0].interfaces[0].addresses[0].address }}"
         groups:
           - kube-master
           - etcd
@@ -39,7 +40,8 @@
 
     - name: Register nodes in inventory
       add_host:
-        name: '{{ item.interfaces[0].addresses[0].address }}'
+        hostname: "{{ item.name }}"
+        ansible_ssh_host: "{{ item.interfaces[0].addresses[0].address }}"
         groups:
           - kube-node
         ansible_user: 'root'
@@ -104,7 +106,7 @@
   tags: [test]
   tasks:
     - name: "Run the tests"
-      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration ../test/..."
+      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration -timeout 20m ../test/..."
 
 - hosts: localhost
   tags: [cleanup]
