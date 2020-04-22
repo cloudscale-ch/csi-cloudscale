@@ -1,5 +1,7 @@
 ## unreleased
 
+## v1.1.0 - 2020.04.22
+
 * Update to CSI spec v1.1.0
 
 * Add support for [Volume Expansion](https://kubernetes-csi.github.io/docs/volume-expansion.html). 
