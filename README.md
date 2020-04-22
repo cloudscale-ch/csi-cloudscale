@@ -101,10 +101,10 @@ cloudscale            Opaque                                1         18h
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v1.0.1`) you can execute the following command:
+For example, to use the latest stable version (`v1.1.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.0.1.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.1.0.yaml
 ```
 
 There are also `dev` images available:
@@ -243,15 +243,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v1.0.1` and then publish a new docker build:
+master with the version `v1.1.0` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v1.0.1` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v1.0.1`
+This will create a binary with version `v1.1.0` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v1.1.0`
 
 ## Contributing
 
