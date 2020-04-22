@@ -230,7 +230,7 @@ $ KUBECONFIG=$(pwd)/kubeconfig make test-integration
 To release a new version bump first the version:
 
 ```
-$ make bump-version
+$ make NEW_VERSION=vX.Y.Z bump-version
 ```
 
 Make sure everything looks good. Create a new branch with all changes:
