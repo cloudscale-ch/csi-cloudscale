@@ -11,10 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 FROM alpine:3.7
 
-RUN apk add --no-cache ca-certificates e2fsprogs findmnt cryptsetup udev
+# e2fsprogs-extra is required for resize2fs used for the resize operation
+# blkid: block device identification tool from util-linux
+RUN apk add --no-cache ca-certificates \
+                       e2fsprogs \
+                       findmnt \
+                       xfsprogs \
+                       cryptsetup \
+                       udev \
+                       blkid \
+                       e2fsprogs-extra
 
 ADD cloudscale-csi-plugin /bin/
 ADD csi-diskinfo.sh /bin/

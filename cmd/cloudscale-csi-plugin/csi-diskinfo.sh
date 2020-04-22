@@ -1,5 +1,5 @@
 #!/bin/sh
-# returns information about the mounted persistent volumes from the node's 
+# returns information about the mounted persistent volumes from the node's
 # perspective as a JSON array; useful to get a quick overview and for integration testing
 
 devices="$(mount | grep ".*kubernetes.io.*csi" | grep ^/dev | awk '{print $1}' | sort -u)"
@@ -17,12 +17,14 @@ for device in ${devices}; do
 
     pvcName="$(echo "${device}" | cut -d / -f4)"
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
+    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${deviceSource}")"
     echo "  {"
     echo "     \"pvcName\": \"${pvcName}\","
     echo "     \"deviceName\": \"${device}\","
     echo "     \"deviceSize\": ${deviceSize},"
     echo "     \"filesystem\": \"${fs}\","
+    echo "     \"filesystemUUID\": \"${fsUUID}\","
     echo "     \"deviceSource\": \"${deviceSource}\","
     echo "     \"luks\": \"${deviceType}\","
     echo "     \"cipher\": \"${deviceCipher}\","
@@ -35,6 +37,7 @@ for device in ${devices}; do
   else
     pvcName="$(mount | grep "${device}" | sed -e 's|.*pvc-|pvc-|' | cut -d / -f1 | sort -u)"
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
+    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${device}")"
     deviceSource="$(readlink -f "${device}")"
     echo "  {"
@@ -42,6 +45,7 @@ for device in ${devices}; do
     echo "     \"deviceName\": \"${device}\","
     echo "     \"deviceSize\": ${deviceSize},"
     echo "     \"filesystem\": \"${fs}\","
+    echo "     \"filesystemUUID\": \"${fsUUID}\","
     echo "     \"deviceSource\": \"${deviceSource}\""
     if [ "${i}" = "${deviceCount}" ]; then
       echo "  }"

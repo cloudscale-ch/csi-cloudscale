@@ -32,6 +32,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/kubernetes/pkg/util/mount"
+	"k8s.io/kubernetes/pkg/util/resizefs"
 )
 
 const (
@@ -290,23 +292,29 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 
 // NodeGetCapabilities returns the supported capabilities of the node server
 func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	// currently there is a single NodeServer capability according to the spec
-	nscap := &csi.NodeServiceCapability{
-		Type: &csi.NodeServiceCapability_Rpc{
-			Rpc: &csi.NodeServiceCapability_RPC{
-				Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+	nscaps := []*csi.NodeServiceCapability{
+		&csi.NodeServiceCapability{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+				},
+			},
+		},
+		&csi.NodeServiceCapability{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+				},
 			},
 		},
 	}
 
 	d.log.WithFields(logrus.Fields{
-		"node_capabilities": nscap,
+		"node_capabilities": nscaps,
 		"method":            "node_get_capabilities",
 	}).Info("node get capabilities called")
 	return &csi.NodeGetCapabilitiesResponse{
-		Capabilities: []*csi.NodeServiceCapability{
-			nscap,
-		},
+		Capabilities: nscaps,
 	}, nil
 }
 
@@ -336,4 +344,47 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 		Info("node get volume stats called")
 
 	return nil, status.Error(codes.Unimplemented, "")
+}
+
+func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
+	volumeID := req.VolumeId
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeExpandVolume volume ID not provided")
+	}
+
+	volumePath := req.VolumePath
+	if len(volumePath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeExpandVolume volume path not provided")
+	}
+
+	log := d.log.WithFields(logrus.Fields{
+		"volume_id":   req.VolumeId,
+		"volume_path": req.VolumePath,
+		"method":      "node_expand_volume",
+	})
+	log.Info("node expand volume called")
+
+	// return here once we support block volumes and the current volume is a block volume
+
+	mounter := mount.New("")
+	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, volumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
+	}
+
+	r := resizefs.NewResizeFs(&mount.SafeFormatAndMount{
+		Interface: mounter,
+		Exec:      mount.NewOSExec(),
+	})
+
+	log = log.WithFields(logrus.Fields{
+		"device_path": devicePath,
+	})
+	log.Info("resizing volume")
+	if _, err := r.Resize(devicePath, volumePath); err != nil {
+		return nil, status.Errorf(codes.Internal, "NodeExpandVolume could not resize volume %q (%q):  %v", volumeID, req.GetVolumePath(), err)
+	}
+
+	log.Info("volume was resized")
+	return &csi.NodeExpandVolumeResponse{}, nil
 }

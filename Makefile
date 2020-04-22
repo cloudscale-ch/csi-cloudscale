@@ -10,8 +10,6 @@ BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} -X github.com/cloudscale-ch/csi-cloudscale/driver.commit=${COMMIT} -X github.com/cloudscale-ch/csi-cloudscale/driver.gitTreeState=${GIT_TREE_STATE}
 PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 
-## Bump the version in the version file. Set BUMP to [ patch | major | minor ]
-BUMP ?= patch
 VERSION ?= $(shell cat VERSION)
 
 all: test
@@ -19,22 +17,23 @@ all: test
 publish: build push clean
 
 .PHONY: bump-version
-bump-version: 
-	@go get -u github.com/jessfraz/junk/sembump # update sembump tool
-	$(eval NEW_VERSION = $(shell sembump --kind $(BUMP) $(VERSION)))
+bump-version:
+	@[ "${NEW_VERSION}" ] || ( echo "NEW_VERSION must be set (ex. make NEW_VERSION=v1.x.x bump-version)"; exit 1 )
+	@(echo ${NEW_VERSION} | grep -E "^v") || ( echo "NEW_VERSION must be a semver ('v' prefix is required)"; exit 1 )
 	@echo "Bumping VERSION from $(VERSION) to $(NEW_VERSION)"
 	@echo $(NEW_VERSION) > VERSION
 	@cp deploy/kubernetes/releases/csi-cloudscale-${VERSION}.yaml deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' README.md
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
-	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md 
+	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
+	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml-e
 
 .PHONY: compile
 compile:
 	@echo "==> Building the project"
-	@env CGO_ENABLED=0 GOOS=${OS} GOARCH=amd64 go build -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG} 
+	@env CGO_ENABLED=0 GOOS=${OS} GOARCH=amd64 go build -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}
 
 
 .PHONY: test
@@ -46,7 +45,7 @@ test:
 test-integration:
 
 	@echo "==> Started integration tests"
-	@env GOCACHE=off go test -v -tags integration ./test/...
+	@env go test -v -tags integration -timeout 20m ./test/...
 
 
 .PHONY: build

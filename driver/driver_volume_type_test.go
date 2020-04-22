@@ -6,14 +6,11 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"net/http/httptest"
-	"net/url"
 	"testing"
 )
 
 func TestCreateVolumeTypeSsdWithoutExplicitlySpecifyingTheType(t *testing.T) {
-	driver, server := createDriverForTest(t)
-	defer server.Close()
+	driver := createDriverForTest(t)
 
 	volumeName := randString(32)
 
@@ -28,7 +25,7 @@ func TestCreateVolumeTypeSsdWithoutExplicitlySpecifyingTheType(t *testing.T) {
 	assert.Equal(t, int64(1)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 1, volumes[0].SizeGB)
@@ -36,8 +33,7 @@ func TestCreateVolumeTypeSsdWithoutExplicitlySpecifyingTheType(t *testing.T) {
 }
 
 func TestCreateVolumeTypeSsdExplicitlySpecifyingTheType(t *testing.T) {
-	driver, server := createDriverForTest(t)
-	defer server.Close()
+	driver := createDriverForTest(t)
 
 	volumeName := randString(32)
 
@@ -52,7 +48,7 @@ func TestCreateVolumeTypeSsdExplicitlySpecifyingTheType(t *testing.T) {
 	assert.Equal(t, int64(5)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 5, volumes[0].SizeGB)
@@ -60,8 +56,7 @@ func TestCreateVolumeTypeSsdExplicitlySpecifyingTheType(t *testing.T) {
 }
 
 func TestCreateVolumeTypeBulk(t *testing.T) {
-	driver, server := createDriverForTest(t)
-	defer server.Close()
+	driver := createDriverForTest(t)
 
 	volumeName := randString(32)
 
@@ -76,7 +71,7 @@ func TestCreateVolumeTypeBulk(t *testing.T) {
 	assert.Equal(t, int64(100)*GB, response.Volume.CapacityBytes)
 	assert.Equal(t, volumeName, response.Volume.VolumeContext[PublishInfoVolumeName])
 
-	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background(), &cloudscale.ListVolumeParams{})
+	volumes, err := driver.cloudscaleClient.Volumes.List(context.Background())
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(volumes))
 	assert.Equal(t, 100, volumes[0].SizeGB)
@@ -84,8 +79,7 @@ func TestCreateVolumeTypeBulk(t *testing.T) {
 }
 
 func TestCreateVolumeInvalidType(t *testing.T) {
-	driver, server := createDriverForTest(t)
-	defer server.Close()
+	driver := createDriverForTest(t)
 
 	volumeName := randString(32)
 
@@ -98,8 +92,7 @@ func TestCreateVolumeInvalidType(t *testing.T) {
 }
 
 func TestLuksEncryptionAttributeIsSetInContext(t *testing.T) {
-	driver, server := createDriverForTest(t)
-	defer server.Close()
+	driver := createDriverForTest(t)
 
 	// explicitly set luks encryption to false
 	volumeName := randString(32)
@@ -162,25 +155,13 @@ func makeCreateVolumeRequest(volumeName string, sizeGb int, volumeType string) *
 
 }
 
-func createDriverForTest(t *testing.T) (*Driver, *httptest.Server) {
-	serverId := "987654"
-	fake := &fakeAPI{
-		t:       t,
-		volumes: map[string]*cloudscale.Volume{},
-		servers: map[string]*cloudscale.Server{
-			serverId: {},
-		},
-	}
-
-	server := httptest.NewServer(fake)
-
-	cloudscaleClient := cloudscale.NewClient(nil)
-	serverUrl, _ := url.Parse(server.URL)
-	cloudscaleClient.BaseURL = serverUrl
+func createDriverForTest(t *testing.T) *Driver {
+	initialServers := map[string]*cloudscale.Server{}
+	cloudscaleClient := NewFakeClient(initialServers)
 
 	return &Driver{
 		mounter:          &fakeMounter{},
 		log:              logrus.New().WithField("test_enabled", true),
 		cloudscaleClient: cloudscaleClient,
-	}, server
+	}
 }

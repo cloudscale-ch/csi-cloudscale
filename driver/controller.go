@@ -122,9 +122,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	ll.Info("create volume called")
 
 	// get volume first, if it's created do no thing
-	volumes, err := d.cloudscaleClient.Volumes.List(ctx, &cloudscale.ListVolumeParams{
-		Name: volumeName,
-	})
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -165,7 +163,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
 	}
 
-	volumeReq := &cloudscale.Volume{
+	volumeReq := &cloudscale.VolumeRequest{
 		/*
 			TODO: cloudscale.ch will start supporting different regions soon
 
@@ -251,7 +249,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
-	attachRequest := &cloudscale.Volume{
+	attachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
@@ -287,7 +285,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
-	detachRequest := &cloudscale.Volume{
+	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
@@ -341,13 +339,23 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 
 // ListVolumes returns a list of all requested volumes
 func (d *Driver) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+	if req.StartingToken != "" {
+		// StartingToken is for pagination, which we don't use, but csi-test checks it
+		//  see also: https://github.com/kubernetes-csi/csi-test/issues/222
+
+		// According to spec:
+		//    Caller SHOULD start the ListVolumes operation again with an empty starting_token.
+		// when sending aborted code see https://github.com/container-storage-interface/spec/blob/master/spec.md
+		return nil, status.Errorf(codes.Aborted, "pagination not supported")
+	}
+
 	ll := d.log.WithFields(logrus.Fields{
 		"req_starting_token": req.StartingToken,
 		"method":             "list_volumes",
 	})
 	ll.Info("list volumes called")
 
-	volumes, err := d.cloudscaleClient.Volumes.List(ctx, nil)
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -398,6 +406,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
+		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 
 		// TODO(arslan): enable once snapshotting is supported
 		// csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
@@ -449,6 +458,56 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 		"method": "list_snapshots",
 	}).Warn("list snapshots is not implemented")
 	return nil, status.Error(codes.Unimplemented, "")
+}
+
+// ControllerExpandVolume is called from the resizer to increase the volume size.
+func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	volID := req.GetVolumeId()
+
+	if len(volID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID missing in request")
+	}
+	volume, err := d.cloudscaleClient.Volumes.Get(ctx, volID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "ControllerExpandVolume could not retrieve existing volume: %v", err)
+	}
+
+	resizeGigaBytes, err := calculateStorageGB(req.GetCapacityRange(), volume.Type)
+	if err != nil {
+		return nil, status.Errorf(codes.OutOfRange, "ControllerExpandVolume invalid capacity range: %v", err)
+	}
+
+	log := d.log.WithFields(logrus.Fields{
+		"volume_id": req.VolumeId,
+		"method":    "controller_expand_volume",
+	})
+
+	log.Info("controller expand volume called")
+
+	if resizeGigaBytes <= volume.SizeGB {
+		log.WithFields(logrus.Fields{
+			"current_volume_size":   volume.SizeGB,
+			"requested_volume_size": resizeGigaBytes,
+		}).Info("skipping volume resize because current volume size exceeds requested volume size")
+		// even if the volume is resized independently from the control panel, we still need to resize the node fs when resize is requested
+		// in this case, the claim capacity will be resized to the volume capacity, requested capcity will be ignored to make the PV and PVC capacities consistent
+		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(volume.SizeGB) * GB, NodeExpansionRequired: true}, nil
+	}
+
+	volumeReq := &cloudscale.VolumeRequest{
+		SizeGB: resizeGigaBytes,
+	}
+	err = d.cloudscaleClient.Volumes.Update(ctx, volume.UUID, volumeReq)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot resize volume %s: %s", req.GetVolumeId(), err.Error())
+	}
+
+	log = log.WithField("new_volume_size", resizeGigaBytes)
+	log.Info("volume was resized")
+
+	nodeExpansionRequired := true
+	// set to false once we support block volumes and this is a block volume
+	return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: nodeExpansionRequired}, nil
 }
 
 // calculateStorageGB extracts the storage size in GB from the given capacity

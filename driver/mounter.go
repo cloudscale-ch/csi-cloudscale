@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -46,6 +47,11 @@ type fileSystem struct {
 	FsType      string `json:"fstype"`
 	Options     string `json:"options"`
 }
+
+const (
+	// blkidExitStatusNoIdentifiers defines the exit code returned from blkid indicating that no devices have been found. See http://www.polarhome.com/service/man/?qf=blkid&tf=2&of=Alpinelinux for details.
+	blkidExitStatusNoIdentifiers = 2
+)
 
 // Mounter is responsible for formatting and mounting volumes
 type Mounter interface {
@@ -303,14 +309,21 @@ func isVolumeFormatted(source string, log *logrus.Entry) (bool, error) {
 		"args": blkidArgs,
 	}).Info("checking if source is formatted")
 
-	out, err := exec.Command(blkidCmd, blkidArgs...).CombinedOutput()
+	exitCode := 0
+	cmd := exec.Command(blkidCmd, blkidArgs...)
+	err = cmd.Run()
 	if err != nil {
-		return false, fmt.Errorf("checking formatting failed: %v cmd: %q output: %q",
-			err, blkidCmd, string(out))
-	}
-
-	if strings.TrimSpace(string(out)) == "" {
-		return false, nil
+		exitError, ok := err.(*exec.ExitError)
+		if !ok {
+			return false, fmt.Errorf("checking formatting failed: %v cmd: %q, args: %q", err, blkidCmd, blkidArgs)
+		}
+		ws := exitError.Sys().(syscall.WaitStatus)
+		exitCode = ws.ExitStatus()
+		if exitCode == blkidExitStatusNoIdentifiers {
+			return false, nil
+		} else {
+			return false, fmt.Errorf("checking formatting failed: %v cmd: %q, args: %q", err, blkidCmd, blkidArgs)
+		}
 	}
 
 	return true, nil

@@ -47,7 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v1.0.1`**. The project is still under active development and may not be 
+The current version is: **`v1.1.0`**. The project is still under active development and may not be 
 production ready.
 
 * Bug fixes will be released as a `PATCH` update.
@@ -230,7 +230,7 @@ $ KUBECONFIG=$(pwd)/kubeconfig make test-integration
 To release a new version bump first the version:
 
 ```
-$ make bump-version
+$ make NEW_VERSION=vX.Y.Z bump-version
 ```
 
 Make sure everything looks good. Create a new branch with all changes:
