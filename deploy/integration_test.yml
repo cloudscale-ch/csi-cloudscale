@@ -28,7 +28,7 @@
     - name: Waiting for servers to come up
       pause:
         seconds: 30
-    
+
     - name: Register master in inventory
       add_host:
         hostname: "{{ created_servers.results[0].name }}"
@@ -106,7 +106,8 @@
   tags: [test]
   tasks:
     - name: "Run the tests"
-      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -v -tags integration -timeout 20m ../test/..."
+      # The idiomatic way to bypass test caching is to use -count=1.
+      shell: "KUBECONFIG=$(pwd)/kubeconfig.yml go test -count=1 -v -tags integration -timeout 20m ../test/..."
 
 - hosts: localhost
   tags: [cleanup]
