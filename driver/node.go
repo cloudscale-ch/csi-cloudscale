@@ -372,6 +372,22 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
 	}
 
+	isLuks, _, err := isLuksMapping(devicePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to test if volume %q at %q is encrypted with luks: %v", volumePath, devicePath, err)
+	}
+
+	// the luks container must be resized if the volume was resized while the disk was mounted
+	if isLuks {
+		log.WithFields(logrus.Fields{
+			"device_path": devicePath,
+		}).Info("resizing luks container")
+		err := luksResize(devicePath)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable resize luks container for volume %q at $q: %v", volumePath, devicePath, err)
+		}
+	}
+
 	r := resizefs.NewResizeFs(&mount.SafeFormatAndMount{
 		Interface: mounter,
 		Exec:      mount.NewOSExec(),

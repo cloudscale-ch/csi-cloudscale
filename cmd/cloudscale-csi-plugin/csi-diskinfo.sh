@@ -6,6 +6,12 @@ devices="$(mount | grep ".*kubernetes.io.*csi" | grep ^/dev | awk '{print $1}' |
 deviceCount="$(echo "${devices}" | wc -l)"
 i=1
 
+getFilesystemSize() {
+  blockCount="$(dumpe2fs -h "$1" 2>/dev/null | grep '^Block\ count' | awk '{print $3}')"
+  blockSize="$(dumpe2fs -h "$1" 2>/dev/null | grep '^Block\ size' | awk '{print $3}')"
+  awk "BEGIN {print ${blockCount} * ${blockSize}}"
+}
+
 echo "["
 for device in ${devices}; do
   if [ "$(echo "${device}" | cut -d / -f 1-3)" = "/dev/mapper" ]; then
@@ -19,12 +25,19 @@ for device in ${devices}; do
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
     fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${deviceSource}")"
+
+    fileSystemSize="-1"
+    if [ "${fs}" = "ext4" ]; then
+      fileSystemSize="$(getFilesystemSize "${device}")"
+    fi
+
     echo "  {"
     echo "     \"pvcName\": \"${pvcName}\","
     echo "     \"deviceName\": \"${device}\","
     echo "     \"deviceSize\": ${deviceSize},"
     echo "     \"filesystem\": \"${fs}\","
     echo "     \"filesystemUUID\": \"${fsUUID}\","
+    echo "     \"filesystemSize\": ${fileSystemSize},"
     echo "     \"deviceSource\": \"${deviceSource}\","
     echo "     \"luks\": \"${deviceType}\","
     echo "     \"cipher\": \"${deviceCipher}\","
@@ -40,12 +53,19 @@ for device in ${devices}; do
     fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${device}")"
     deviceSource="$(readlink -f "${device}")"
+
+    fileSystemSize="-1"
+    if [ "${fs}" = "ext4" ]; then
+      fileSystemSize="$(getFilesystemSize "${deviceSource}")"
+    fi
+
     echo "  {"
     echo "     \"pvcName\": \"${pvcName}\","
     echo "     \"deviceName\": \"${device}\","
     echo "     \"deviceSize\": ${deviceSize},"
     echo "     \"filesystem\": \"${fs}\","
     echo "     \"filesystemUUID\": \"${fsUUID}\","
+    echo "     \"filesystemSize\": ${fileSystemSize},"
     echo "     \"deviceSource\": \"${deviceSource}\""
     if [ "${i}" = "${deviceCount}" ]; then
       echo "  }"
