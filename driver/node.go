@@ -384,7 +384,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		}).Info("resizing luks container")
 		err := luksResize(devicePath)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable resize luks container for volume %q at $q: %v", volumePath, devicePath, err)
+			return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable resize luks container for volume %q at %q: %v", volumePath, devicePath, err)
 		}
 	}
 
