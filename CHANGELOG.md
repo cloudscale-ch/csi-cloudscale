@@ -1,5 +1,7 @@
 ## unreleased
 
+## v1.1.1 - 2020.04.28
+
 * Fix a problem with resizing luks-encrypted volumes while they are attached and mounted.
 
 ## v1.1.0 - 2020.04.22
