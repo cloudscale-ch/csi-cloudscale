@@ -38,6 +38,9 @@ import (
 const (
 	// namespace defines the namespace the resources will be created for the CSI tests
 	namespace = "csi-test"
+
+	// the luks container has an overhead of 2 MB; the filesystem size is reduced by this much
+	luksOverhead = 2 * driver.MB
 )
 
 type TestPodVolume struct {
@@ -59,6 +62,7 @@ type DiskInfo struct {
 	DeviceSize     int    `json:"deviceSize"`
 	Filesystem     string `json:"filesystem"`
 	FilesystemUUID string `json:"filesystemUUID"`
+	FilesystemSize int    `json:"filesystemSize"`
 	DeviceSource   string `json:"deviceSource"`
 	Luks           string `json:"luks,omitempty"`
 	Cipher         string `json:"cipher,omitempty"`
@@ -122,6 +126,7 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 	assert.Equal(t, "", disk.Luks)
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, 5*driver.GB, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account; this check is necessary to test that the
@@ -165,6 +170,7 @@ func TestPod_Single_Bulk_Volume(t *testing.T) {
 	assert.Equal(t, "", disk.Luks)
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
+	assert.Equal(t, 100*driver.GB, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account
@@ -350,6 +356,7 @@ func TestPod_Single_SSD_Luks_Volume(t *testing.T) {
 	assert.Equal(t, "LUKS1", disk.Luks)
 	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
 	assert.Equal(t, 512, disk.Keysize)
+	assert.Equal(t, 5*driver.GB-luksOverhead, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account; this check is necessary to test that the
@@ -396,6 +403,7 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 	assert.Equal(t, "LUKS1", disk.Luks)
 	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
 	assert.Equal(t, 512, disk.Keysize)
+	assert.Equal(t, 100*driver.GB-luksOverhead, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account
@@ -404,14 +412,15 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 }
 
 var resizeCases = []struct {
-	storageClass  string
-	initialSizeGB int
-	newSizeGB     int
-	LuksKey       string
+	storageClass      string
+	initialSizeGB     int
+	newSizeGB         int
+	LuksKey           string
+	newFilesystemSize int
 }{
-	{"cloudscale-volume-ssd", 5, 6, ""},
-	{"cloudscale-volume-bulk", 100, 200, ""},
-	{"cloudscale-volume-ssd-luks", 1, 3, "secret"},
+	{"cloudscale-volume-ssd", 5, 6, "", 6 * driver.GB},
+	{"cloudscale-volume-bulk", 100, 200, "", 200 * driver.GB},
+	{"cloudscale-volume-ssd-luks", 1, 3, "secret", 3*driver.GB - luksOverhead},
 }
 
 func TestPersistentVolume_Resize(t *testing.T) {
@@ -504,6 +513,9 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			assert.Equal(t, tt.newSizeGB*driver.GB, disk.DeviceSize)
 			// assert file system uuid has not changed
 			assert.Equal(t, originalFilesystemUUID, disk.FilesystemUUID)
+
+			// wait for the node to resize the filesystem of the volume which was resized by the controller
+			waitFilesystemResized(t, pod, pvc.Spec.VolumeName, tt.newFilesystemSize)
 
 			// delete the pod and the pvcs and wait until the volume was deleted from
 			// the cloudscale.ch account; this check is necessary to test that the
@@ -965,6 +977,29 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 			return
 		} else {
 			t.Logf("volume %v not deleted on cloudscale yet; awaiting deletion", volumeName)
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
+// waits until the volume's filesystem was resized on the node after the volume itself was resized by the controller
+func waitFilesystemResized(t *testing.T, pod *v1.Pod, volumeName string, expectedFilesystemSize int) {
+	start := time.Now()
+
+	for {
+		disk, err := getVolumeInfo(t, pod, volumeName)
+		assert.NoError(t, err)
+
+		if disk.FilesystemSize == expectedFilesystemSize {
+			t.Logf("filesystem on volume %v was resized", volumeName)
+			return
+		}
+
+		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+			t.Errorf("timeout exceeded while waiting for filesystem on volume %v to be resized from cloudscale", volumeName)
+			return
+		} else {
+			t.Logf("filesystem on volume %v was not resized yet; awaiting resize operation on the node\nexpectedFilesystemSize = %v", volumeName, expectedFilesystemSize)
 			time.Sleep(5 * time.Second)
 		}
 	}

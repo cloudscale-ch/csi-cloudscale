@@ -302,6 +302,18 @@ func luksOpen(volume string, keyFile string, ctx LuksContext, log *logrus.Entry)
 	return nil
 }
 
+// runs cryptsetup resize for a given volume (/dev/mapper/pvc-xyz)
+func luksResize(volume string) error {
+	cryptsetupCmd, err := getCryptsetupCmd()
+	if err != nil {
+		return err
+	}
+	cryptsetupArgs := []string{"--batch-mode", "resize", volume}
+
+	_, err = exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	return err
+}
+
 // runs cryptsetup isLuks for a given volume
 func isLuks(volume string) (bool, error) {
 	cryptsetupCmd, err := getCryptsetupCmd()
