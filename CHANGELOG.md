@@ -1,5 +1,7 @@
 ## unreleased
 
+* Fix a problem with resizing luks-encrypted volumes while they are attached and mounted.
+
 ## v1.1.0 - 2020.04.22
 
 * Update to CSI spec v1.1.0
