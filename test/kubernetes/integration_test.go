@@ -420,7 +420,7 @@ var resizeCases = []struct {
 }{
 	{"cloudscale-volume-ssd", 5, 6, "", 6 * driver.GB},
 	{"cloudscale-volume-bulk", 100, 200, "", 200 * driver.GB},
-	{"cloudscale-volume-ssd-luks", 1, 3, "secret", 3 * driver.GB},
+	{"cloudscale-volume-ssd-luks", 1, 3, "secret", 3*driver.GB - luksOverhead},
 }
 
 func TestPersistentVolume_Resize(t *testing.T) {
@@ -996,10 +996,10 @@ func waitFilesystemResized(t *testing.T, pod *v1.Pod, volumeName string, expecte
 		}
 
 		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
-			t.Errorf("timeout exceeded while waiting for volume %v to be deleted from cloudscale", volumeName)
+			t.Errorf("timeout exceeded while waiting for filesystem on volume %v to be resized from cloudscale", volumeName)
 			return
 		} else {
-			t.Logf("filesystem on volume %v was not resized yet; awaiting resize operation on the node", volumeName)
+			t.Logf("filesystem on volume %v was not resized yet; awaiting resize operation on the node\nexpectedFilesystemSize = %v", volumeName, expectedFilesystemSize)
 			time.Sleep(5 * time.Second)
 		}
 	}
