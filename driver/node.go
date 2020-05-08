@@ -37,10 +37,7 @@ import (
 )
 
 const (
-	// TODO we're not sure yet what our limit is, so just use this for now.
-	// It's the limit for Google Compute Engine and I don't see what limits
-	// this more in OpenStack, except per User Quotas.
-	maxVolumesPerNode = 128
+	maxVolumesPerNode = 25 // current limit: a-z (26) - 1 root volume
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is
