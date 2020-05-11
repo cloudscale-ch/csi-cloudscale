@@ -37,7 +37,11 @@ import (
 )
 
 const (
-	maxVolumesPerNode = 25 // current limit: a-z (26) - 1 root volume
+	// Current technical limit is 26 (letter a-z)
+	//   - 1 for root
+	//   - 1 for /var/lib/docker
+	//   - 1 additional volume outside of CSI
+	maxVolumesPerNode = 23
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is

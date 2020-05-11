@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,10 @@ var (
 	supportedAccessMode = &csi.VolumeCapability_AccessMode{
 		Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 	}
+
+	// maxVolumesPerServerErrorMessage is the error message returned by the cloudscale.ch
+	// API when the per-server volume limit would be exceeded.
+	maxVolumesPerServerErrorMessageRe = regexp.MustCompile("Due to internal limitations, it is currently not possible to attach more than \\d+ volumes")
 )
 
 // CreateVolume creates a new volume from the given request. The function is
@@ -254,6 +259,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
+		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
+			return nil, status.Errorf(codes.ResourceExhausted, err.Error())
+		}
+
 		return nil, reraiseNotFound(err, ll, "attaching volume")
 	}
 
