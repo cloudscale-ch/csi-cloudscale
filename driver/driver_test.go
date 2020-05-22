@@ -211,7 +211,7 @@ func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string
 					}
 
 					volumesCount := getVolumesPerServer(f, serverUUID)
-					if volumesCount >= maxVolumesPerNode {
+					if volumesCount >= defaultMaxVolumesPerNode {
 						return &cloudscale.ErrorResponse{
 							StatusCode: 400,
 							Message:    map[string]string{"detail": "Due to internal limitations, it is currently not possible to attach more than 26 volumes"},

@@ -27,6 +27,8 @@ package driver
 
 import (
 	"context"
+	"os"
+	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -41,7 +43,7 @@ const (
 	//   - 1 for root
 	//   - 1 for /var/lib/docker
 	//   - 1 additional volume outside of CSI
-	maxVolumesPerNode = 23
+	defaultMaxVolumesPerNode = 23
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is
@@ -319,12 +321,24 @@ func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabi
 	}, nil
 }
 
+func getEnvAsInt(key string, fallback int64) int64 {
+	if valueStr, ok := os.LookupEnv(key); ok {
+		if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
+			return value
+		}
+	}
+	return fallback
+}
+
 // NodeGetInfo returns the supported capabilities of the node server. This
 // should eventually return the droplet ID if possible. This is used so the CO
 // knows where to place the workload. The result of this function will be used
 // by the CO in ControllerPublishVolume.
 func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
+
+	maxVolumesPerNode := getEnvAsInt("CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE", defaultMaxVolumesPerNode)
+
 	return &csi.NodeGetInfoResponse{
 		NodeId:            d.serverId,
 		MaxVolumesPerNode: maxVolumesPerNode,
