@@ -193,6 +193,25 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
+
+## Advanced Configuration
+
+Please use the following options with care.
+
+### Max. Number of CSI Volumes per Node
+
+By default a limit of 23 CSI volumes per node applies. If you want to use a different
+value you can set the following environment variable for the `csi-cloudscale-plugin` container
+in the `csi-cloudscale-node` DaemonSet:
+
+```
+env:
+ - name: CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE
+   value: '10'
+```
+
+Note that there is currently a hard-limit of 26 volumes (including root) per Node.
+
 ## Development
 
 Requirements:
