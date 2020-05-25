@@ -1,5 +1,7 @@
 ## unreleased
 
+## v1.1.2 - 2020.05.25
+
 * Fix: Handle max. volumes per node limit correctly.
 * Introduce new option `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE`.
 
