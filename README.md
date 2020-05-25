@@ -47,7 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v1.1.1`**. The project is still under active development and may not be 
+The current version is: **`v1.1.2`**. The project is still under active development and may not be 
 production ready.
 
 * Bug fixes will be released as a `PATCH` update.
@@ -101,10 +101,10 @@ cloudscale            Opaque                                1         18h
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v1.1.1`) you can execute the following command:
+For example, to use the latest stable version (`v1.1.2`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.1.1.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.1.2.yaml
 ```
 
 There are also `dev` images available:
@@ -193,6 +193,25 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
+
+## Advanced Configuration
+
+Please use the following options with care.
+
+### Max. Number of CSI Volumes per Node
+
+By default a limit of 23 CSI volumes per node applies. If you want to use a different
+value you can set the following environment variable for the `csi-cloudscale-plugin` container
+in the `csi-cloudscale-node` DaemonSet:
+
+```
+env:
+ - name: CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE
+   value: '10'
+```
+
+Note that there is currently a hard-limit of 26 volumes (including root) per Node.
+
 ## Development
 
 Requirements:
@@ -243,15 +262,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v1.1.1` and then publish a new docker build:
+master with the version `v1.1.2` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v1.1.1` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v1.1.1`
+This will create a binary with version `v1.1.2` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v1.1.2`
 
 ## Contributing
 

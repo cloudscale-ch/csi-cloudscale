@@ -71,6 +71,7 @@ func TestDriverSuite(t *testing.T) {
 		TargetPath:     targetDir,
 		StagingPath:    stagingDir,
 	}
+	cfg.TestNodeVolumeAttachLimit = true
 
 	sanity.Test(t, cfg)
 }
@@ -202,12 +203,23 @@ func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string
 			if len(serverUUIDs) > 1 {
 				return errors.New("multi attach is not implemented")
 			}
-			for _, serverUUID := range serverUUIDs {
-				_, err := f.fakeClient.Servers.Get(nil, serverUUID)
-				if err != nil {
-					return err
+			if len(serverUUIDs) == 1 {
+				for _, serverUUID := range serverUUIDs {
+					_, err := f.fakeClient.Servers.Get(nil, serverUUID)
+					if err != nil {
+						return err
+					}
+
+					volumesCount := getVolumesPerServer(f, serverUUID)
+					if volumesCount >= defaultMaxVolumesPerNode {
+						return &cloudscale.ErrorResponse{
+							StatusCode: 400,
+							Message:    map[string]string{"detail": "Due to internal limitations, it is currently not possible to attach more than 26 volumes"},
+						}
+					}
 				}
 			}
+
 			vol.ServerUUIDs = &serverUUIDs
 			return nil
 		}
@@ -217,6 +229,18 @@ func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string
 		return nil
 	}
 	panic("implement me")
+}
+
+func getVolumesPerServer(f FakeVolumeServiceOperations, serverUUID string) int {
+	volumesCount := 0
+	for _, v := range f.volumes {
+		for _, uuid := range *v.ServerUUIDs {
+			if uuid == serverUUID {
+				volumesCount++
+			}
+		}
+	}
+	return volumesCount
 }
 
 func (f FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
