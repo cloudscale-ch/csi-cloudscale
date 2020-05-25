@@ -1,5 +1,8 @@
 ## unreleased
 
+* Fix: Handle max. volumes per node limit correctly.
+* Introduce new option `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE`.
+
 ## v1.1.1 - 2020.04.28
 
 * Fix a problem with resizing luks-encrypted volumes while they are attached and mounted.
