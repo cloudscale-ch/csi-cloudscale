@@ -169,15 +169,11 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	}
 
 	volumeReq := &cloudscale.VolumeRequest{
-		/*
-			TODO: cloudscale.ch will start supporting different regions soon
-
-			Region: d.region
-		*/
 		Name:   volumeName,
 		SizeGB: sizeGB,
 		Type:   storageType,
 	}
+	volumeReq.Zone = d.region
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
 	vol, err := d.cloudscaleClient.Volumes.Create(ctx, volumeReq)

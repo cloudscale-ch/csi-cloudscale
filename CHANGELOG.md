@@ -1,5 +1,10 @@
 ## unreleased
 
+## v1.2.0 - 2020.08.25
+
+* Make the driver zone aware. The driver reads the zone the server is running in from the metadata server
+  at `http://169.254.169.254`.
+
 ## v1.1.2 - 2020.05.25
 
 * Fix: Handle max. volumes per node limit correctly.
