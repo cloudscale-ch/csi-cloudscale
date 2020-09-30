@@ -1,5 +1,10 @@
 ## unreleased
 
+## v1.2.1 - 2020.09.30
+
+* Increase the default value of CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE to 125.
+* Add support for nodes that use dev/sdX devices.
+
 ## v1.2.0 - 2020.08.25
 
 * Make the driver zone aware. The driver reads the zone the server is running in from the metadata server
