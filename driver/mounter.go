@@ -412,22 +412,16 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, linu
 	for {
 		probeAttachedVolume(logger)
 
-		source := filepath.Join(diskIDPath, "virtio-"+linuxSerial)
-		_, err := os.Stat(source)
-		if err == nil {
-			return &source, nil
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		source = filepath.Join(diskIDPath, "scsi-"+linuxSerial)
-		_, err = os.Stat(source)
-		if err == nil {
-			return &source, nil
-		}
-		if !os.IsNotExist(err) {
-			return nil, err
+		sourcePathPrefixes := []string{"virtio-", "scsi-", "scsi-0QEMU_QEMU_HARDDISK_"}
+		for _, prefix := range sourcePathPrefixes {
+			source := filepath.Join(diskIDPath, prefix+linuxSerial)
+			_, err := os.Stat(source)
+			if err == nil {
+				return &source, nil
+			}
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
 		}
 
 		numTries++
