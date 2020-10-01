@@ -200,9 +200,14 @@ Please use the following options with care.
 
 ### Max. Number of CSI Volumes per Node
 
-By default a limit of 23 CSI volumes per node applies. If you want to use a different
-value you can set the following environment variable for the `csi-cloudscale-plugin` container
-in the `csi-cloudscale-node` DaemonSet:
+In the `v1.3.0` release the default CSI volumes per node limit of has been increased
+to 125 (previously 23). To take advantage of the higher CSI limit you must ensure that
+all your cluster nodes are using `virtio-scsi` devices (i.e. `/dev/sdX` devices are used).
+This is de default for servers created after October 1st, 2020.
+
+If you want to use a different value, for example because one of your nodes does not use
+`virtio-scsi`, you can set the following environment variable for the `csi-cloudscale-plugin`
+container in the `csi-cloudscale-node` DaemonSet:
 
 ```
 env:
@@ -210,7 +215,9 @@ env:
    value: '10'
 ```
 
-Note that there is currently a hard-limit of 26 volumes (including root) per Node.
+Note that there are currently the following hard-limits per Node:
+ * 26 volumes (including root) for `virtio-blk` (`/dev/vdX`).
+ * 128 volumes (including root) for `virtio-scsi` (`/dev/sdX`).
 
 ## Development
 
