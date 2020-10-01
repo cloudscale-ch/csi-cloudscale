@@ -210,7 +210,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
-          image: cloudscalech/cloudscale-csi-plugin:v1.2.1
+          image: cloudscalech/cloudscale-csi-plugin:v1.3.0
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
@@ -437,7 +437,7 @@ spec:
             - name: registration-dir
               mountPath: /registration/
         - name: csi-cloudscale-plugin
-          image: cloudscalech/cloudscale-csi-plugin:v1.2.1
+          image: cloudscalech/cloudscale-csi-plugin:v1.3.0
           imagePullPolicy: "Always"
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
