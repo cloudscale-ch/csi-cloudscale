@@ -59,6 +59,8 @@ production ready.
 **Requirements:**
 
 * Kubernetes v1.13.0 minimum 
+* Nodes must be able to access the metadata service at `169.254.169.254` using HTTP. The required 
+  route is pushed by DHCP.
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
 * (if you use Docker) the Docker daemon of the cluster nodes must allow shared mounts
 * If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
