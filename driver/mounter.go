@@ -412,23 +412,15 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volu
 	for {
 		probeAttachedVolume(logger)
 
-		sourcePathPrefixes := []string{"virtio-", "scsi-", "scsi-0QEMU_QEMU_HARDDISK_", "scsi-SQEMU_QEMU_HARDDISK_"}
 		// Get the first part of the UUID.
 		// The linux kernel limits volume serials to 20 bytes:
 		// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
-		idVariants := []string{volumeID, volumeID[:20]}
+		linuxSerial := volumeID[:20]
 
-		for _, idVariant := range idVariants {
-			for _, prefix := range sourcePathPrefixes {
-				source := filepath.Join(diskIDPath, prefix+idVariant)
-				_, err := os.Stat(source)
-				if err == nil {
-					return &source, nil
-				}
-				if !os.IsNotExist(err) {
-					return nil, err
-				}
-			}
+		globExpr := diskIDPath + "/*" + linuxSerial + "*"
+		matches, _ := filepath.Glob(globExpr)
+		if len(matches) > 0 {
+			return &matches[0], nil
 		}
 
 		numTries++
