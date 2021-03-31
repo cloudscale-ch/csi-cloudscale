@@ -64,14 +64,10 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
 	}
 
-	// Get the first part of the UUID.
-	// The linux kernel limits volume serials to 20 bytes:
-	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
-	linuxSerial := req.VolumeId[:20]
 	// Apparently sometimes we need to call udevadm trigger to get the volume
 	// properly registered in /dev/disk. More information can be found here:
 	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	sourcePtr, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), linuxSerial)
+	sourcePtr, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), req.VolumeId)
 	if err != nil {
 		return nil, err
 	}

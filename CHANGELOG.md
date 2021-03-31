@@ -1,5 +1,9 @@
 ## unreleased
 
+## v1.3.1 - 2021.03.31
+
+* Support all formats of files in `/dev/disk/by-id` that were observed across different Linux distributions.
+
 ## v1.3.0 - 2020.10.01
 
 * Increase the default value of CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE to 125.
