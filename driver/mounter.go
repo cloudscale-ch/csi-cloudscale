@@ -75,7 +75,7 @@ type Mounter interface {
 
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
-	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, linuxSerial string) (*string, error)
+	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, VolumeId string) (*string, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -407,20 +407,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, linuxSerial string) (*string, error) {
+func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (*string, error) {
 	numTries := 0
 	for {
 		probeAttachedVolume(logger)
 
-		sourcePathPrefixes := []string{"virtio-", "scsi-", "scsi-0QEMU_QEMU_HARDDISK_"}
-		for _, prefix := range sourcePathPrefixes {
-			source := filepath.Join(diskIDPath, prefix+linuxSerial)
-			_, err := os.Stat(source)
-			if err == nil {
-				return &source, nil
-			}
-			if !os.IsNotExist(err) {
-				return nil, err
+		sourcePathPrefixes := []string{"virtio-", "scsi-", "scsi-0QEMU_QEMU_HARDDISK_", "scsi-SQEMU_QEMU_HARDDISK_"}
+		// Get the first part of the UUID.
+		// The linux kernel limits volume serials to 20 bytes:
+		// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
+		idVariants := []string{volumeID, volumeID[:20]}
+
+		for _, idVariant := range idVariants {
+			for _, prefix := range sourcePathPrefixes {
+				source := filepath.Join(diskIDPath, prefix+idVariant)
+				_, err := os.Stat(source)
+				if err == nil {
+					return &source, nil
+				}
+				if !os.IsNotExist(err) {
+					return nil, err
+				}
 			}
 		}
 
