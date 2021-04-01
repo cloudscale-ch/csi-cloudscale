@@ -1,4 +1,4 @@
-# csi-cloudscale [![Build Status](https://travis-ci.org/cloudscale-ch/csi-cloudscale.svg?branch=master)](https://travis-ci.org/cloudscale-ch/csi-cloudscale)
+# csi-cloudscale
 A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
 
 The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
@@ -47,8 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v1.3.1`**. The project is still under active development and may not be 
-production ready.
+The current version is: **`v1.3.1`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -202,7 +201,7 @@ Please use the following options with care.
 
 ### Max. Number of CSI Volumes per Node
 
-In the `v1.3.1` release the default CSI volumes per node limit of has been increased
+In the `v1.3.0` release the default CSI volumes per node limit of has been increased
 to 125 (previously 23). To take advantage of the higher CSI limit you must ensure that
 all your cluster nodes are using `virtio-scsi` devices (i.e. `/dev/sdX` devices are used).
 This is the default for servers created after October 1st, 2020.
