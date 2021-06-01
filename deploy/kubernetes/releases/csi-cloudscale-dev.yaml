@@ -15,54 +15,22 @@
 
 # Configuration to deploy release version of the CSI cloudscale.ch
 # plugin (https://github.com/cloudscale-ch/csi-cloudscale) compatible with
-# Kubernetes >=v1.13.0
+# Kubernetes >=v1.14+
 #
 # example usage: kubectl create -f <this_file>
+#
 
-####################################################
-###########                             ############
-###########  CSI Node and Driver CRDs   ############
-###########                             ############
-####################################################
----
 
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
+# Install the CSI Driver. This simplifies driver discovery and enables us to
+# customize Kubernetes behavior
+# https://kubernetes-csi.github.io/docs/csi-driver-object.html
+apiVersion: storage.k8s.io/v1
+kind: CSIDriver
 metadata:
-  creationTimestamp: null
-  name: csinodeinfos.csi.storage.k8s.io
+  name: ch.cloudscale.csi
 spec:
-  group: csi.storage.k8s.io
-  names:
-    kind: CSINodeInfo
-    plural: csinodeinfos
-  scope: Cluster
-  validation:
-    openAPIV3Schema:
-      properties:
-        csiDrivers:
-          description: List of CSI drivers running on the node and their properties.
-          items:
-            properties:
-              driver:
-                description: The CSI driver that this object refers to.
-                type: string
-              nodeID:
-                description: The node from the driver point of view.
-                type: string
-              topologyKeys:
-                description: List of keys supported by the driver.
-                items:
-                  type: string
-                type: array
-          type: array
-  version: v1alpha1
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
+  attachRequired: true
+  podInfoOnMount: true
 
 ---
 
@@ -160,10 +128,9 @@ spec:
       serviceAccount: csi-cloudscale-controller-sa
       containers:
         - name: csi-provisioner
-          image: quay.io/k8scsi/csi-provisioner:v1.0.1
+          image: quay.io/k8scsi/csi-provisioner:v1.1.0
           imagePullPolicy: "Always"
           args:
-            - "--provisioner=ch.cloudscale.csi"
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
           env:
@@ -173,7 +140,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-attacher
-          image: quay.io/k8scsi/csi-attacher:v1.0.1
+          image: quay.io/k8scsi/csi-attacher:v1.1.0
           imagePullPolicy: "Always"
           args:
             - "--v=5"
@@ -194,18 +161,6 @@ spec:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
           imagePullPolicy: "IfNotPresent"
-          volumeMounts:
-            - name: socket-dir
-              mountPath: /var/lib/csi/sockets/pluginproxy/
-        - name: csi-cluster-driver-registrar
-          image: quay.io/k8scsi/csi-cluster-driver-registrar:v1.0.1
-          args:
-            - "--v=5"
-            - "--pod-info-mount-version=\"v1\""
-            - "--csi-address=$(ADDRESS)"
-          env:
-            - name: ADDRESS
-              value: /var/lib/csi/sockets/pluginproxy/csi.sock
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
@@ -259,6 +214,9 @@ rules:
   - apiGroups: ["storage.k8s.io"]
     resources: ["storageclasses"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["list", "watch", "create", "update", "patch"]
@@ -268,6 +226,9 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
   # cluster-driver-registrar currently needs permissions to create the CSIDriver CRD
   # see https://github.com/kubernetes-csi/cluster-driver-registrar/issues/3
   - apiGroups: ["apiextensions.k8s.io"]
@@ -303,8 +264,8 @@ rules:
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["csi.storage.k8s.io"]
-    resources: ["csinodeinfos"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
@@ -361,31 +322,6 @@ roleRef:
 
 ---
 
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: csi-cloudscale-cluster-driver-registrar-role
-rules:
-  - apiGroups: ["csi.storage.k8s.io"]
-    resources: ["csidrivers"]
-    verbs: ["create", "delete"]
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: csi-cloudscale-cluster-driver-registrar-binding
-subjects:
-  - kind: ServiceAccount
-    name: csi-cloudscale-controller-sa
-    namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: csi-cloudscale-cluster-driver-registrar-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
 
 ########################################
 ###########                 ############
@@ -413,7 +349,7 @@ spec:
       hostNetwork: true
       containers:
         - name: driver-registrar
-          image: quay.io/k8scsi/csi-node-driver-registrar:v1.0.2
+          image: quay.io/k8scsi/csi-node-driver-registrar:v1.1.0
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
