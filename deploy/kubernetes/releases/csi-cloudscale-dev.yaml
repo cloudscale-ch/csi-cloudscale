@@ -1,5 +1,5 @@
 # Copyright cloudscale.ch
-# Copyright 2018 DigitalOcean
+# Copyright 2020 DigitalOcean
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,64 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Configuration to deploy release version of the CSI cloudscale.ch
-# plugin (https://github.com/cloudscale-ch/csi-cloudscale) compatible with
-# Kubernetes >=v1.13.0
-#
-# example usage: kubectl create -f <this_file>
 
-####################################################
-###########                             ############
-###########  CSI Node and Driver CRDs   ############
-###########                             ############
-####################################################
----
-
-apiVersion: apiextensions.k8s.io/v1beta1
-kind: CustomResourceDefinition
+# Install the CSI Driver. This simplifies driver discovery and enables us to
+# customize Kubernetes behavior
+# https://kubernetes-csi.github.io/docs/csi-driver-object.html
+apiVersion: storage.k8s.io/v1beta1
+kind: CSIDriver
 metadata:
-  creationTimestamp: null
-  name: csinodeinfos.csi.storage.k8s.io
+  name: csi.cloudscale.ch
 spec:
-  group: csi.storage.k8s.io
-  names:
-    kind: CSINodeInfo
-    plural: csinodeinfos
-  scope: Cluster
-  validation:
-    openAPIV3Schema:
-      properties:
-        csiDrivers:
-          description: List of CSI drivers running on the node and their properties.
-          items:
-            properties:
-              driver:
-                description: The CSI driver that this object refers to.
-                type: string
-              nodeID:
-                description: The node from the driver point of view.
-                type: string
-              topologyKeys:
-                description: List of keys supported by the driver.
-                items:
-                  type: string
-                type: array
-          type: array
-  version: v1alpha1
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
+  attachRequired: true
+  podInfoOnMount: true
 
 ---
-
-##########################################
-###########                   ############
-###########   Storage Class   ############
-###########                   ############
-##########################################
 
 kind: StorageClass
 apiVersion: storage.k8s.io/v1
@@ -79,7 +34,7 @@ metadata:
   namespace: kube-system
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-provisioner: ch.cloudscale.csi
+provisioner: csi.cloudscale.ch
 allowVolumeExpansion: true
 parameters:
   csi.cloudscale.ch/volume-type: ssd
@@ -91,7 +46,7 @@ apiVersion: storage.k8s.io/v1
 metadata:
   name: cloudscale-volume-bulk
   namespace: kube-system
-provisioner: ch.cloudscale.csi
+provisioner: csi.cloudscale.ch
 allowVolumeExpansion: true
 parameters:
   csi.cloudscale.ch/volume-type: bulk
@@ -103,7 +58,7 @@ apiVersion: storage.k8s.io/v1
 metadata:
   name: cloudscale-volume-ssd-luks
   namespace: kube-system
-provisioner: ch.cloudscale.csi
+provisioner: csi.cloudscale.ch
 allowVolumeExpansion: true
 parameters:
   csi.cloudscale.ch/volume-type: ssd
@@ -120,7 +75,7 @@ apiVersion: storage.k8s.io/v1
 metadata:
   name: cloudscale-volume-bulk-luks
   namespace: kube-system
-provisioner: ch.cloudscale.csi
+provisioner: csi.cloudscale.ch
 allowVolumeExpansion: true
 parameters:
   csi.cloudscale.ch/volume-type: bulk
@@ -160,52 +115,41 @@ spec:
       serviceAccount: csi-cloudscale-controller-sa
       containers:
         - name: csi-provisioner
-          image: quay.io/k8scsi/csi-provisioner:v1.0.1
-          imagePullPolicy: "Always"
+          image: quay.io/k8scsi/csi-provisioner:v2.0.4
           args:
-            - "--provisioner=ch.cloudscale.csi"
             - "--csi-address=$(ADDRESS)"
             - "--v=5"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-attacher
-          image: quay.io/k8scsi/csi-attacher:v1.0.1
-          imagePullPolicy: "Always"
+          image: quay.io/k8scsi/csi-attacher:v3.0.2
           args:
-            - "--v=5"
             - "--csi-address=$(ADDRESS)"
+            - "--v=5"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: "Always"
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-resizer
-          image: quay.io/k8scsi/csi-resizer:v0.3.0
+          image: quay.io/k8scsi/csi-resizer:v1.0.1
           args:
-            - "--v=5"
             - "--csi-address=$(ADDRESS)"
-            - "--csiTimeout=30s"
+            - "--timeout=30s"
+            - "--v=5"
+            # cloudscale.ch volumes support online resize.
+            - "--handle-volume-inuse-error=false"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
           imagePullPolicy: "IfNotPresent"
-          volumeMounts:
-            - name: socket-dir
-              mountPath: /var/lib/csi/sockets/pluginproxy/
-        - name: csi-cluster-driver-registrar
-          image: quay.io/k8scsi/csi-cluster-driver-registrar:v1.0.1
-          args:
-            - "--v=5"
-            - "--pod-info-mount-version=\"v1\""
-            - "--csi-address=$(ADDRESS)"
-          env:
-            - name: ADDRESS
-              value: /var/lib/csi/sockets/pluginproxy/csi.sock
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
@@ -234,22 +178,18 @@ spec:
 
 ---
 
-apiVersion: v1
 kind: ServiceAccount
+apiVersion: v1
 metadata:
   name: csi-cloudscale-controller-sa
   namespace: kube-system
 
 ---
-
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: csi-cloudscale-provisioner-role
 rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list"]
   - apiGroups: [""]
     resources: ["persistentvolumes"]
     verbs: ["get", "list", "watch", "create", "delete"]
@@ -268,12 +208,15 @@ rules:
   - apiGroups: ["snapshot.storage.k8s.io"]
     resources: ["volumesnapshotcontents"]
     verbs: ["get", "list"]
-  # cluster-driver-registrar currently needs permissions to create the CSIDriver CRD
-  # see https://github.com/kubernetes-csi/cluster-driver-registrar/issues/3
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["get", "list", "create"]
-
+  - apiGroups: [ "storage.k8s.io" ]
+    resources: [ "csinodes" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: [ "" ]
+    resources: [ "nodes" ]
+    verbs: [ "get", "list", "watch" ]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments"]
+    verbs: ["get", "list", "watch"]
 
 ---
 
@@ -299,16 +242,34 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
     resources: ["nodes"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["csi.storage.k8s.io"]
-    resources: ["csinodeinfos"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["csinodes"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["storage.k8s.io"]
     resources: ["volumeattachments"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattachments/status"]
+    verbs: ["patch"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-cloudscale-attacher-binding
+subjects:
+  - kind: ServiceAccount
+    name: csi-cloudscale-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-cloudscale-attacher-role
+  apiGroup: rbac.authorization.k8s.io
+
 ---
 
 # Resizer must be able to work with PVCs, PVs, SCs.
@@ -346,46 +307,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: csi-cloudscale-attacher-binding
-subjects:
-  - kind: ServiceAccount
-    name: csi-cloudscale-controller-sa
-    namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: csi-cloudscale-attacher-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: csi-cloudscale-cluster-driver-registrar-role
-rules:
-  - apiGroups: ["csi.storage.k8s.io"]
-    resources: ["csidrivers"]
-    verbs: ["create", "delete"]
-
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: csi-cloudscale-cluster-driver-registrar-binding
-subjects:
-  - kind: ServiceAccount
-    name: csi-cloudscale-controller-sa
-    namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: csi-cloudscale-cluster-driver-registrar-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
 
 ########################################
 ###########                 ############
@@ -412,8 +333,8 @@ spec:
       serviceAccount: csi-cloudscale-node-sa
       hostNetwork: true
       containers:
-        - name: driver-registrar
-          image: quay.io/k8scsi/csi-node-driver-registrar:v1.0.2
+        - name: csi-node-driver-registrar
+          image: quay.io/k8scsi/csi-node-driver-registrar:v2.0.1
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
@@ -438,7 +359,6 @@ spec:
               mountPath: /registration/
         - name: csi-cloudscale-plugin
           image: cloudscalech/cloudscale-csi-plugin:dev
-          imagePullPolicy: "Always"
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
@@ -452,6 +372,7 @@ spec:
                 secretKeyRef:
                   name: cloudscale
                   key: access-token
+          imagePullPolicy: "Always"
           securityContext:
             privileged: true
             capabilities:
@@ -503,24 +424,24 @@ metadata:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-cloudscale-driver-registrar-role
+  name: csi-cloudscale-node-driver-registrar-role
   namespace: kube-system
 rules:
   - apiGroups: [""]
     resources: ["events"]
-    verbs: ["list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
 
 ---
 
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: csi-cloudscale-driver-registrar-binding
+  name: csi-cloudscale-node-driver-registrar-binding
 subjects:
   - kind: ServiceAccount
     name: csi-cloudscale-node-sa
     namespace: kube-system
 roleRef:
   kind: ClusterRole
-  name: csi-cloudscale-driver-registrar-role
+  name: csi-cloudscale-node-driver-registrar-role
   apiGroup: rbac.authorization.k8s.io
