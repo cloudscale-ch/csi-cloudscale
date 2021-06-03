@@ -18,6 +18,12 @@ all: check-unused test
 
 publish: build push clean
 
+.PHONY: update-k8s
+update-k8s:
+	scripts/update-k8s.sh $(NEW_KUBERNETES_VERSION)
+	sed -i.sedbak "s/^KUBERNETES_VERSION.*/KUBERNETES_VERSION ?= $(NEW_KUBERNETES_VERSION)/" Makefile
+	rm -f Makefile.sedbak
+
 .PHONY: bump-version
 bump-version:
 	@[ "${NEW_VERSION}" ] || ( echo "NEW_VERSION must be set (ex. make NEW_VERSION=v1.x.x bump-version)"; exit 1 )
