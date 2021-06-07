@@ -55,9 +55,17 @@ The current version is: **`v1.3.1`**.
 
 ## Installing to Kubernetes
 
+### Kubernetes Compatibility
+
+The following table describes the required cloudsdcale.ch driver version per Kubernetes release.
+
+Kubernetes Release | cloudsdcale.ch CSI Driver Version
+------------------ | -------------------------------
+1.13 - 1.16        | latest v1.x
+1.17 or later      | latest v2.x
+
 **Requirements:**
 
-* Kubernetes v1.13.0 minimum 
 * Nodes must be able to access the metadata service at `169.254.169.254` using HTTP. The required 
   route is pushed by DHCP.
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
