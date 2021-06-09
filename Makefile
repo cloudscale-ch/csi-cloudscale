@@ -55,7 +55,7 @@ test:
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env go test -count 1 -v -tags integration -timeout 20m ./test/...
+	@env go test -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
