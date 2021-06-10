@@ -1,0 +1,23 @@
+#!/bin/sh
+jsonpath='{.items[?(@.metadata.annotations.pv\.kubernetes\.io/provisioned-by=="ch.cloudscale.csi")].metadata.name}'
+
+pvs=$(
+  kubectl get pv \
+    -A \
+    -o=jsonpath="${jsonpath}"
+)
+
+echo "Found the following persistant volumes (PVs):"
+for pv in $pvs; do
+  echo "${pv}"
+done
+
+if [ "$1" != "migrate" ]
+then
+  echo "Run \"./${0} migrate\" to update the PVs."
+  exit
+fi
+
+for pv in $pvs; do
+  kubectl annotate pv --overwrite "${pv}" "pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"
+done
