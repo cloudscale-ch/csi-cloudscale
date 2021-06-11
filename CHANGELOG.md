@@ -1,6 +1,6 @@
 ## unreleased
 
-* Update side-cars to support Kubernetes >=1.17.
+* Update side-cars to support Kubernetes >=1.20.
 * Update Makefile and related scripts.
 * Update go libraries.
 * Update go version used. 
