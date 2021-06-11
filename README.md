@@ -202,6 +202,19 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
+## Upgrading
+
+### From csi-cloudscale 1.x to 2.x
+
+When updating from csi-cloudscale 1.x to 2.x please consider the following:
+
+ * Ensure that all API objects of the existing 1.x installation are removed.
+   The easiest way to achieve this is by running `kubectl delete -f <old version>` before
+   installing the new driver.
+ * Annotate all existing persistent volumes (PVs) with: `"pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"`.
+   You can use [this script](https://github.com/cloudscale-ch/csi-cloudscale/tree/master/scripts/fixup.sh) or any
+   other means to set the annotation. If you don't set the annotation, deleted volumes will not be removed from
+   your cloudscale.ch project.
 
 ## Advanced Configuration
 
