@@ -59,7 +59,7 @@ The current version is: **`v1.3.1`**.
 
 The following table describes the required cloudsdcale.ch driver version per Kubernetes release.
 
-Kubernetes Release | cloudsdcale.ch CSI Driver Version
+Kubernetes Release | cloudscale.ch CSI Driver Version
 ------------------ | -------------------------------
 1.13 - 1.16        | latest v1.x
 1.17 or later      | latest v2.x
@@ -204,17 +204,17 @@ hello-world
 
 ## Upgrading
 
-### From csi-cloudscale 1.x to 2.x
+### From csi-cloudscale v1.x to v2.x
 
-When updating from csi-cloudscale 1.x to 2.x please consider the following:
+When updating from csi-cloudscale v1.x to v2.x please consider the following:
 
- * Ensure that all API objects of the existing 1.x installation are removed.
+ * Ensure that all API objects of the existing v1.x installation are removed.
    The easiest way to achieve this is by running `kubectl delete -f <old version>` before
    installing the new driver.
- * Annotate all existing persistent volumes (PVs) with: `"pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"`.
-   You can use [this script](https://github.com/cloudscale-ch/csi-cloudscale/tree/master/scripts/fixup.sh) or any
-   other means to set the annotation. If you don't set the annotation, deleted volumes will not be removed from
-   your cloudscale.ch project.
+ * Prior to the installation of v2.x, existing persistent volumes (PVs) must be annotated
+   with: `"pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"`. You can
+   use [this script](https://github.com/cloudscale-ch/csi-cloudscale/tree/master/scripts/fix-annotation.sh)
+   or any other means to set the annotation.
 
 ## Advanced Configuration
 
