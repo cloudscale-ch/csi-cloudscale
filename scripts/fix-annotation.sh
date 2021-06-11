@@ -1,5 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env bash
+set -euo pipefail
+
 jsonpath='{.items[?(@.metadata.annotations.pv\.kubernetes\.io/provisioned-by=="ch.cloudscale.csi")].metadata.name}'
+subcommand="${1:-""}"
 
 pvs=$(
   kubectl get pv \
@@ -12,7 +15,7 @@ for pv in $pvs; do
   echo "${pv}"
 done
 
-if [ "$1" != "migrate" ]
+if [ "$subcommand" != "migrate" ]
 then
   echo "Run \"./${0} migrate\" to update the PVs."
   exit
