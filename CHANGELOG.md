@@ -1,6 +1,10 @@
 ## unreleased
 
-* Update side-cars to support Kubernetes >=1.17.
+## v2.0.0 - 2021.06.14
+
+⚠️ See the [update instructions](https://github.com/cloudscale-ch/csi-cloudscale#from-csi-cloudscale-v1x-to-v2x).
+
+* Update side-cars to support Kubernetes >=1.20.
 * Update Makefile and related scripts.
 * Update go libraries.
 * Update go version used. 
