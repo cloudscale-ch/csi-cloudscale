@@ -47,7 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v1.3.1`**.
+The current version is: **`v2.0.0`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -55,9 +55,17 @@ The current version is: **`v1.3.1`**.
 
 ## Installing to Kubernetes
 
+### Kubernetes Compatibility
+
+The following table describes the required cloudsdcale.ch driver version per Kubernetes release.
+
+Kubernetes Release | cloudscale.ch CSI Driver Version
+------------------ | -------------------------------
+1.13 - 1.16        | latest v1.x
+1.17 or later      | latest v2.x
+
 **Requirements:**
 
-* Kubernetes v1.13.0 minimum 
 * Nodes must be able to access the metadata service at `169.254.169.254` using HTTP. The required 
   route is pushed by DHCP.
 * `--allow-privileged` flag must be set to true for both the API server and the kubelet
@@ -102,10 +110,10 @@ cloudscale            Opaque                                1         18h
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v1.3.1`) you can execute the following command:
+For example, to use the latest stable version (`v2.0.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v1.3.1.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v2.0.0.yaml
 ```
 
 There are also `dev` images available:
@@ -194,6 +202,19 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
+## Upgrading
+
+### From csi-cloudscale v1.x to v2.x
+
+When updating from csi-cloudscale v1.x to v2.x please note the following:
+
+ * Ensure that all API objects of the existing v1.x installation are removed.
+   The easiest way to achieve this is by running `kubectl delete -f <old version>` before
+   installing the new driver version.
+ * Prior to the installation of v2.x, existing persistent volumes (PVs) must be annotated
+   with: `"pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"`. You can
+   use [this script](https://github.com/cloudscale-ch/csi-cloudscale/tree/master/scripts/fix-annotation.sh)
+   or any other means to set the annotation.
 
 ## Advanced Configuration
 
@@ -270,15 +291,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v1.3.1` and then publish a new docker build:
+master with the version `v2.0.0` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v1.3.1` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v1.3.1`
+This will create a binary with version `v2.0.0` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v2.0.0`
 
 ## Contributing
 

@@ -202,7 +202,7 @@ func TestDeployment_Single_SSD_Volume(t *testing.T) {
 	assert.NoError(t, err)
 
 	pods, err := client.CoreV1().Pods(namespace).
-		List(metav1.ListOptions{LabelSelector: selector.String()})
+		List(context.Background(), metav1.ListOptions{LabelSelector: selector.String()})
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pods.Items))
@@ -450,13 +450,13 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
 
 			claimName := pvc.Name
-			createdPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(claimName, metav1.GetOptions{})
+			createdPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(context.Background(), claimName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
 
 			pvName := createdPVC.Spec.VolumeName
-			pv, err := client.CoreV1().PersistentVolumes().Get(pvName, metav1.GetOptions{})
+			pv, err := client.CoreV1().PersistentVolumes().Get(context.Background(), pvName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -476,7 +476,7 @@ func TestPersistentVolume_Resize(t *testing.T) {
 				v1.ResourceStorage: newSize,
 			}
 
-			updatedPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Update(createdPVC)
+			updatedPVC, err := client.CoreV1().PersistentVolumeClaims(namespace).Update(context.Background(), createdPVC, metav1.UpdateOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -549,18 +549,21 @@ func setup() error {
 	}
 
 	// create test namespace
-	_, err = client.CoreV1().Namespaces().Create(&v1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
-		},
-	})
+	_, err = client.CoreV1().Namespaces().Create(
+		context.Background(),
+		&v1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: namespace,
+			}},
+		metav1.CreateOptions{},
+	)
 
 	if err != nil {
 		return err
 	}
 
 	// create cloudscale client with the secret deployed into the kube-system namespace
-	secret, err := client.CoreV1().Secrets("kube-system").Get("cloudscale", metav1.GetOptions{})
+	secret, err := client.CoreV1().Secrets("kube-system").Get(context.Background(), "cloudscale", metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -577,7 +580,7 @@ func setup() error {
 
 func teardown() error {
 	// delete all test resources
-	err := client.CoreV1().Namespaces().Delete(namespace, nil)
+	err := client.CoreV1().Namespaces().Delete(context.Background(), namespace, metav1.DeleteOptions{})
 	if err != nil && !(kubeerrors.IsNotFound(err) || kubeerrors.IsAlreadyExists(err)) {
 		return err
 	}
@@ -593,14 +596,14 @@ func strPtr(s string) *string {
 // NOTE: does not wait for the resources to be deleted
 func cleanup(t *testing.T, pod TestPodDescriptor) {
 	if pod.Kind == "Deployment" {
-		err := client.AppsV1().Deployments(namespace).Delete(pod.Name, &metav1.DeleteOptions{})
+		err := client.AppsV1().Deployments(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 		assert.NoError(t, err)
 	} else {
-		err := client.CoreV1().Pods(namespace).Delete(pod.Name, &metav1.DeleteOptions{})
+		err := client.CoreV1().Pods(namespace).Delete(context.Background(), pod.Name, metav1.DeleteOptions{})
 		assert.NoError(t, err)
 	}
 	for _, volume := range pod.Volumes {
-		err := client.CoreV1().PersistentVolumeClaims(namespace).Delete(volume.ClaimName, &metav1.DeleteOptions{})
+		err := client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), volume.ClaimName, metav1.DeleteOptions{})
 		assert.NoError(t, err)
 	}
 }
@@ -642,7 +645,7 @@ func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 
 	for _, secret := range luksSecrets {
 		t.Logf("Creating luks-secret %v", secret.Name)
-		_, err := client.CoreV1().Secrets(namespace).Create(&secret)
+		_, err := client.CoreV1().Secrets(namespace).Create(context.Background(), &secret, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -670,7 +673,7 @@ func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 	}
 
 	t.Log("Creating pod")
-	_, err := client.CoreV1().Pods(namespace).Create(kubernetesPod)
+	_, err := client.CoreV1().Pods(namespace).Create(context.Background(), kubernetesPod, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -738,7 +741,7 @@ func makeKubernetesDeployment(t *testing.T, pod TestPodDescriptor) *appsv1.Deplo
 	}
 
 	t.Logf("Creating deployment %v", pod.Name)
-	_, err := client.AppsV1().Deployments(namespace).Create(deployment)
+	_, err := client.AppsV1().Deployments(namespace).Create(context.Background(), deployment, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
 	return deployment
@@ -769,7 +772,7 @@ func makeKubernetesPVCs(t *testing.T, pod TestPodDescriptor) []*v1.PersistentVol
 
 	t.Log("Creating pvc")
 	for _, pvc := range pvcs {
-		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(pvc)
+		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), pvc, metav1.CreateOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -938,7 +941,7 @@ func appSelector(appName string) (labels.Selector, error) {
 
 // loads the pvc with the given name from kubernetes
 func getPVC(t *testing.T, client kubernetes.Interface, name string) *v1.PersistentVolumeClaim {
-	claim, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(name, metav1.GetOptions{})
+	claim, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(context.Background(), name, metav1.GetOptions{})
 	assert.NoError(t, err)
 	return claim
 }
@@ -1007,7 +1010,7 @@ func waitFilesystemResized(t *testing.T, pod *v1.Pod, volumeName string, expecte
 
 // returns the name of the node where the given pod is running on
 func getNodeName(podNamespace string, podName string) (string, error) {
-	pod, err := client.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
+	pod, err := client.CoreV1().Pods(podNamespace).Get(context.Background(), podName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -1036,7 +1039,7 @@ func getVolumeInfo(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, erro
 func getVolumeInfoFromNode(t *testing.T, nodeName string) ([]DiskInfo, error) {
 	diskInfo := make([]DiskInfo, 0)
 
-	pods, err := client.CoreV1().Pods("kube-system").List(metav1.ListOptions{
+	pods, err := client.CoreV1().Pods("kube-system").List(context.Background(), metav1.ListOptions{
 		LabelSelector: "app=csi-cloudscale-node, role=csi-cloudscale",
 	})
 	if err != nil {
@@ -1077,7 +1080,7 @@ func ExecCommand(podNamespace string, podName string, command ...string) (string
 		execErr bytes.Buffer
 	)
 
-	pod, err := client.CoreV1().Pods(podNamespace).Get(podName, metav1.GetOptions{})
+	pod, err := client.CoreV1().Pods(podNamespace).Get(context.Background(), podName, metav1.GetOptions{})
 	if err != nil {
 		return "", fmt.Errorf("could not get pod info: %v", err)
 	}

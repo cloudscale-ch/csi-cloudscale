@@ -1,5 +1,12 @@
 ## unreleased
 
+## v2.0.0 - 2021.06.14
+
+* Update side-cars to support Kubernetes >=1.20.
+* Update Makefile and related scripts.
+* Update go libraries.
+* Update go version used. 
+
 ## v1.3.1 - 2021.03.31
 
 * Support all formats of files in `/dev/disk/by-id` that were observed across different Linux distributions.
