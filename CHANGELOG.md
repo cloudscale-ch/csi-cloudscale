@@ -1,5 +1,7 @@
 ## unreleased
 
+## v2.0.0 - 2021.06.14
+
 * Update side-cars to support Kubernetes >=1.20.
 * Update Makefile and related scripts.
 * Update go libraries.
