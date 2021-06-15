@@ -43,14 +43,14 @@ Some commands::
 
     kubectl logs -n kube-system csi-cloudscale-controller-0 -c csi-cloudscale-plugin
 
-    kubectl logs -n kube-system -l role=csi-cloudscale -c csi-cloudscale-plugin 
+    kubectl logs -n kube-system -l role=csi-cloudscale -c csi-cloudscale-plugin
     kubectl logs -n kube-system -l role=csi-cloudscale -c csi-provisioner
     kubectl logs -n kube-system -l role=csi-cloudscale -c csi-attacher
 
     kubectl logs -n kube-system -c driver-registrar csi-cloudscale-node-7s585
     kubectl logs -n kube-system kube-dns-56df66c9f-hgjm8 --all-containers --timestamps
 
-    kubectl get pods -n kube-system 
+    kubectl get pods -n kube-system
     kubectl get namespaces
 
 List all containers::
@@ -92,6 +92,12 @@ Using etcdctl::
     ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379  --cert /etc/calico/certs/ca_cert.crt --cert /etc/calico/certs/cert.crt --key /etc/calico/certs/key.pem endpoint health
 
     etcdctl ... get  / --prefix --keys-only
+
+# Volume status
+
+    grep 'server:' ~/.kube/config   # get cluster from string: https://1.1.1.1/k8s/clusters/c-xfmg6
+    kubectl get nodes               # get nodes name
+    kubectl get --raw /k8s/clusters/{}/api/v1/nodes/{}/proxy/metrics  | grep kubelet_vol
 
 
 Ansible::
