@@ -528,7 +528,7 @@ func TestPersistentVolume_Resize(t *testing.T) {
 }
 
 func TestVolumeStats(t *testing.T) {
-	pvcName := "csi-pvc-stats"
+	pvcName := fmt.Sprintf("csi-pvc-stats-%v", pseudoUuid())
 	podName := pseudoUuid()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
