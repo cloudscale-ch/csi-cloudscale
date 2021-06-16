@@ -10,7 +10,7 @@ pvs=$(
     -o=jsonpath="${jsonpath}"
 )
 
-echo "Found the following persistant volumes (PVs):"
+echo "Found the following persistent volumes (PVs):"
 for pv in $pvs; do
   echo "${pv}"
 done
