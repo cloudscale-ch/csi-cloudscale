@@ -984,7 +984,7 @@ func waitForMetric(t *testing.T, uri string, metricName string, pvcName string) 
 		_, err := metrics.findByLabel(metricName, pvcName)
 
 		if err != nil {
-			if time.Now().UnixNano()-start.UnixNano() > (2 * time.Minute).Nanoseconds() {
+			if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
 				err = errors.New(fmt.Sprintf("timeout exceeded while waiting for metric %v for pvc %v", metricName, pvcName))
 				return nil, err
 			} else {
