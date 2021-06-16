@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -526,6 +527,48 @@ func TestPersistentVolume_Resize(t *testing.T) {
 	}
 }
 
+func TestVolumeStats(t *testing.T) {
+	pvcName := fmt.Sprintf("csi-pvc-stats-%v", pseudoUuid())
+	podName := pseudoUuid()
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: podName,
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    pvcName,
+				SizeGB:       1,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// submit the pod and the p
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the p is bound
+	waitForPod(t, client, pod.Name)
+
+	// construct the metric url
+	nodeName := getPod(t, client, podName).Spec.NodeName
+	uri := fmt.Sprintf("%s/api/v1/nodes/%s/proxy/metrics", config.Host, nodeName)
+	t.Logf("Using the following metrics url: %v", uri)
+
+	// wait until the metrics for the volume are available
+	metrics, err := waitForMetric(t, uri, "kubelet_volume_stats_capacity_bytes", pvcName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertMetric(t, metrics, "kubelet_volume_stats_capacity_bytes", pvcName, "1.02330368e+09")
+	assertMetric(t, metrics, "kubelet_volume_stats_available_bytes", pvcName, "1.003900928e+09")
+	assertMetric(t, metrics, "kubelet_volume_stats_used_bytes", pvcName, "2.625536e+06")
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes", pvcName, "65536")
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes_free", pvcName, "65525")
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes_used", pvcName, "11")
+}
+
 func setup() error {
 	// if you want to change the loading rules (which files in which order),
 	// you can do so here
@@ -923,6 +966,37 @@ func waitForVolumeClaimCapacityChange(client kubernetes.Interface, name string, 
 	return pvc, err
 }
 
+// waitForMetric waits for the the given metric to be present at the location specified by uri
+func waitForMetric(t *testing.T, uri string, metricName string, pvcName string) (metrics *MetricsSet, err error) {
+	start := time.Now()
+
+	for {
+		result := client.CoreV1().RESTClient().
+			Get().
+			RequestURI(uri).
+			Do(context.Background())
+
+		if err := result.Error(); err != nil {
+			return nil, err
+		}
+
+		metrics := generateMetricsObject(result)
+		_, err := metrics.findByLabel(metricName, pvcName)
+
+		if err != nil {
+			if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+				err = errors.New(fmt.Sprintf("timeout exceeded while waiting for metric %v for pvc %v", metricName, pvcName))
+				return nil, err
+			} else {
+				t.Logf("Waiting for metric, currently: %v", err)
+				time.Sleep(15 * time.Second)
+			}
+		} else {
+			return &metrics, nil
+		}
+	}
+}
+
 // appSelector returns a selector that selects deployed applications with the
 // given name
 func appSelector(appName string) (labels.Selector, error) {
@@ -944,6 +1018,13 @@ func getPVC(t *testing.T, client kubernetes.Interface, name string) *v1.Persiste
 	claim, err := client.CoreV1().PersistentVolumeClaims(namespace).Get(context.Background(), name, metav1.GetOptions{})
 	assert.NoError(t, err)
 	return claim
+}
+
+// loads the pod with the given name from kubernetes
+func getPod(t *testing.T, client kubernetes.Interface, name string) *v1.Pod {
+	pod, err := client.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
+	assert.NoError(t, err)
+	return pod
 }
 
 // loads the volume with the given name from the cloudscale.ch API
@@ -1130,4 +1211,70 @@ func ExecCommand(podNamespace string, podName string, command ...string) (string
 	}
 
 	return execOut.String(), nil
+}
+
+// Metrics Handling
+
+type MetricsSet struct {
+	entries []MetricEntry
+}
+
+type MetricEntry struct {
+	metricName string
+	labels     string
+	value      string
+}
+
+func assertMetric(t *testing.T, metrics *MetricsSet, name string, substring string, expected string) {
+	value, err := metrics.findByLabel(name, substring)
+	if err != nil {
+		t.Fatalf("Metric not found %v", name)
+	}
+	assert.Equal(t, expected, value.value)
+}
+
+func (km *MetricsSet) filterByName(name string) (ret []MetricEntry) {
+	for _, s := range km.entries {
+		if s.metricName == name {
+			ret = append(ret, s)
+		}
+	}
+	return
+}
+
+func (km *MetricsSet) findByLabel(name string, dictSubstring string) (*MetricEntry, error) {
+	for _, s := range km.filterByName(name) {
+		if strings.Contains(s.labels, dictSubstring) {
+			return &s, nil
+		}
+	}
+	return nil, errors.New(fmt.Sprintf("Could not find metric with name %v and label containg %v", name, dictSubstring))
+}
+
+func generateMetricsObject(result rest.Result) MetricsSet {
+	entries := make([]MetricEntry, 1000)
+	rawBody, _ := result.Raw()
+	scanner := bufio.NewScanner(strings.NewReader(string(rawBody)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		metric := generateMetricEntry(line)
+		entries = append(entries, metric)
+	}
+
+	return MetricsSet{entries}
+}
+
+func generateMetricEntry(line string) MetricEntry {
+	split := strings.Split(line, " ")
+	if strings.Contains(split[0], "{") {
+		start := strings.Index(split[0], "{")
+		end := strings.Index(split[0], "}")
+		metricLabels := split[0][start : end+1]
+		name := split[0][:start]
+		return MetricEntry{name, metricLabels, split[1]}
+	}
+	return MetricEntry{split[0], "", split[1]}
 }

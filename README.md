@@ -269,7 +269,8 @@ This will create a binary with version `dev` and docker image pushed to
 To run the integration tests run the following:
 
 ```
-$ KUBECONFIG=$(pwd)/kubeconfig make test-integration
+$ export KUBECONFIG=$(pwd)/kubeconfig 
+$ TESTARGS='-run Bulk' make test-integration
 ```
 
 

@@ -1,4 +1,5 @@
 ## unreleased
+* Implement NodeGetVolumeStats
 
 ## v2.0.0 - 2021.06.14
 
