@@ -215,6 +215,8 @@ When updating from csi-cloudscale v1.x to v2.x please note the following:
    with: `"pv.kubernetes.io/provisioned-by=csi.cloudscale.ch"`. You can
    use [this script](https://github.com/cloudscale-ch/csi-cloudscale/tree/master/scripts/fix-annotation.sh)
    or any other means to set the annotation.
+ * If you are using self defined storage classes: change the storage class provisioner names
+   from `"ch.cloudscale.csi"` to `"csi.cloudscale.ch"`. 
 
 ## Advanced Configuration
 
