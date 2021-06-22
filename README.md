@@ -47,7 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v2.1.0`**.
+The current version is: **`v2.1.1`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -110,10 +110,10 @@ cloudscale            Opaque                                1         18h
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v2.1.0`) you can execute the following command:
+For example, to use the latest stable version (`v2.1.1`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v2.1.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v2.1.1.yaml
 ```
 
 There are also `dev` images available:
@@ -294,15 +294,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v2.1.0` and then publish a new docker build:
+master with the version `v2.1.1` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v2.1.0` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v2.1.0`
+This will create a binary with version `v2.1.1` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v2.1.1`
 
 ## Contributing
 
