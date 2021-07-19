@@ -350,7 +350,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 		// make sure that the driver works on this particular region only
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{
-				"region": d.region,
+				"csi.cloudscale.ch/zone": d.zone,
 			},
 		},
 	}, nil
