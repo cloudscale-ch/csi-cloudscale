@@ -217,6 +217,15 @@ When updating from csi-cloudscale v1.x to v2.x please note the following:
    or any other means to set the annotation.
  * If you are using self defined storage classes: change the storage class provisioner names
    from `"ch.cloudscale.csi"` to `"csi.cloudscale.ch"`. 
+   
+### From csi-cloudscale v2.x to v3.x
+
+When updating from csi-cloudscale v2.x to v3.x please note the following:
+
+ * The new release adds the `csi.cloudscale.ch/zone` label to all nodes (existing ones and new
+   added after the upgrade)
+ * The `region` label will stay in place for existing nodes and not be added to new nodes. It
+   can be safely removed from all nodes from a `csi-cloudscale` driver perspective.
 
 ## Advanced Configuration
 
