@@ -84,8 +84,8 @@ func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	}
 
 	// We don't have any other information than the availability zone. Just use
-	// it as the region for now.
-	region := metadata.AvailabilityZone
+	// it as the zone for now.
+	zone := metadata.AvailabilityZone
 	serverId := metadata.Meta.CloudscaleUUID
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
@@ -96,7 +96,7 @@ func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	cloudscaleClient.BaseURL = baseURL
 
 	log := logrus.New().WithFields(logrus.Fields{
-		"zone":    region,
+		"zone":    zone,
 		"node_id": serverId,
 		"version": version,
 	})
@@ -104,7 +104,7 @@ func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	return &Driver{
 		endpoint:         ep,
 		serverId:         serverId,
-		zone:             region,
+		zone:             zone,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          newMounter(log),
 		log:              log,
