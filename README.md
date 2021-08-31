@@ -47,7 +47,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v2.1.1`**.
+The current version is: **`v3.0.0`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -110,10 +110,10 @@ cloudscale            Opaque                                1         18h
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v2.1.1`) you can execute the following command:
+For example, to use the latest stable version (`v3.0.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v2.1.1.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.0.0.yaml
 ```
 
 There are also `dev` images available:
@@ -217,6 +217,16 @@ When updating from csi-cloudscale v1.x to v2.x please note the following:
    or any other means to set the annotation.
  * If you are using self defined storage classes: change the storage class provisioner names
    from `"ch.cloudscale.csi"` to `"csi.cloudscale.ch"`. 
+   
+### From csi-cloudscale v2.x to v3.x
+
+When updating from csi-cloudscale v2.x to v3.x please note the following:
+
+ * The node label `region` was renamed to `csi.cloudscale.ch/zone`.
+ * The new release adds the `csi.cloudscale.ch/zone` label to all nodes (existing ones and new
+   added after the upgrade)
+ * The `region` label will stay in place for existing nodes and not be added to new nodes. It
+   can be safely removed from all nodes from a `csi-cloudscale` driver perspective.
 
 ## Advanced Configuration
 
@@ -294,15 +304,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v2.1.1` and then publish a new docker build:
+master with the version `v3.0.0` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v2.1.1` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v2.1.1`
+This will create a binary with version `v3.0.0` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v3.0.0`
 
 ## Contributing
 

@@ -92,6 +92,23 @@ func TestMain(m *testing.M) {
 	os.Exit(exitStatus)
 }
 
+func TestNode_Zone_Annotation(t *testing.T) {
+	labelSelector := "node-role.kubernetes.io/worker=true"
+	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	assert.NoError(t, err)
+
+	if !(len(nodes.Items) > 0) {
+		t.Skipf("Could not find at least one node with label %s", labelSelector)
+		return
+	}
+
+	for _, node := range nodes.Items {
+		assert.Contains(t, []string{"rma1", "lpg1"}, node.Labels["csi.cloudscale.ch/zone"])
+	}
+}
+
 func TestPod_Single_SSD_Volume(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",

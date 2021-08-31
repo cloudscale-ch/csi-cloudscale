@@ -53,7 +53,7 @@ func TestDriverSuite(t *testing.T) {
 	driver := &Driver{
 		endpoint:         endpoint,
 		serverId:         serverId,
-		region:           DefaultZone.Slug,
+		zone:             DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
 		mounter: &fakeMounter{
 			mounted: map[string]string{},

@@ -85,12 +85,12 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	if req.AccessibilityRequirements != nil {
 		for _, t := range req.AccessibilityRequirements.Requisite {
-			region, ok := t.Segments["region"]
+			zone, ok := t.Segments["zone"]
 			if !ok {
 				continue // nothing to do
 			}
-			if region != d.region {
-				return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in region: %q, got: %q", d.region, region)
+			if zone != d.zone {
+				return nil, status.Errorf(codes.ResourceExhausted, "volume can be only created in zone: %q, got: %q", d.zone, zone)
 			}
 		}
 	}
@@ -137,7 +137,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		AccessibleTopology: []*csi.Topology{
 			{
 				Segments: map[string]string{
-					"region": d.region,
+					"zone": d.zone,
 				},
 			},
 		},
@@ -173,7 +173,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		SizeGB: sizeGB,
 		Type:   storageType,
 	}
-	volumeReq.Zone = d.region
+	volumeReq.Zone = d.zone
 
 	ll.WithField("volume_req", volumeReq).Info("creating volume")
 	vol, err := d.cloudscaleClient.Volumes.Create(ctx, volumeReq)
