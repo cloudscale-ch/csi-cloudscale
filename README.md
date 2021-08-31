@@ -222,6 +222,7 @@ When updating from csi-cloudscale v1.x to v2.x please note the following:
 
 When updating from csi-cloudscale v2.x to v3.x please note the following:
 
+ * The node label `region` was renamed to `csi.cloudscale.ch/zone`.
  * The new release adds the `csi.cloudscale.ch/zone` label to all nodes (existing ones and new
    added after the upgrade)
  * The `region` label will stay in place for existing nodes and not be added to new nodes. It
