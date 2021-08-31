@@ -1,5 +1,7 @@
 ## unreleased
 
+## v3.0.0 - 2021.08.31
+
 ⚠️ See the [update instructions](https://github.com/cloudscale-ch/csi-cloudscale#from-csi-cloudscale-v2x-to-v3x).
 
 * Use `csi.cloudscale.ch/zone` instead of `region` label.
