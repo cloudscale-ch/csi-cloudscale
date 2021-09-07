@@ -9,11 +9,12 @@ require (
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
+	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
 	google.golang.org/grpc v1.27.1
 	k8s.io/api v0.20.2
 	k8s.io/apimachinery v0.20.2
 	k8s.io/client-go v0.20.2
-	k8s.io/kubernetes v1.16.2
+	k8s.io/kubernetes v1.18.19
 	k8s.io/mount-utils v0.0.0
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
 )

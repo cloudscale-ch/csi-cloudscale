@@ -122,6 +122,7 @@ golang.org/x/net/trace
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
 # golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
+## explicit
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -404,7 +405,7 @@ k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
 # k8s.io/klog/v2 v2.4.0
 k8s.io/klog/v2
-# k8s.io/kubernetes v1.16.2 => k8s.io/kubernetes v1.20.2
+# k8s.io/kubernetes v1.18.19 => k8s.io/kubernetes v1.20.2
 ## explicit
 k8s.io/kubernetes/pkg/util/resizefs
 # k8s.io/mount-utils v0.0.0 => k8s.io/mount-utils v0.20.5-rc.0
