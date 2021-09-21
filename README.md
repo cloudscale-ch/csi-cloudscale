@@ -61,8 +61,8 @@ The following table describes the required cloudsdcale.ch driver version per Kub
 
 Kubernetes Release | cloudscale.ch CSI Driver Version
 ------------------ | -------------------------------
-1.13 - 1.16        | latest v1.x
-1.17 or later      | latest v2.x
+1.13 - 1.16        | latest v1.x release 
+1.17 or later      | latest v2.x or newer release
 
 **Requirements:**
 
@@ -223,7 +223,7 @@ When updating from csi-cloudscale v1.x to v2.x please note the following:
 When updating from csi-cloudscale v2.x to v3.x please note the following:
 
  * The node label `region` was renamed to `csi.cloudscale.ch/zone`.
- * The new release adds the `csi.cloudscale.ch/zone` label to all nodes (existing ones and new
+ * The new release adds the `csi.cloudscale.ch/zone` label to all nodes (existing ones as well as new ones
    added after the upgrade)
  * The `region` label will stay in place for existing nodes and not be added to new nodes. It
    can be safely removed from all nodes from a `csi-cloudscale` driver perspective.
@@ -294,7 +294,8 @@ To release a new version bump first the version:
 $ make NEW_VERSION=vX.Y.Z bump-version
 ```
 
-Make sure everything looks good. Create a new branch with all changes:
+Make sure everything looks good. Verify that the Kubernetes compatibility matrix is up-to-date.
+Create a new branch with all changes:
 
 ```
 $ git checkout -b new-release
