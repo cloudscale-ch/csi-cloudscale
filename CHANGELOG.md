@@ -1,5 +1,8 @@
 ## unreleased
 
+## v3.1.0-rc1 - 2021.10.05
+* Use quay.io as a container registry. No new functionality.
+
 ## v3.0.0 - 2021.08.31
 
 ⚠️ See the [update instructions](https://github.com/cloudscale-ch/csi-cloudscale#from-csi-cloudscale-v2x-to-v3x).
