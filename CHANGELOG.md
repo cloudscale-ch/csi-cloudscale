@@ -1,4 +1,6 @@
 ## unreleased
+* Update the alpine base image to 3.11.
+* Use quay.io instead of Docker Hub.
 
 ## v3.0.0 - 2021.08.31
 
