@@ -1,4 +1,6 @@
 ## unreleased
+* Run unit tests from Github Actions instead of Travis.
+* Ensure go.mod and modules.txt are up to date.
 
 ## v3.0.0 - 2021.08.31
 
