@@ -1,4 +1,7 @@
 # csi-cloudscale
+
+[![test](https://github.com/cloudscale-ch/csi-cloudscale/actions/workflows/test.yaml/badge.svg)](https://github.com/cloudscale-ch/csi-cloudscale/actions/workflows/test.yaml)
+
 A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
 
 The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
