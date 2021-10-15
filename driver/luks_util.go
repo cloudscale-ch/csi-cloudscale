@@ -137,6 +137,7 @@ func luksFormat(source string, mkfsCmd string, mkfsArgs []string, ctx LuksContex
 	// initialize the luks partition
 	cryptsetupArgs := []string{
 		"-v",
+		"--type=luks1",
 		"--batch-mode",
 		"--cipher", ctx.EncryptionCipher,
 		"--key-size", ctx.EncryptionKeySize,
