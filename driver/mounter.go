@@ -419,20 +419,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+func guessDiskIDPathByVolumeID(volumeID string) *string {
+	// Get the first part of the UUID.
+	// The linux kernel limits volume serials to 20 bytes:
+	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
+	linuxSerial := volumeID[:20]
+
+	globExpr := diskIDPath + "/*" + linuxSerial + "*"
+	matches, _ := filepath.Glob(globExpr)
+	if len(matches) > 0 {
+		return &matches[0]
+	}
+	return nil
+}
+
 func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (*string, error) {
 	numTries := 0
 	for {
 		probeAttachedVolume(logger)
 
-		// Get the first part of the UUID.
-		// The linux kernel limits volume serials to 20 bytes:
-		// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
-		linuxSerial := volumeID[:20]
-
-		globExpr := diskIDPath + "/*" + linuxSerial + "*"
-		matches, _ := filepath.Glob(globExpr)
-		if len(matches) > 0 {
-			return &matches[0], nil
+		diskIDPath := guessDiskIDPathByVolumeID(volumeID)
+		if diskIDPath != nil {
+			return diskIDPath, nil
 		}
 
 		numTries++
