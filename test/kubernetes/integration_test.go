@@ -49,6 +49,7 @@ type TestPodVolume struct {
 	SizeGB       int
 	StorageClass string
 	LuksKey      string
+	Block        bool
 }
 
 type TestPodDescriptor struct {
@@ -59,6 +60,7 @@ type TestPodDescriptor struct {
 
 type DiskInfo struct {
 	PVCName        string `json:"pvcName"`
+	PVCVolumeMode  string `json:"pvcVolumeMode"`
 	DeviceName     string `json:"deviceName"`
 	DeviceSize     int    `json:"deviceSize"`
 	Filesystem     string `json:"filesystem"`
@@ -142,9 +144,56 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
 	assert.NoError(t, err)
 	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
 	assert.Equal(t, 5*driver.GB, disk.FilesystemSize)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account; this check is necessary to test that the
+	// csi-plugin properly deletes the volume from cloudscale.ch
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Single_SSD_Raw_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+				Block:        true,
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, volume.SizeGB)
+	assert.Equal(t, "ssd", volume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "Block", disk.PVCVolumeMode)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, -1, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account; this check is necessary to test that the
@@ -186,9 +235,55 @@ func TestPod_Single_Bulk_Volume(t *testing.T) {
 	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
 	assert.NoError(t, err)
 	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
 	assert.Equal(t, 100*driver.GB, disk.FilesystemSize)
+
+	// delete the pod and the pvcs and wait until the volume was deleted from
+	// the cloudscale.ch account
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Single_Bulk_Raw_Volume(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-bulk-pvc",
+				SizeGB:       100,
+				StorageClass: "cloudscale-volume-bulk",
+				Block:        true,
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 100, volume.SizeGB)
+	assert.Equal(t, "bulk", volume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Block", disk.PVCVolumeMode)
+	assert.Equal(t, "", disk.Filesystem)
+	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
+	assert.Equal(t, -1, disk.FilesystemSize)
 
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account
@@ -372,6 +467,7 @@ func TestPod_Single_SSD_Luks_Volume(t *testing.T) {
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
 	assert.Equal(t, "LUKS1", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
 	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
 	assert.Equal(t, 512, disk.Keysize)
 	assert.Equal(t, 5*driver.GB-luksOverhead, disk.FilesystemSize)
@@ -419,6 +515,7 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 	assert.Equal(t, "ext4", disk.Filesystem)
 	assert.Equal(t, 100*driver.GB, disk.DeviceSize)
 	assert.Equal(t, "LUKS1", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
 	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
 	assert.Equal(t, 512, disk.Keysize)
 	assert.Equal(t, 100*driver.GB-luksOverhead, disk.FilesystemSize)
@@ -431,19 +528,21 @@ func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
 
 var resizeCases = []struct {
 	storageClass      string
+	block             bool
 	initialSizeGB     int
 	newSizeGB         int
 	LuksKey           string
 	newFilesystemSize int
 }{
-	{"cloudscale-volume-ssd", 5, 6, "", 6 * driver.GB},
-	{"cloudscale-volume-bulk", 100, 200, "", 200 * driver.GB},
-	{"cloudscale-volume-ssd-luks", 1, 3, "secret", 3*driver.GB - luksOverhead},
+	{"cloudscale-volume-ssd", false, 5, 6, "", 6 * driver.GB},
+	{"cloudscale-volume-ssd", true, 7, 8, "", -1},
+	{"cloudscale-volume-bulk", false, 100, 200, "", 200 * driver.GB},
+	{"cloudscale-volume-ssd-luks", false, 1, 3, "secret", 3*driver.GB - luksOverhead},
 }
 
 func TestPersistentVolume_Resize(t *testing.T) {
 	for _, tt := range resizeCases {
-		t.Run(tt.storageClass, func(t *testing.T) {
+		t.Run(fmt.Sprintf("%v %v", tt.storageClass, tt.block), func(t *testing.T) {
 			podDescriptor := TestPodDescriptor{
 				Kind: "Pod",
 				Name: pseudoUuid(),
@@ -453,6 +552,7 @@ func TestPersistentVolume_Resize(t *testing.T) {
 						SizeGB:       tt.initialSizeGB,
 						StorageClass: tt.storageClass,
 						LuksKey:      tt.LuksKey,
+						Block:        tt.block,
 					},
 				},
 			}
@@ -527,7 +627,13 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			} else {
 				assert.Equal(t, "LUKS1", disk.Luks)
 			}
-			assert.Equal(t, "ext4", disk.Filesystem)
+			if tt.block == true {
+				assert.Equal(t, "Block", disk.PVCVolumeMode)
+				assert.Equal(t, "", disk.Filesystem)
+			} else {
+				assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
+				assert.Equal(t, "ext4", disk.Filesystem)
+			}
 			assert.Equal(t, tt.newSizeGB*driver.GB, disk.DeviceSize)
 			// assert file system uuid has not changed
 			assert.Equal(t, originalFilesystemUUID, disk.FilesystemUUID)
@@ -672,15 +778,23 @@ func cleanup(t *testing.T, pod TestPodDescriptor) {
 func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 
 	volumeMounts := make([]v1.VolumeMount, 0)
+	volumeDevices := make([]v1.VolumeDevice, 0)
 	volumes := make([]v1.Volume, 0)
 	luksSecrets := make([]v1.Secret, 0)
 
 	for i, volume := range pod.Volumes {
 		volumeName := fmt.Sprintf("volume-%v", i)
-		volumeMounts = append(volumeMounts, v1.VolumeMount{
-			MountPath: fmt.Sprintf("/data-%v", i),
-			Name:      volumeName,
-		})
+		if !volume.Block {
+			volumeMounts = append(volumeMounts, v1.VolumeMount{
+				MountPath: fmt.Sprintf("/data-%v", i),
+				Name:      volumeName,
+			})
+		} else {
+			volumeDevices = append(volumeDevices, v1.VolumeDevice{
+				DevicePath: fmt.Sprintf("/dev/xvd-%v", i),
+				Name:       volumeName,
+			})
+		}
 		volumes = append(volumes, v1.Volume{
 			Name: volumeName,
 			VolumeSource: v1.VolumeSource{
@@ -723,9 +837,10 @@ func makeKubernetesPod(t *testing.T, pod TestPodDescriptor) *v1.Pod {
 			// container is killed, unless we were to explicitly handle the TERM signal
 			Containers: []v1.Container{
 				{
-					Name:         "pause",
-					Image:        "gcr.io/google-containers/pause-amd64:3.1",
-					VolumeMounts: volumeMounts,
+					Name:          "pause",
+					Image:         "gcr.io/google-containers/pause-amd64:3.1",
+					VolumeMounts:  volumeMounts,
+					VolumeDevices: volumeDevices,
 				},
 			},
 			Volumes: volumes,
@@ -812,11 +927,17 @@ func makeKubernetesPVCs(t *testing.T, pod TestPodDescriptor) []*v1.PersistentVol
 	pvcs := make([]*v1.PersistentVolumeClaim, 0)
 
 	for _, volume := range pod.Volumes {
+		volMode := v1.PersistentVolumeFilesystem
+		if volume.Block {
+			volMode = v1.PersistentVolumeBlock
+		}
+
 		pvcs = append(pvcs, &v1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: volume.ClaimName,
 			},
 			Spec: v1.PersistentVolumeClaimSpec{
+				VolumeMode: &volMode,
 				AccessModes: []v1.PersistentVolumeAccessMode{
 					v1.ReadWriteOnce,
 				},
