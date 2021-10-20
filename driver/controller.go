@@ -115,6 +115,9 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	luksEncrypted := "false"
 	if req.Parameters[LuksEncryptedAttribute] == "true" {
+		if violations := validateLuksCapabilities(req.VolumeCapabilities); len(violations) > 0 {
+			return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested for LUKS volume.")
+		}
 		luksEncrypted = "true"
 	}
 
@@ -616,6 +619,19 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 		}
 	}
 
+	return violations.List()
+}
+
+func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
+	violations := sets.NewString()
+	for _, cap := range caps {
+		accessType := cap.GetAccessType()
+		switch accessType.(type) {
+		case *csi.VolumeCapability_Block:
+			violations.Insert("Cannot use LUKS with block volumes")
+		case *csi.VolumeCapability_Mount:
+		}
+	}
 	return violations.List()
 }
 
