@@ -619,7 +619,15 @@ func TestPersistentVolume_Resize(t *testing.T) {
 				t.Fatalf("claim capacity (%v) is not equal to requested capacity (%v)", resizedPVC.Status.Capacity["storage"], newSize)
 			}
 
-			// verify that our disk
+			// wait for the node to see a larger device
+			t.Logf("Waiting device %q to be resized from node perspective ...", claimName)
+			waitDeviceResized(t, pod, pvc.Spec.VolumeName, tt.newSizeGB*driver.GB)
+
+			// wait for the node to resize the filesystem of the volume which was resized by the controller
+			t.Logf("Waiting for filesystem %q to be resized ...", claimName)
+			waitFilesystemResized(t, pod, pvc.Spec.VolumeName, tt.newFilesystemSize)
+
+			// verify that our disk now has the new parameters applied
 			disk, err = getVolumeInfo(t, pod, pvc.Spec.VolumeName)
 			assert.NoError(t, err)
 			if tt.LuksKey == "" {
@@ -637,9 +645,6 @@ func TestPersistentVolume_Resize(t *testing.T) {
 			assert.Equal(t, tt.newSizeGB*driver.GB, disk.DeviceSize)
 			// assert file system uuid has not changed
 			assert.Equal(t, originalFilesystemUUID, disk.FilesystemUUID)
-
-			// wait for the node to resize the filesystem of the volume which was resized by the controller
-			waitFilesystemResized(t, pod, pvc.Spec.VolumeName, tt.newFilesystemSize)
 
 			// delete the pod and the pvcs and wait until the volume was deleted from
 			// the cloudscale.ch account; this check is necessary to test that the
@@ -1199,6 +1204,29 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 			return
 		} else {
 			t.Logf("volume %v not deleted on cloudscale yet; awaiting deletion", volumeName)
+			time.Sleep(5 * time.Second)
+		}
+	}
+}
+
+// waits until the device was resized on the node after the volume itself was resized by the controller
+func waitDeviceResized(t *testing.T, pod *v1.Pod, volumeName string, expectedDeviceSize int) {
+	start := time.Now()
+
+	for {
+		disk, err := getVolumeInfo(t, pod, volumeName)
+		assert.NoError(t, err)
+
+		if disk.DeviceSize == expectedDeviceSize {
+			t.Logf("device %v was resized", volumeName)
+			return
+		}
+
+		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+			t.Errorf("timeout exceeded while waiting device %v to be resized from cloudscale", volumeName)
+			return
+		} else {
+			t.Logf("device %v was not resized yet; awaiting resize operation on the node\nexpectedDeviceSize = %v", volumeName, expectedDeviceSize)
 			time.Sleep(5 * time.Second)
 		}
 	}
