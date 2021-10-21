@@ -155,7 +155,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
-          image: cloudscalech/cloudscale-csi-plugin:dev
+          image: quay.io/cloudscalech/cloudscale-csi-plugin:dev
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
@@ -359,7 +359,7 @@ spec:
             - name: registration-dir
               mountPath: /registration/
         - name: csi-cloudscale-plugin
-          image: cloudscalech/cloudscale-csi-plugin:dev
+          image: quay.io/cloudscalech/cloudscale-csi-plugin:dev
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"

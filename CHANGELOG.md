@@ -1,4 +1,7 @@
 ## unreleased
+
+* Update the alpine base image to 3.11.
+* Use quay.io instead of Docker Hub.
 * Run unit tests from Github Actions instead of Travis.
 * Ensure go.mod and modules.txt are up to date. Revendor github.com/googleapis.
 
