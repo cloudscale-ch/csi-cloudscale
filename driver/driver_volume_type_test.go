@@ -92,7 +92,7 @@ func TestCreateVolumeInvalidType(t *testing.T) {
 	//assert.Error(t, err, "invalid volume capabilities requested for LUKS xx.")
 }
 
-func TestCreateVolumeInvalidLukasAndRaw(t *testing.T) {
+func TestCreateVolumeInvalidLUKSAndRaw(t *testing.T) {
 	driver := createDriverForTest(t)
 
 	volumeName := randString(32)
