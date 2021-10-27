@@ -116,7 +116,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	luksEncrypted := "false"
 	if req.Parameters[LuksEncryptedAttribute] == "true" {
 		if violations := validateLuksCapabilities(req.VolumeCapabilities); len(violations) > 0 {
-			return nil, status.Error(codes.InvalidArgument, "invalid volume capabilities requested for LUKS volume.")
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("volume capabilities cannot be satisified: %s", strings.Join(violations, "; ")))
 		}
 		luksEncrypted = "true"
 	}
