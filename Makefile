@@ -50,7 +50,7 @@ check-unused: vendor
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@go test -v ./...
+	@go test -count=1 -v ./...
 
 .PHONY: test-integration
 test-integration:

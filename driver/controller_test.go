@@ -59,6 +59,7 @@ func TestLimitMustNotBeSmallerThanMinimumBulkStorageSize(t *testing.T) {
 	_, err := calcStorageGbBulk(5, 5)
 	assert.Error(t, err)
 }
+
 func TestRequestedBytesSmallerThanMinimumSizeUsesMinimumBulkStorageSize(t *testing.T) {
 	// use minimum bulk disk size if the limit allows it
 	val, err := calcStorageGbBulk(5, 100)

@@ -16,7 +16,7 @@ func TestCreateVolumeTypeSsdWithoutExplicitlySpecifyingTheType(t *testing.T) {
 
 	response, err := driver.CreateVolume(
 		context.Background(),
-		makeCreateVolumeRequest(volumeName, 1, ""),
+		makeCreateVolumeRequest(volumeName, 1, "", false),
 	)
 
 	assert.NoError(t, err)
@@ -39,7 +39,7 @@ func TestCreateVolumeTypeSsdExplicitlySpecifyingTheType(t *testing.T) {
 
 	response, err := driver.CreateVolume(
 		context.Background(),
-		makeCreateVolumeRequest(volumeName, 5, "ssd"),
+		makeCreateVolumeRequest(volumeName, 5, "ssd", false),
 	)
 
 	assert.NoError(t, err)
@@ -62,7 +62,7 @@ func TestCreateVolumeTypeBulk(t *testing.T) {
 
 	response, err := driver.CreateVolume(
 		context.Background(),
-		makeCreateVolumeRequest(volumeName, 100, "bulk"),
+		makeCreateVolumeRequest(volumeName, 100, "bulk", false),
 	)
 
 	assert.NoError(t, err)
@@ -85,7 +85,21 @@ func TestCreateVolumeInvalidType(t *testing.T) {
 
 	_, err := driver.CreateVolume(
 		context.Background(),
-		makeCreateVolumeRequest(volumeName, 100, "foo"),
+		makeCreateVolumeRequest(volumeName, 100, "foo", false),
+	)
+
+	assert.Error(t, err)
+	//assert.Error(t, err, "invalid volume capabilities requested for LUKS xx.")
+}
+
+func TestCreateVolumeInvalidLUKSAndRaw(t *testing.T) {
+	driver := createDriverForTest(t)
+
+	volumeName := randString(32)
+
+	_, err := driver.CreateVolume(
+		context.Background(),
+		makeLuksCreateVolumeRequest(volumeName, 100, "ssd", true, true),
 	)
 
 	assert.Error(t, err)
@@ -98,7 +112,7 @@ func TestLuksEncryptionAttributeIsSetInContext(t *testing.T) {
 	volumeName := randString(32)
 	response, err := driver.CreateVolume(
 		context.Background(),
-		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", false),
+		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", false, false),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "false", response.Volume.VolumeContext[LuksEncryptedAttribute])
@@ -107,7 +121,7 @@ func TestLuksEncryptionAttributeIsSetInContext(t *testing.T) {
 	volumeName = randString(32)
 	response, err = driver.CreateVolume(
 		context.Background(),
-		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", true),
+		makeLuksCreateVolumeRequest(volumeName, 100, "bulk", true, false),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "true", response.Volume.VolumeContext[LuksEncryptedAttribute])
@@ -116,14 +130,14 @@ func TestLuksEncryptionAttributeIsSetInContext(t *testing.T) {
 	volumeName = randString(32)
 	response, err = driver.CreateVolume(
 		context.Background(),
-		makeCreateVolumeRequest(volumeName, 100, "bulk"),
+		makeCreateVolumeRequest(volumeName, 100, "bulk", false),
 	)
 	assert.NoError(t, err)
 	assert.Equal(t, "false", response.Volume.VolumeContext[LuksEncryptedAttribute])
 }
 
-func makeLuksCreateVolumeRequest(volumeName string, sizeGb int, volumeType string, luksEncryptionEnabled bool) *csi.CreateVolumeRequest {
-	request := makeCreateVolumeRequest(volumeName, sizeGb, volumeType)
+func makeLuksCreateVolumeRequest(volumeName string, sizeGb int, volumeType string, luksEncryptionEnabled bool, block bool) *csi.CreateVolumeRequest {
+	request := makeCreateVolumeRequest(volumeName, sizeGb, volumeType, block)
 	if luksEncryptionEnabled {
 		request.Parameters[LuksEncryptedAttribute] = "true"
 	} else {
@@ -132,19 +146,10 @@ func makeLuksCreateVolumeRequest(volumeName string, sizeGb int, volumeType strin
 	return request
 }
 
-func makeCreateVolumeRequest(volumeName string, sizeGb int, volumeType string) *csi.CreateVolumeRequest {
+func makeCreateVolumeRequest(volumeName string, sizeGb int, volumeType string, block bool) *csi.CreateVolumeRequest {
 	return &csi.CreateVolumeRequest{
-		Name: volumeName,
-		VolumeCapabilities: []*csi.VolumeCapability{
-			{
-				AccessType: &csi.VolumeCapability_Mount{
-					Mount: &csi.VolumeCapability_MountVolume{},
-				},
-				AccessMode: &csi.VolumeCapability_AccessMode{
-					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-				},
-			},
-		},
+		Name:               volumeName,
+		VolumeCapabilities: makeVolumeCapabilityObject(block),
 		CapacityRange: &csi.CapacityRange{
 			RequiredBytes: int64(sizeGb) * GB,
 		},
@@ -153,6 +158,20 @@ func makeCreateVolumeRequest(volumeName string, sizeGb int, volumeType string) *
 		},
 	}
 
+}
+
+func makeVolumeCapabilityObject(block bool) []*csi.VolumeCapability {
+	accessMode := &csi.VolumeCapability_AccessMode{
+		Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+	}
+	if !block {
+		return []*csi.VolumeCapability{
+			{AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}}, AccessMode: accessMode},
+		}
+	}
+	return []*csi.VolumeCapability{
+		{AccessType: &csi.VolumeCapability_Block{Block: &csi.VolumeCapability_BlockVolume{}}, AccessMode: accessMode},
+	}
 }
 
 func createDriverForTest(t *testing.T) *Driver {
