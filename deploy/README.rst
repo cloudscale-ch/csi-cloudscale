@@ -102,4 +102,8 @@ Using etcdctl::
 
 Ansible::
 
-    ansible-playbook -i inventory/hosts.ini integration_test.yml --skip-tags install-kubernetes --skip-tags cleanup
+    # Keep cluster after test run
+    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -i inventory/hosts.ini --skip-tags cleanup
+
+    # Just run tests
+    ansible-playbook -i inventory/hosts.ini integration_test.yml --tags test
