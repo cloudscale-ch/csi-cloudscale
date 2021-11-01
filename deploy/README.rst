@@ -13,12 +13,16 @@ deploy kubernetes::
 
 After this you run::
 
-    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -i inventory/hosts.ini
+    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -e kube_version=v1.20.7 -i inventory/hosts.ini
 
 to install kubernetes on cloudscale.ch and run the integration tests. The
 playbook will also clean up VMs after the test.
 
-If you want to test a fresh release, you can use an additional ``-e version=v1.0.0``.
+* If you just want to provision a cluster, you can use an additional  ``--skip-tags cleanup --skip-tags test``.
+
+* If you want to a release other thant ``dev``, you can use an additional ``-e version=v1.0.0``.
+
+* If you want to use a non-default Kubernetes version, you can use an additional ``-e kube_version=v1.20.7``.
 
 Debugging
 ---------
