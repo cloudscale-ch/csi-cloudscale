@@ -6,6 +6,7 @@
 * Ensure go.mod and modules.txt are up to date. Revendor github.com/googleapis.
 * Support raw block volume mode (not in conjunction with LUKS for now)
 * Update go libraries.
+* Add support for Kubernetes 1.22
 
 ## v3.0.0 - 2021.08.31
 

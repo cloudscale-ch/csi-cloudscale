@@ -64,8 +64,9 @@ The following table describes the required cloudsdcale.ch driver version per Kub
 
 Kubernetes Release | cloudscale.ch CSI Driver Version
 ------------------ | -------------------------------
-1.13 - 1.16        | latest v1.x release 
-1.17 or later      | latest v2.x or newer release
+1.13 - 1.16        | latest v1.x.x release 
+1.17 - 1.21        | latest v2.x.x or newer release
+1.22 or later      | latest v3.1.x or newer release
 
 **Requirements:**
 
