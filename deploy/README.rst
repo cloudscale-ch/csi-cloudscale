@@ -13,7 +13,7 @@ deploy kubernetes::
 
 After this you run::
 
-    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -e kube_version=v1.20.7 -i inventory/hosts.ini
+    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -i inventory/hosts.ini
 
 to install kubernetes on cloudscale.ch and run the integration tests. The
 playbook will also clean up VMs after the test.
