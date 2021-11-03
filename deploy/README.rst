@@ -20,7 +20,7 @@ playbook will also clean up VMs after the test.
 
 * If you just want to provision a cluster, you can use an additional  ``--skip-tags cleanup --skip-tags test``.
 
-* If you want to a release other than ``dev``, you can use an additional ``-e version=v1.0.0``.
+* If you want to a test release other than ``dev``, you can use an additional ``-e version=v1.0.0``.
 
 * If you want to use a non-default Kubernetes version, you can use an additional ``-e kube_version=v1.20.7``.
 
