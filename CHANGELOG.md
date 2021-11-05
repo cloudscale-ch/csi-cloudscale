@@ -1,5 +1,7 @@
 ## unreleased
 
+## v3.1.0 - 2021.11.05
+
 * Update the alpine base image to 3.11.
 * Use quay.io instead of Docker Hub.
 * Run unit tests from Github Actions instead of Travis.
