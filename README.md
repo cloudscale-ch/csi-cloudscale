@@ -35,9 +35,9 @@ storage classes:
 
 * `cloudscale-volume-ssd` - the default storage class; uses an ssd volume, no luks encryption
 * `cloudscale-volume-bulk` - uses a bulk volume, no luks encryption
-* `cloudscale-volume-ssd-luks` - uses an ssd volume that will be encrypyted with luks; a luks-key
+* `cloudscale-volume-ssd-luks` - uses an ssd volume that will be encrypted with luks; a luks-key
   must be supplied
-* `cloudscale-volume-bulk-luks` - uses a bulk volume that will be encrypyted with luks; a luks-key
+* `cloudscale-volume-bulk-luks` - uses a bulk volume that will be encrypted with luks; a luks-key
   must be supplied
 
 To use one of the shipped luks storage classes, you need to create a secret named 
@@ -60,7 +60,7 @@ The current version is: **`v3.0.0`**.
 
 ### Kubernetes Compatibility
 
-The following table describes the required cloudsdcale.ch driver version per Kubernetes release.
+The following table describes the required cloudscale.ch driver version per Kubernetes release.
 
 Kubernetes Release | cloudscale.ch CSI Driver Version
 ------------------ | -------------------------------
