@@ -73,7 +73,7 @@ Kubernetes Release | Minimum cloudscale.ch CSI Driver | Maximum cloudscale.ch CS
 1.22               | v3.1.0                           | v3.1.0                               |
 
 \* Older versions might fail to recognize the storage devices on new cluster nodes. Therefore,
-   we recommend to use at least v1.3.1, to guarantee stable operation, even if it might be
+   we recommend to use at least v1.3.1 to guarantee stable operation, even if it might be
    technically possible to run an older release.
 
 **Requirements:**
