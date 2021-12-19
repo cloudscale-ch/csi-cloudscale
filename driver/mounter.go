@@ -22,6 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"k8s.io/mount-utils"
+	kexec "k8s.io/utils/exec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,13 +100,20 @@ type Mounter interface {
 // architecture specific code in the future, such as mounter_darwin.go,
 // mounter_linux.go, etc..
 type mounter struct {
-	log *logrus.Entry
+	log      *logrus.Entry
+	kMounter *mount.SafeFormatAndMount
 }
 
 // newMounter returns a new mounter instance
 func newMounter(log *logrus.Entry) *mounter {
+	kMounter := &mount.SafeFormatAndMount{
+		Interface: mount.New(""),
+		Exec:      kexec.New(),
+	}
+
 	return &mounter{
-		log: log,
+		kMounter: kMounter,
+		log:      log,
 	}
 }
 
@@ -243,25 +252,10 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 	// a luks volume needs to be closed after unmounting; get the source
 	// of the mount to check if that is a luks volume
 	mountSources, err := getMountSources(target)
+
+	err = mount.CleanupMountPoint(target, m.kMounter, true)
 	if err != nil {
 		return err
-	}
-	if len(mountSources) == 0 {
-		return fmt.Errorf("unable to determine mount sources of target %s", target)
-	}
-
-	umountCmd := "umount"
-	umountArgs := []string{target}
-
-	m.log.WithFields(logrus.Fields{
-		"cmd":  umountCmd,
-		"args": umountArgs,
-	}).Info("executing umount command")
-
-	out, err := exec.Command(umountCmd, umountArgs...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("unmounting failed: %v cmd: '%s %s' output: %q",
-			err, umountCmd, target, string(out))
 	}
 
 	// if this is the unstaging process, check if the source is a luks volume and close it
