@@ -72,6 +72,7 @@ Kubernetes Release | Minimum cloudscale.ch CSI Driver | Maximum cloudscale.ch CS
 1.20               | v2.0.0                           | v3.1.0                               |
 1.21               | v2.0.0                           | v3.1.0                               |
 1.22               | v3.1.0                           | v3.1.0                               |
+1.23               | v3.1.0                           | v3.1.0                               |
 
 **Requirements:**
 
