@@ -1,4 +1,5 @@
 ## unreleased
+* Update the alpine base image to 3.15.
 
 ## v3.1.0 - 2021.11.05
 
