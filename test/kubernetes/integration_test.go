@@ -18,6 +18,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -689,12 +690,14 @@ func TestVolumeStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertMetric(t, metrics, "kubelet_volume_stats_capacity_bytes", pvcName, "1.02330368e+09")
-	assertMetric(t, metrics, "kubelet_volume_stats_available_bytes", pvcName, "1.003900928e+09")
-	assertMetric(t, metrics, "kubelet_volume_stats_used_bytes", pvcName, "2.625536e+06")
-	assertMetric(t, metrics, "kubelet_volume_stats_inodes", pvcName, "65536")
-	assertMetric(t, metrics, "kubelet_volume_stats_inodes_free", pvcName, "65525")
-	assertMetric(t, metrics, "kubelet_volume_stats_inodes_used", pvcName, "11")
+	deltaCapacity := 100.0 * driver.MB
+	assertMetric(t, metrics, "kubelet_volume_stats_capacity_bytes", pvcName, 1*driver.GB, deltaCapacity)
+	assertMetric(t, metrics, "kubelet_volume_stats_available_bytes", pvcName, 1*driver.GB, deltaCapacity)
+	assertMetric(t, metrics, "kubelet_volume_stats_used_bytes", pvcName, 20*driver.MB, deltaCapacity)
+	deltaInode := 100.0
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes", pvcName, 65536, deltaInode)
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes_free", pvcName, 65525, deltaInode)
+	assertMetric(t, metrics, "kubelet_volume_stats_inodes_used", pvcName, 11, deltaInode)
 }
 
 func setup() error {
@@ -1391,12 +1394,16 @@ type MetricEntry struct {
 	value      string
 }
 
-func assertMetric(t *testing.T, metrics *MetricsSet, name string, substring string, expected string) {
-	value, err := metrics.findByLabel(name, substring)
+func assertMetric(t *testing.T, metrics *MetricsSet, name string, substring string, expected float64, delta float64) {
+	metric, err := metrics.findByLabel(name, substring)
 	if err != nil {
-		t.Fatalf("Metric not found %v", name)
+		t.Errorf("Metric not found %v", name)
 	}
-	assert.Equal(t, expected, value.value)
+	float, err := strconv.ParseFloat(metric.value, 64)
+	if err != nil {
+		t.Error(err)
+	}
+	assert.InDelta(t, expected, float, delta)
 }
 
 func (km *MetricsSet) filterByName(name string) (ret []MetricEntry) {
