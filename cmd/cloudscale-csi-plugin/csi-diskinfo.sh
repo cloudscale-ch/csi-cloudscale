@@ -37,7 +37,7 @@ for device in ${all_devices}; do
     pvcName="$(echo "${device}" | cut -d / -f4)"
     pvcMode="$(getPVCMode "${device}")"
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
-    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
+    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" BLOCK_SIZE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${deviceSource}")"
 
     fileSystemSize="-1"
@@ -67,7 +67,7 @@ for device in ${all_devices}; do
     pvcName="$(mount | grep "${device}" | sed -e 's|.*pvc-|pvc-|' | cut -d / -f1 | sort -u)"
     pvcMode="$(getPVCMode "${device}")"
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
-    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" TYPE=.*|\1|')"
+    fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" BLOCK_SIZE=.*|\1|')"
     deviceSize="$(blockdev --getsize64 "${device}")"
     deviceSource="$(readlink -f "${device}")"
 

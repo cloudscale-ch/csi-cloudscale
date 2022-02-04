@@ -1,4 +1,6 @@
 ## unreleased
+* Update the alpine base image to 3.15.
+* Improve metrics test to accept results within a delta.
 
 ## v3.1.0 - 2021.11.05
 
