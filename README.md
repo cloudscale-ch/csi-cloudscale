@@ -63,16 +63,16 @@ The current version is: **`v3.1.1`**.
 The following table describes the required cloudscale.ch driver version per Kubernetes release.
 We recommend using the latest cloudscale.ch CSI driver compatible with your Kubernetes release.
 
-Kubernetes Release | Minimum cloudscale.ch CSI Driver | Maximum cloudscale.ch CSI Driver     |
------------------- |----------------------------------|--------------------------------------|
-<= 1.16            |                                  | v1.3.1                               |
-1.17               | v1.3.1                           | v3.0.0                               |
-1.18               | v1.3.1                           | v3.1.1                               |
-1.19               | v1.3.1                           | v3.1.1                               |
-1.20               | v2.0.0                           | v3.1.1                               |
-1.21               | v2.0.0                           | v3.1.1                               |
-1.22               | v3.1.0                           | v3.1.1                               |
-1.23               | v3.1.0                           | v3.1.1                               |
+| Kubernetes Release | Minimum cloudscale.ch CSI Driver | Maximum cloudscale.ch CSI Driver |
+|--------------------|----------------------------------|----------------------------------|
+| <= 1.16            |                                  | v1.3.1                           |
+| 1.17               | v1.3.1                           | v3.0.0                           |
+| 1.18               | v1.3.1                           | v3.1.1                           |
+| 1.19               | v1.3.1                           | v3.1.1                           |
+| 1.20               | v2.0.0                           | v3.1.1                           |
+| 1.21               | v2.0.0                           | v3.1.1                           |
+| 1.22               | v3.1.0                           | v3.1.1                           |
+| 1.23               | v3.1.0                           | v3.1.1                           |
 
 **Requirements:**
 
