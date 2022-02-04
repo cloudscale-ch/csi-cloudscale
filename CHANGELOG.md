@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.1.1 - 2022.02.04
 * Update the alpine base image to 3.15.
 * Improve metrics test to accept results within a delta.
 
