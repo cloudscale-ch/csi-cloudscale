@@ -5,26 +5,30 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"strconv"
+	"time"
 )
 
 const floatingIPsBasePath = "v1/floating-ips"
 
 type FloatingIP struct {
-	Region         *Region    `json:"region"` // not using RegionalResource here, as FloatingIP can be regional or global
+	Region         *Region     `json:"region"` // not using RegionalResource here, as FloatingIP can be regional or global
 	TaggedResource
-	HREF           string     `json:"href"`
-	Network        string     `json:"network"`
-	NextHop        string     `json:"next_hop"`
-	Server         ServerStub `json:"server"`
-	Type           string     `json:"type"`
-	ReversePointer string     `json:"reverse_ptr,omitempty"`
+	HREF           string      `json:"href"`
+	Network        string      `json:"network"`
+	IPVersion      int         `json:"ip_version"`
+	NextHop        string      `json:"next_hop"`
+	Server         *ServerStub `json:"server"`
+	Type           string      `json:"type"`
+	ReversePointer string      `json:"reverse_ptr,omitempty"`
+	CreatedAt      time.Time   `json:"created_at"`
 }
 
 type FloatingIPCreateRequest struct {
 	RegionalResourceRequest
 	TaggedResourceRequest
 	IPVersion      int    `json:"ip_version"`
-	Server         string `json:"server"`
+	Server         string `json:"server,omitempty"`
 	Type           string `json:"type,omitempty"`
 	PrefixLength   int    `json:"prefix_length,omitempty"`
 	ReversePointer string `json:"reverse_ptr,omitempty"`
@@ -34,9 +38,15 @@ func (f FloatingIP) IP() string {
 	return strings.Split(f.Network, "/")[0]
 }
 
+func (f FloatingIP) PrefixLength() int {
+	result, _ := strconv.Atoi(strings.Split(f.Network, "/")[1])
+	return result
+}
+
 type FloatingIPUpdateRequest struct {
 	TaggedResourceRequest
-	Server string `json:"server,omitempty"`
+	Server         string `json:"server,omitempty"`
+	ReversePointer string `json:"reverse_ptr,omitempty"`
 }
 
 type FloatingIPsService interface {

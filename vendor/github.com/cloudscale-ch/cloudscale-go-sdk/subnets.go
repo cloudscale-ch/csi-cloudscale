@@ -12,10 +12,12 @@ type Subnet struct {
 	TaggedResource
 	// Just use omitempty everywhere. This makes it easy to use restful. Errors
 	// will be coming from the API if something is disabled.
-	HREF    string      `json:"href,omitempty"`
-	UUID    string      `json:"uuid,omitempty"`
-	CIDR    string      `json:"cidr,omitempty"`
-	Network NetworkStub `json:"network,omitempty"`
+	HREF           string      `json:"href,omitempty"`
+	UUID           string      `json:"uuid,omitempty"`
+	CIDR           string      `json:"cidr,omitempty"`
+	Network        NetworkStub `json:"network,omitempty"`
+	GatewayAddress string      `json:"gateway_address,omitempty"`
+	DNSServers     []string    `json:"dns_servers,omitempty"`
 }
 
 type SubnetStub struct {
@@ -26,14 +28,23 @@ type SubnetStub struct {
 
 type SubnetCreateRequest struct {
 	TaggedResourceRequest
-	CIDR    string `json:"cidr,omitempty"`
-	Network string `json:"network,omitempty"`
+	CIDR           string   `json:"cidr,omitempty"`
+	Network        string   `json:"network,omitempty"`
+	GatewayAddress string   `json:"gateway_address,omitempty"`
+	DNSServers     []string `json:"dns_servers,omitempty"`
+}
+
+type SubnetUpdateRequest struct {
+	TaggedResourceRequest
+	GatewayAddress string   `json:"gateway_address,omitempty"`
+	DNSServers     []string `json:"dns_servers,omitempty"`
 }
 
 type SubnetService interface {
 	Create(ctx context.Context, createRequest *SubnetCreateRequest) (*Subnet, error)
 	Get(ctx context.Context, subnetID string) (*Subnet, error)
 	List(ctx context.Context, modifiers ...ListRequestModifier) ([]Subnet, error)
+	Update(ctx context.Context, subnetID string, updateRequest *SubnetUpdateRequest) error
 	Delete(ctx context.Context, subnetID string) error
 }
 
@@ -58,6 +69,22 @@ func (s SubnetServiceOperations) Create(ctx context.Context, createRequest *Subn
 
 	return subnet, nil
 }
+
+func (f SubnetServiceOperations) Update(ctx context.Context, subnetID string, updateRequest *SubnetUpdateRequest) error {
+	path := fmt.Sprintf("%s/%s", subnetBasePath, subnetID)
+
+	req, err := f.client.NewRequest(ctx, http.MethodPatch, path, updateRequest)
+	if err != nil {
+		return err
+	}
+
+	err = f.client.Do(ctx, req, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 
 func (s SubnetServiceOperations) Get(ctx context.Context, subnetID string) (*Subnet, error) {
 	path := fmt.Sprintf("%s/%s", subnetBasePath, subnetID)

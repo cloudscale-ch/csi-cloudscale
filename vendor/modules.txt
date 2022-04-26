@@ -1,4 +1,4 @@
-# github.com/cloudscale-ch/cloudscale-go-sdk v1.3.0
+# github.com/cloudscale-ch/cloudscale-go-sdk v1.11.0
 ## explicit
 github.com/cloudscale-ch/cloudscale-go-sdk
 # github.com/container-storage-interface/spec v1.2.0

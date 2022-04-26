@@ -1,4 +1,5 @@
 TEST?=$$(go list ./... |grep -v 'vendor')
+VERSION ?= $(shell cat VERSION)
 
 test:
 	go test $(TEST) $(TESTARGS) -timeout 30s
@@ -10,5 +11,12 @@ integration:
 fmt:
 	go fmt
 	gofmt -l -w test/integration
+
+bump-version:
+	@[ "${NEW_VERSION}" ] || ( echo "NEW_VERSION must be set (ex. make NEW_VERSION=v1.x.x bump-version)"; exit 1 )
+	@(echo ${NEW_VERSION} | grep -E "^v") || ( echo "NEW_VERSION must be a semver ('v' prefix is required)"; exit 1 )
+	@echo "Bumping VERSION from $(VERSION) to $(NEW_VERSION)"
+	@echo $(NEW_VERSION) > VERSION
+	@sed -i '' -e 's/${VERSION}/${NEW_VERSION}/g' cloudscale.go
 
 .PHONY: test integration
