@@ -173,10 +173,7 @@ func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
 	}
 }
 
-func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, opts ...string) error {
-	mountCmd := "mount"
-	mountArgs := []string{}
-
+func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, options ...string) error {
 	if source == "" {
 		return errors.New("source is not specified for mounting the volume")
 	}
@@ -200,17 +197,11 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		}
 		file.Close()
 	} else {
-		mountArgs = append(mountArgs, "-t", fsType)
-
 		// create target, os.Mkdirall is noop if directory exists
 		err := os.MkdirAll(target, 0750)
 		if err != nil {
 			return err
 		}
-	}
-
-	if len(opts) > 0 {
-		mountArgs = append(mountArgs, "-o", strings.Join(opts, ","))
 	}
 
 	if luksContext.EncryptionEnabled && luksContext.VolumeLifecycle == VolumeLifecycleNodeStageVolume {
@@ -222,22 +213,15 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 			}).Error("failed to prepare luks volume for mounting")
 			return err
 		}
-		mountArgs = append(mountArgs, luksSource)
-	} else {
-		mountArgs = append(mountArgs, source)
+		source = luksSource
 	}
 
-	mountArgs = append(mountArgs, target)
-
 	m.log.WithFields(logrus.Fields{
-		"cmd":  mountCmd,
-		"args": mountArgs,
+		"options": options,
 	}).Info("executing mount command")
-
-	out, err := exec.Command(mountCmd, mountArgs...).CombinedOutput()
+	err := m.kMounter.Mount(source, target, fsType, options)
 	if err != nil {
-		return fmt.Errorf("mounting failed: %v cmd: '%s %s' output: %q",
-			err, mountCmd, strings.Join(mountArgs, " "), string(out))
+		return err
 	}
 
 	return nil
