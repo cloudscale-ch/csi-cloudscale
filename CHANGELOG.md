@@ -1,4 +1,6 @@
 ## unreleased
+* Update cloudscale-go-sdk to 1.11.0.
+* Use k8s mount library.
 
 ## v3.1.1 - 2022.02.04
 * Update the alpine base image to 3.15.
