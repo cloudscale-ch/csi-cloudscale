@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.2.0 - 2022.05.16
 * Update cloudscale-go-sdk to 1.11.0.
 * Use k8s mount library.
 
