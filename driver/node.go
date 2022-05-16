@@ -269,19 +269,9 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	})
 	ll.Info("node unpublish volume called")
 
-	mounted, err := d.mounter.IsMounted(req.TargetPath)
+	err := d.mounter.Unmount(req.TargetPath, luksContext)
 	if err != nil {
 		return nil, err
-	}
-
-	if mounted {
-		ll.Info("unmounting the target path")
-		err := d.mounter.Unmount(req.TargetPath, luksContext)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		ll.Info("target path is already unmounted")
 	}
 
 	ll.Info("unmounting volume is finished")
@@ -508,11 +498,6 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 		fsType = mnt.FsType
 	}
 
-	mounted, err := d.mounter.IsMounted(target)
-	if err != nil {
-		return err
-	}
-
 	log = log.WithFields(logrus.Fields{
 		"source_path":   source,
 		"volume_mode":   volumeModeFilesystem,
@@ -520,13 +505,9 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 		"mount_options": mountOptions,
 	})
 
-	if !mounted {
-		log.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target, fsType, luksContext, mountOptions...); err != nil {
-			return status.Error(codes.Internal, err.Error())
-		}
-	} else {
-		log.Info("volume is already mounted")
+	log.Info("mounting the volume")
+	if err := d.mounter.Mount(source, target, fsType, luksContext, mountOptions...); err != nil {
+		return status.Error(codes.Internal, err.Error())
 	}
 
 	return nil
@@ -542,24 +523,15 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 
 	target := req.TargetPath
 
-	mounted, err := d.mounter.IsMounted(target)
-	if err != nil {
-		return err
-	}
-
 	log = log.WithFields(logrus.Fields{
 		"source_path":   source,
 		"volume_mode":   volumeModeBlock,
 		"mount_options": mountOptions,
 	})
 
-	if !mounted {
-		log.Info("mounting the volume")
-		if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
-			return status.Errorf(codes.Internal, err.Error())
-		}
-	} else {
-		log.Info("volume is already mounted")
+	log.Info("mounting the volume")
+	if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
+		return status.Errorf(codes.Internal, err.Error())
 	}
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const volumeBasePath = "v1/volumes"
@@ -19,6 +20,7 @@ type Volume struct {
 	SizeGB      int       `json:"size_gb,omitempty"`
 	Type        string    `json:"type,omitempty"`
 	ServerUUIDs *[]string `json:"server_uuids,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type VolumeRequest struct {

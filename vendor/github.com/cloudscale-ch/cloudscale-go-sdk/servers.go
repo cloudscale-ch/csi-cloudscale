@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"time"
 )
 
 const serverBasePath = "v1/servers"
@@ -28,6 +29,7 @@ type Server struct {
 	SSHHostKeys     []string          `json:"ssh_host_keys"`
 	AntiAfinityWith []ServerStub      `json:"anti_affinity_with"`
 	ServerGroups    []ServerGroupStub `json:"server_groups"`
+	CreatedAt       time.Time         `json:"created_at"`
 }
 
 type ServerStub struct {
@@ -68,11 +70,12 @@ type Interface struct {
 }
 
 type Address struct {
-	Version      int    `json:"version"`
-	Address      string `json:"address"`
-	PrefixLength int    `json:"prefix_length"`
-	Gateway      string `json:"gateway"`
-	ReversePtr   string `json:"reverse_ptr"`
+	Version      int        `json:"version"`
+	Address      string     `json:"address"`
+	PrefixLength int        `json:"prefix_length"`
+	Gateway      string     `json:"gateway"`
+	ReversePtr   string     `json:"reverse_ptr"`
+	Subnet       SubnetStub `json:"subnet"`
 }
 
 type ServerRequest struct {
@@ -97,8 +100,13 @@ type ServerRequest struct {
 }
 
 type InterfaceRequest struct {
-	Network   string   `json:"network,omitempty"`
-	Addresses *[]string `json:"addresses,omitempty"`
+	Network   string            `json:"network,omitempty"`
+	Addresses *[]AddressRequest `json:"addresses,omitempty"`
+}
+
+type AddressRequest struct {
+	Subnet  string `json:"subnet,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 type ServerService interface {

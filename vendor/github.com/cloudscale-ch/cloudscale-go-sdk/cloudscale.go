@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	libraryVersion = "1.2"
+	libraryVersion = "v1.11.0"
 	defaultBaseURL = "https://api.cloudscale.ch/"
 	userAgent      = "cloudscale/" + libraryVersion
 	mediaType      = "application/json"
@@ -34,14 +34,17 @@ type Client struct {
 	// User agent for client
 	UserAgent string
 
-	Regions      RegionService
-	Servers      ServerService
-	Volumes      VolumeService
-	Networks     NetworkService
-	Subnets		 SubnetService
-	FloatingIPs  FloatingIPsService
-	ServerGroups ServerGroupService
-	ObjectsUsers ObjectsUsersService
+	Regions            RegionService
+	Servers            ServerService
+	Volumes            VolumeService
+	Networks           NetworkService
+	Subnets            SubnetService
+	FloatingIPs        FloatingIPsService
+	ServerGroups       ServerGroupService
+	ObjectsUsers       ObjectsUsersService
+	CustomImages       CustomImageService
+	CustomImageImports CustomImageImportsService
+	Metrics            MetricsService
 }
 
 // NewClient returns a new CloudScale API client.
@@ -52,7 +55,7 @@ func NewClient(httpClient *http.Client) *Client {
 
 	// To allow more complicated testing we allow changing the cloudscale.ch
 	// URL.
-	defaultURL := os.Getenv("CLOUDSCALE_URL")
+	defaultURL := os.Getenv("CLOUDSCALE_API_URL")
 
 	if defaultURL == "" {
 		defaultURL = defaultBaseURL
@@ -68,6 +71,9 @@ func NewClient(httpClient *http.Client) *Client {
 	c.Volumes = VolumeServiceOperations{client: c}
 	c.ServerGroups = ServerGroupServiceOperations{client: c}
 	c.ObjectsUsers = ObjectsUsersServiceOperations{client: c}
+	c.CustomImages = CustomImageServiceOperations{client: c}
+	c.CustomImageImports = CustomImageImportsServiceOperations{client: c}
+	c.Metrics = MetricsServiceOperations{client: c}
 
 	return c
 }
@@ -175,4 +181,3 @@ func (r *ErrorResponse) Error() string {
 }
 
 type ListRequestModifier func(r *http.Request)
-

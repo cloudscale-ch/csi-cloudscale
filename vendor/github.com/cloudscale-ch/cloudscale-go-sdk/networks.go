@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 const networkBasePath = "v1/networks"
@@ -13,11 +14,12 @@ type Network struct {
 	TaggedResource
 	// Just use omitempty everywhere. This makes it easy to use restful. Errors
 	// will be coming from the API if something is disabled.
-	HREF    string       `json:"href,omitempty"`
-	UUID    string       `json:"uuid,omitempty"`
-	Name    string       `json:"name,omitempty"`
-	MTU     int          `json:"mtu,omitempty"`
-	Subnets []SubnetStub `json:"subnets"`
+	HREF      string       `json:"href,omitempty"`
+	UUID      string       `json:"uuid,omitempty"`
+	Name      string       `json:"name,omitempty"`
+	MTU       int          `json:"mtu,omitempty"`
+	Subnets   []SubnetStub `json:"subnets"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 type NetworkStub struct {
