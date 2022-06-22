@@ -1,0 +1,24 @@
+{{- $csi := .Values.csi }}
+{{- $provisioner := .Values.provisioner }}
+{{- range $storageClass := .Values.csi.storageClasses }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $storageClass.name }}
+{{- if $storageClass.default }}
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+{{- end }}
+provisioner: {{ $storageClass.provisioner | default $provisioner.name }}
+allowVolumeExpansion: {{ $storageClass.allowVolumeExpansion | default $csi.allowVolumeExpansion }}
+parameters:
+  csi.cloudscale.ch/volume-type: {{ $storageClass.volumeType }}
+{{- if  $storageClass.luks.enabled }}
+  csi.cloudscale.ch/luks-encrypted: "true"
+  csi.cloudscale.ch/luks-cipher: {{ quote $storageClass.luks.cipher }}
+  csi.cloudscale.ch/luks-key-size: {{ quote $storageClass.luks.keySize }}
+  csi.storage.k8s.io/node-stage-secret-namespace: ${pvc.namespace}
+  csi.storage.k8s.io/node-stage-secret-name: ${pvc.name}-luks-key
+{{- end }}
+{{- end }}

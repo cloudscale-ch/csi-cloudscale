@@ -1,0 +1,8 @@
+apiVersion: v2
+name: cloudscale-csi
+description: A Container Storage Interface Driver for cloudscale.ch volumes.
+type: application
+version: 0.1.0
+appVersion: 3.2.0
+sources:
+  - https://github.com/cloudscale-ch/csi-cloudscale.git

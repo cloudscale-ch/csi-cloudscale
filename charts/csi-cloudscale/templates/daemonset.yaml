@@ -1,0 +1,101 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: {{ .Release.Name }}-csi-cloudscale-node
+spec:
+  selector:
+    matchLabels:
+      app: csi-cloudscale-node
+  template:
+    metadata:
+      labels:
+        app: csi-cloudscale-node
+        role: csi-cloudscale
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccount: {{ .Release.Name }}-csi-cloudscale-node-sa
+      hostNetwork: true
+      containers:
+        - name: driver-registrar
+          image: {{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}
+          imagePullPolicy: {{ .Values.driverRegistrar.image.pullPolicy }}
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/csi.cloudscale.ch /registration/csi.cloudscale.ch-reg.sock"]
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/csi.cloudscale.ch/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi/
+            - name: registration-dir
+              mountPath: /registration/
+        - name: csi-cloudscale-plugin
+          image: {{ .Values.plugin.image.repository }}:{{ .Values.plugin.image.tag }}
+          imagePullPolicy: {{ .Values.plugin.image.pullPolicy }}
+          args :
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--url=$(CLOUDSCALE_API_URL)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: CLOUDSCALE_API_URL
+              value: {{ .Values.cloudscale.apiUrl }}
+            - name: CLOUDSCALE_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.cloudscale.token.existingSecret }}
+                  name: {{.Values.cloudscale.token.existingSecret }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-cloudscale-token
+                  key: token
+                  {{- end }}
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet
+              # needed so that any mounts setup inside this container are
+              # propagated back to the host machine.
+              mountPropagation: "Bidirectional"
+            - name: device-dir
+              mountPath: /dev
+            - name: tmpfs
+              mountPath: /tmp
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.cloudscale.ch
+            type: DirectoryOrCreate
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
+        # to make sure temporary stored luks keys never touch a disk
+        - name: tmpfs
+          emptyDir:
+            medium: Memory

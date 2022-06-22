@@ -1,0 +1,66 @@
+cloudscale:
+  apiUrl: https://api.cloudscale.ch/
+  token:
+    value: "secret"
+    # existingSecret:
+
+installCRDs: false
+
+csi:
+  allowVolumeExpansion: true
+  storageClasses:
+    - name: cloudscale-volume-ssd
+      volumeType: ssd
+      default: true
+      luks:
+        enabled: false
+    - name: cloudscale-volume-ssd-luks
+      volumeType: ssd
+      luks:
+        enabled: true
+        cipher: aes-xts-plain64
+        keySize: 512
+    - name: cloudscale-volume-bulk
+      volumeType: bulk
+      luks:
+        enabled: false
+    - name: cloudscale-volume-bulk-luks
+      volumeType: bulk
+      luks:
+        enabled: true
+        cipher: aes-xts-plain64
+        keySize: 512
+
+controller:
+  replicas: 1
+
+provisioner:
+  name: csi.cloudscale.ch
+  image:
+    repository: quay.io/k8scsi/csi-provisioner
+    tag: v2.0.4
+    pullPolicy: IfNotPresent
+
+attacher:
+  image:
+    repository: quay.io/k8scsi/csi-attacher
+    tag: v3.0.2
+    pullPolicy: IfNotPresent
+
+resizer:
+  image:
+    repository: quay.io/k8scsi/csi-resizer
+    tag: v1.0.1
+    pullPolicy: IfNotPresent
+
+plugin:
+  image:
+    repository: cloudscalech/cloudscale-csi-plugin
+    tag: v3.2.0
+    pullPolicy: IfNotPresent
+
+driverRegistrar:
+  image:
+    repository: quay.io/k8scsi/csi-node-driver-registrar
+    tag: v2.0.1
+    pullPolicy: IfNotPresent

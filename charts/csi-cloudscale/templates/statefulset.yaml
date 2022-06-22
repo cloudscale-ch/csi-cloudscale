@@ -1,0 +1,87 @@
+---
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: {{ .Release.Name }}-csi-cloudscale-controller
+  namespace: {{ .Release.namespace }}
+spec:
+  serviceName: "csi-cloudscale"
+  selector:
+    matchLabels:
+      app: csi-cloudscale-controller
+  replicas: {{ .Values.controller.replicas }}
+  template:
+    metadata:
+      labels:
+        app: csi-cloudscale-controller
+        role: csi-cloudscale
+    spec:
+      hostNetwork: true
+      priorityClassName: system-cluster-critical
+      serviceAccount: {{ .Release.Name }}-csi-cloudscale-controller-sa
+      containers:
+        - name: csi-provisioner
+          image: {{ .Values.provisioner.image.repository }}:{{ .Values.provisioner.image.tag }}
+          imagePullPolicy: {{ .Values.provisioner.image.pullPolicy }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--default-fstype=ext4"
+            - "--v=5"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-attacher
+          image: {{ .Values.attacher.image.repository }}:{{ .Values.attacher.image.tag }}
+          imagePullPolicy: {{ .Values.attacher.image.pullPolicy }}
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-resizer
+          image: {{ .Values.resizer.image.repository }}:{{ .Values.resizer.image.tag }}
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--timeout=30s"
+            - "--v=5"
+            - "--handle-volume-inuse-error=false"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          imagePullPolicy: {{ .Values.resizer.image.pullPolicy }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-cloudscale-plugin
+          image: {{ .Values.plugin.image.repository }}:{{ .Values.plugin.image.tag }}
+          args :
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--url=$(CLOUDSCALE_API_URL)"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: CLOUDSCALE_API_URL
+              value: https://api.cloudscale.ch/
+            - name: CLOUDSCALE_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.cloudscale.token.existingSecret }}
+                  name: {{.Values.cloudscale.token.existingSecret }}
+                  {{- else }}
+                  name: {{ .Release.Name }}-cloudscale-token
+                  key: token
+                  {{- end }}
+          imagePullPolicy: {{ .Values.plugin.image.pullPolicy }}
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
