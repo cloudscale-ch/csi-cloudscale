@@ -64,7 +64,7 @@ for device in ${all_devices}; do
     fi
   else
     # NON-Luks
-    pvcName="$(mount | grep "${device}" | sed -e 's|.*pvc-|pvc-|' | cut -d / -f1 | sort -u)"
+    pvcName="$(mount | grep "${device}" | sed -e 's|.*pvc-|pvc-|' | cut -d / -f1 | grep -v "^$" | sort -u)"
     pvcMode="$(getPVCMode "${device}")"
     fs="$(blkid "${device}" | sed -E 's|.*TYPE="(.*)".*|\1|')"
     fsUUID="$(blkid "${device}" | sed -E 's|.* UUID="(.*)" BLOCK_SIZE=.*|\1|')"
