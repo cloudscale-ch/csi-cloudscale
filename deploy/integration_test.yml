@@ -19,7 +19,7 @@
       cloudscale_server:
         name: "{{ base_server_name }}{{ item }}"
         flavor: flex-4
-        image: centos-7
+        image: fedora-35
         ssh_keys: '{{ ssh_keys }}'
         api_token: '{{ cloudscale_api_token }}'
       loop: "{{ servers }}"
