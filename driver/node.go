@@ -490,8 +490,8 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	}
 	if !hasRequiredSize {
 		// Volume does not yet see the new size of the volume, expanding the filesystem would result in a noop.
-		// Returning an error will cause a retry.
-		return nil, status.Errorf(codes.FailedPrecondition, "Not yet required size.")
+		// Returning a UNAVAILABLE will cause a retry.
+		return nil, status.Errorf(codes.Unavailable, "Not yet required size.")
 	}
 
 	// the luks container must be resized if the volume was resized while the disk was mounted
