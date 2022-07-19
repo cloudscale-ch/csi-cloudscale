@@ -55,7 +55,7 @@ resizer:
 
 plugin:
   image:
-    repository: cloudscalech/cloudscale-csi-plugin
+    repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
     pullPolicy: IfNotPresent
 

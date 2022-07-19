@@ -17,7 +17,7 @@ spec:
       serviceAccount: {{ .Release.Name }}-csi-cloudscale-node-sa
       hostNetwork: true
       containers:
-        - name: driver-registrar
+        - name: csi-node-driver-registrar
           image: {{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}
           imagePullPolicy: {{ .Values.driverRegistrar.image.pullPolicy }}
           args:
