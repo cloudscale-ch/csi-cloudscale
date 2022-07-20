@@ -58,10 +58,10 @@ spec:
                 secretKeyRef:
                   {{- if .Values.cloudscale.token.existingSecret }}
                   name: {{.Values.cloudscale.token.existingSecret }}
-                  key: token
+                  key: access-token
                   {{- else }}
                   name: {{ .Release.Name }}-cloudscale-token
-                  key: token
+                  key: access-token
                   {{- end }}
           securityContext:
             privileged: true
