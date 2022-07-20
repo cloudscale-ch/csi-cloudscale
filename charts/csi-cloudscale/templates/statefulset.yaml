@@ -3,7 +3,6 @@ kind: StatefulSet
 apiVersion: apps/v1
 metadata:
   name: {{ .Release.Name }}-csi-cloudscale-controller
-  namespace: {{ .Release.namespace }}
 spec:
   serviceName: "csi-cloudscale"
   selector:
