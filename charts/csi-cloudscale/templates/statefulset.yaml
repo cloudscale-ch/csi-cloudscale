@@ -71,13 +71,8 @@ spec:
             - name: CLOUDSCALE_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
-                  {{- if .Values.cloudscale.token.existingSecret }}
-                  name: {{.Values.cloudscale.token.existingSecret }}
+                  name: {{ include "csi-cloudscale.api-token-name" . }}
                   key: access-token
-                  {{- else }}
-                  name: {{ .Release.Name }}-cloudscale-token
-                  key: access-token
-                  {{- end }}
           imagePullPolicy: {{ .Values.plugin.image.pullPolicy }}
           volumeMounts:
             - name: socket-dir

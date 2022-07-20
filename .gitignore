@@ -1,5 +1,6 @@
 # IntelliJ IDEA / GoLand
 .idea
 *.iml
+values.yaml
 
 cmd/cloudscale-csi-plugin/cloudscale-csi-plugin
