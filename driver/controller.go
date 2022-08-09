@@ -20,16 +20,16 @@ package driver
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"regexp"
-	"strconv"
-	"strings"
-
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+	"sync"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 )
@@ -68,6 +68,8 @@ var (
 	// maxVolumesPerServerErrorMessage is the error message returned by the cloudscale.ch
 	// API when the per-server volume limit would be exceeded.
 	maxVolumesPerServerErrorMessageRe = regexp.MustCompile("Due to internal limitations, it is currently not possible to attach more than \\d+ volumes")
+
+	lock = sync.Mutex{}
 )
 
 // CreateVolume creates a new volume from the given request. The function is
@@ -258,6 +260,10 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	attachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
+
+	lock.Lock()
+	ll.Info("Locked for attach")
+	defer lock.Unlock()
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
 		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
@@ -298,6 +304,10 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
 	}
+
+	lock.Lock()
+	ll.Info("Locked for detach")
+	defer lock.Unlock()
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
 		return nil, reraiseNotFound(err, ll, "unpublish volume")
