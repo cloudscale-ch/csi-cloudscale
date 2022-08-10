@@ -263,9 +263,13 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 
 	lock.Lock()
 	ll.Info("Locked for attach")
-	defer lock.Unlock()
+	defer func() {
+		lock.Unlock()
+		ll.Info("Unlocked for attach")
+	}()
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
+		ll.Warnf("Encountered: %v", err)
 		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
 			return nil, status.Errorf(codes.ResourceExhausted, err.Error())
 		}
@@ -307,9 +311,13 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 	lock.Lock()
 	ll.Info("Locked for detach")
-	defer lock.Unlock()
+	defer func() {
+		lock.Unlock()
+		ll.Info("Unlocked for detach")
+	}()
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
+		ll.Warnf("Encountered: %v", err)
 		return nil, reraiseNotFound(err, ll, "unpublish volume")
 	}
 
