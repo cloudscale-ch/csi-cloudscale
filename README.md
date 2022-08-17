@@ -212,6 +212,15 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
+## Installing Using helm
+
+```
+helm install -n kube-system -g ./charts/csi-cloudscale
+
+helm template csi-cloudscale --dry-run -n kube-system --set nameOverride=csi-cloudscale charts/csi-cloudscale | kubectl-slice -f - -o deploy/kubernetes/releases/generated
+kubectl-slice -f deploy/kubernetes/releases/csi-cloudscale-v6.0.0.yaml -o deploy/kubernetes/releases/v3
+```
+
 ## Upgrading
 
 ### From csi-cloudscale v1.x to v2.x
