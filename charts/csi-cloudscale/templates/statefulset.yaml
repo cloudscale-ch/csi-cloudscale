@@ -40,8 +40,8 @@ spec:
           image: {{ .Values.attacher.image.repository }}:{{ .Values.attacher.image.tag }}
           imagePullPolicy: {{ .Values.attacher.image.pullPolicy }}
           args:
-            - "--v=5"
             - "--csi-address=$(ADDRESS)"
+            - "--v=5"
           {{- with .Values.attacher.resources }}
           resources:
 {{ toYaml . | indent 12 }}
