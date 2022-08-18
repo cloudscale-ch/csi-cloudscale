@@ -268,6 +268,13 @@ Note that there are currently the following hard-limits per Node:
 Requirements:
 
 * Go: min `v1.10.x`
+* Helm
+
+Build out the charts/ directory from the Chart.lock file:
+
+```
+$ helm dependency build charts/csi-cloudscale
+```
 
 After making your changes, run the unit tests: 
 

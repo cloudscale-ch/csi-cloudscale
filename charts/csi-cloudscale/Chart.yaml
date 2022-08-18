@@ -7,3 +7,7 @@ appVersion: 3.2.0
 home: https://github.com/cloudscale-ch/csi-cloudscale
 sources:
   - https://github.com/cloudscale-ch/csi-cloudscale.git
+dependencies:
+  - name: common
+    version: 1.17.1
+    repository: https://charts.bitnami.com/bitnami
