@@ -86,7 +86,7 @@ metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-provisioner-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
+    name: {{ include "csi-cloudscale.controller-service-account-name" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
@@ -99,7 +99,7 @@ metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-resizer-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
+    name: {{ include "csi-cloudscale.controller-service-account-name" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
@@ -112,7 +112,7 @@ metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-attacher-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
+    name: {{ include "csi-cloudscale.controller-service-account-name" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
@@ -125,7 +125,7 @@ metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-node-driver-registrar-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ include "csi-cloudscale.driver-name" . }}-node-sa
+    name: {{ include "csi-cloudscale.node-service-account-name" . }}
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole

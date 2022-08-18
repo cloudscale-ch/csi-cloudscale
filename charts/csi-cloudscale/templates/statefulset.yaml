@@ -17,7 +17,7 @@ spec:
     spec:
       hostNetwork: true
       priorityClassName: system-cluster-critical
-      serviceAccount: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
+      serviceAccount: {{ include "csi-cloudscale.controller-service-account-name" . }}
       containers:
         - name: csi-provisioner
           image: {{ .Values.provisioner.image.repository }}:{{ .Values.provisioner.image.tag }}

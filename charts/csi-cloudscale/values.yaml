@@ -78,6 +78,7 @@ controller:
     repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
     pullPolicy: IfNotPresent
+  serviceAccountName:
   resources: {}
 #     limits:
 #      cpu: 100m
@@ -91,6 +92,7 @@ node:
     repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
     pullPolicy: IfNotPresent
+  serviceAccountName:
   resources: {}
 #     limits:
 #      cpu: 100m

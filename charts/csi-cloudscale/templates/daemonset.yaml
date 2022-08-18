@@ -14,7 +14,7 @@ spec:
         role: csi-cloudscale
     spec:
       priorityClassName: system-node-critical
-      serviceAccount: {{ include "csi-cloudscale.driver-name" . }}-node-sa
+      serviceAccount: {{ include "csi-cloudscale.node-service-account-name" . }}
       hostNetwork: true
       containers:
         - name: csi-node-driver-registrar
