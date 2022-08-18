@@ -37,6 +37,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+          {{- with .Values.driverRegistrar.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi/
@@ -48,6 +52,10 @@ spec:
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
+          {{- with .Values.plugin.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock

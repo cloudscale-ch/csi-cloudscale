@@ -41,27 +41,62 @@ provisioner:
     repository: quay.io/k8scsi/csi-provisioner
     tag: v2.0.4
     pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
 
 attacher:
   image:
     repository: quay.io/k8scsi/csi-attacher
     tag: v3.0.2
     pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
 
 resizer:
   image:
     repository: quay.io/k8scsi/csi-resizer
     tag: v1.0.1
     pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
 
 plugin:
   image:
     repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
     pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
 
 driverRegistrar:
   image:
     repository: quay.io/k8scsi/csi-node-driver-registrar
     tag: v2.0.1
     pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi

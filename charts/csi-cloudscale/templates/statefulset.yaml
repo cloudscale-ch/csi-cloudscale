@@ -26,6 +26,10 @@ spec:
             - "--csi-address=$(ADDRESS)"
             - "--default-fstype=ext4"
             - "--v=5"
+          {{- with .Values.provisioner.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -38,6 +42,10 @@ spec:
           args:
             - "--v=5"
             - "--csi-address=$(ADDRESS)"
+          {{- with .Values.attacher.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -51,6 +59,10 @@ spec:
             - "--timeout=30s"
             - "--v=5"
             - "--handle-volume-inuse-error=false"
+          {{- with .Values.resizer.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -63,6 +75,10 @@ spec:
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
+          {{- with .Values.plugin.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
