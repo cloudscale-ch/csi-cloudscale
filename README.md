@@ -302,6 +302,7 @@ To release a new version bump first the version:
 
 ```
 $ make NEW_VERSION=vX.Y.Z bump-version
+$ make NEW_CHART_VERSION=vX.Y.Z bump-chart-version
 ```
 
 Make sure everything looks good. Verify that the Kubernetes compatibility matrix is up-to-date.

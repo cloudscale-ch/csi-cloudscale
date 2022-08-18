@@ -12,6 +12,7 @@ LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} 
 PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 
 VERSION ?= $(shell cat VERSION)
+CHART_VERSION ?= $(shell awk '/version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
 
 all: check-unused test
@@ -37,6 +38,14 @@ bump-version:
 	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
 	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml-e
+
+.PHONY: bump-chart-version
+bump-chart-version:
+	@[ "${NEW_CHART_VERSION}" ] || ( echo "NEW_CHART_VERSION must be set (ex. make NEW_CHART_VERSION=v1.x.x bump-version)"; exit 1 )
+	@(echo ${NEW_CHART_VERSION} | grep -E "^v") || ( echo "NEW_CHART_VERSION must be a semver ('v' prefix is required)"; exit 1 )
+	@echo "Bumping CHART_VERSION from $(CHART_VERSION) to $(NEW_CHART_VERSION)"
+	@sed -i'' -e 's/${CHART_VERSION:v%=%}/${NEW_CHART_VERSION:v%=%}/g' charts/csi-cloudscale/Chart.yaml
+	@rm charts/csi-cloudscale/Chart.yaml-e
 
 .PHONY: compile
 compile:
