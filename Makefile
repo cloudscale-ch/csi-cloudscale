@@ -31,13 +31,14 @@ bump-version:
 	@(echo ${NEW_VERSION} | grep -E "^v") || ( echo "NEW_VERSION must be a semver ('v' prefix is required)"; exit 1 )
 	@echo "Bumping VERSION from $(VERSION) to $(NEW_VERSION)"
 	@echo $(NEW_VERSION) > VERSION
-	@cp deploy/kubernetes/releases/csi-cloudscale-${VERSION}.yaml deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
-	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' README.md
+	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' charts/csi-cloudscale/values.yaml
+	@sed -i'' -e 's/${VERSION:v%=%}/${NEW_VERSION:v%=%}/g' charts/csi-cloudscale/Chart.yaml
+	@helm install csi-cloudscale --dry-run -n kube-system --set legacyName=true ./charts/csi-cloudscale > deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
 	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
-	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml-e
+	@rm README.md-e CHANGELOG.md-e charts/csi-cloudscale/Chart.yaml-e charts/csi-cloudscale/values.yaml-e
 
 .PHONY: bump-chart-version
 bump-chart-version:
@@ -93,3 +94,6 @@ vendor:
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=${OS} go clean -i -x ./...
+
+debug:
+	@echo ${VERSION:v%=%}
