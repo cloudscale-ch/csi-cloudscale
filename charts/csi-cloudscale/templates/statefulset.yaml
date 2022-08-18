@@ -2,7 +2,7 @@
 kind: StatefulSet
 apiVersion: apps/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-controller
+  name: {{ include "csi-cloudscale.driver-name" . }}-controller
 spec:
   serviceName: "csi-cloudscale"
   selector:
@@ -17,7 +17,7 @@ spec:
     spec:
       hostNetwork: true
       priorityClassName: system-cluster-critical
-      serviceAccount: {{ .Release.Name }}-csi-cloudscale-controller-sa
+      serviceAccount: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
       containers:
         - name: csi-provisioner
           image: {{ .Values.provisioner.image.repository }}:{{ .Values.provisioner.image.tag }}

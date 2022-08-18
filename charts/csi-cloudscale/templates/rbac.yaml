@@ -2,7 +2,7 @@
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-provisioner-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-provisioner-role
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -35,7 +35,7 @@ rules:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-attacher-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-attacher-role
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -56,7 +56,7 @@ rules:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-resizer-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-resizer-role
 rules:
   - apiGroups: [""]
     resources: ["persistentvolumes"]
@@ -74,7 +74,7 @@ rules:
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-node-driver-registrar-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-node-driver-registrar-role
 rules:
   - apiGroups: [""]
     resources: ["events"]
@@ -83,51 +83,51 @@ rules:
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-provisioner-binding
+  name: {{ include "csi-cloudscale.driver-name" . }}-provisioner-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ .Release.Name }}-csi-cloudscale-controller-sa
+    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: {{ .Release.Name }}-csi-cloudscale-provisioner-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-provisioner-role
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-resizer-binding
+  name: {{ include "csi-cloudscale.driver-name" . }}-resizer-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ .Release.Name }}-csi-cloudscale-controller-sa
+    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: {{ .Release.Name }}-csi-cloudscale-resizer-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-resizer-role
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-attacher-binding
+  name: {{ include "csi-cloudscale.driver-name" . }}-attacher-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ .Release.Name }}-csi-cloudscale-controller-sa
+    name: {{ include "csi-cloudscale.driver-name" . }}-controller-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: {{ .Release.Name }}-csi-cloudscale-attacher-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-attacher-role
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-node-driver-registrar-binding
+  name: {{ include "csi-cloudscale.driver-name" . }}-node-driver-registrar-binding
 subjects:
   - kind: ServiceAccount
-    name: {{ .Release.Name }}-csi-cloudscale-node-sa
+    name: {{ include "csi-cloudscale.driver-name" . }}-node-sa
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: ClusterRole
-  name: {{ .Release.Name }}-csi-cloudscale-node-driver-registrar-role
+  name: {{ include "csi-cloudscale.driver-name" . }}-node-driver-registrar-role
   apiGroup: rbac.authorization.k8s.io

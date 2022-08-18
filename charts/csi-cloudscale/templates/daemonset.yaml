@@ -2,7 +2,7 @@
 kind: DaemonSet
 apiVersion: apps/v1
 metadata:
-  name: {{ .Release.Name }}-csi-cloudscale-node
+  name: {{ include "csi-cloudscale.driver-name" . }}-node
 spec:
   selector:
     matchLabels:
@@ -14,7 +14,7 @@ spec:
         role: csi-cloudscale
     spec:
       priorityClassName: system-node-critical
-      serviceAccount: {{ .Release.Name }}-csi-cloudscale-node-sa
+      serviceAccount: {{ include "csi-cloudscale.driver-name" . }}-node-sa
       hostNetwork: true
       containers:
         - name: csi-node-driver-registrar
