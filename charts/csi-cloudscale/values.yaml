@@ -3,7 +3,6 @@ cloudscale:
   token:
      existingSecret: cloudscale
 
-installCRDs: false
 nameOverride:
 
 csi:
