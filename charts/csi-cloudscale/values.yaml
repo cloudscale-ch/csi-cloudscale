@@ -1,8 +1,7 @@
 cloudscale:
   apiUrl: https://api.cloudscale.ch/
   token:
-    value: "secret"
-    # existingSecret:
+     existingSecret: cloudscale
 
 installCRDs: false
 nameOverride:
