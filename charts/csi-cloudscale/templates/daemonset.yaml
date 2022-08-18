@@ -47,12 +47,12 @@ spec:
             - name: registration-dir
               mountPath: /registration/
         - name: csi-cloudscale-plugin
-          image: {{ .Values.plugin.image.repository }}:{{ .Values.plugin.image.tag }}
-          imagePullPolicy: {{ .Values.plugin.image.pullPolicy }}
+          image: {{ .Values.node.image.repository }}:{{ .Values.node.image.tag }}
+          imagePullPolicy: {{ .Values.node.image.pullPolicy }}
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
-          {{- with .Values.plugin.resources }}
+          {{- with .Values.node.resources }}
           resources:
 {{ toYaml . | indent 12 }}
           {{- end }}

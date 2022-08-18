@@ -71,11 +71,11 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
-          image: {{ .Values.plugin.image.repository }}:{{ .Values.plugin.image.tag }}
+          image: {{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
-          {{- with .Values.plugin.resources }}
+          {{- with .Values.controller.resources }}
           resources:
 {{ toYaml . | indent 12 }}
           {{- end }}
@@ -89,7 +89,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "csi-cloudscale.api-token-name" . }}
                   key: access-token
-          imagePullPolicy: {{ .Values.plugin.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.controller.image.pullPolicy }}
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/

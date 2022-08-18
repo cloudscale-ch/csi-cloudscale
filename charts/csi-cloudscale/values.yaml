@@ -32,9 +32,6 @@ csi:
         cipher: aes-xts-plain64
         keySize: 512
 
-controller:
-  replicas: 1
-
 provisioner:
   name: csi.cloudscale.ch
   image:
@@ -75,7 +72,21 @@ resizer:
 #      cpu: 100m
 #      memory: 128Mi
 
-plugin:
+controller:
+  replicas: 1
+  image:
+    repository: quay.io/cloudscalech/cloudscale-csi-plugin
+    tag: v3.2.0
+    pullPolicy: IfNotPresent
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+node:
   image:
     repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
