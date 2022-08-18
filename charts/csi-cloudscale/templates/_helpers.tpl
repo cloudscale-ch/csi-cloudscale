@@ -1,7 +1,7 @@
 {{/* Get Driver Name */}}
 {{- define "csi-cloudscale.driver-name" -}}
-{{- if .Values.legacyName -}}
-    csi-cloudscale
+{{- if .Values.nameOverride -}}
+    {{ .Values.nameOverride }}
 {{- else -}}
     {{ .Release.Name }}-csi-cloudscale
 {{- end -}}

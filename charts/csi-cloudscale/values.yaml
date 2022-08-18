@@ -5,7 +5,7 @@ cloudscale:
     # existingSecret:
 
 installCRDs: false
-legacyName: false
+nameOverride:
 
 csi:
   allowVolumeExpansion: true
