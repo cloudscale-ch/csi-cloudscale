@@ -34,7 +34,7 @@ bump-version:
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' README.md
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' charts/csi-cloudscale/values.yaml
 	@sed -i'' -e 's/${VERSION:v%=%}/${NEW_VERSION:v%=%}/g' charts/csi-cloudscale/Chart.yaml
-	@helm install csi-cloudscale --dry-run -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale > deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
+	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale > deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
 	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
