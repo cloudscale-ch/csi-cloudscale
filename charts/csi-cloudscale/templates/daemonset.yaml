@@ -61,6 +61,8 @@ spec:
               value: unix:///csi/csi.sock
             - name: CLOUDSCALE_API_URL
               value: {{ .Values.cloudscale.apiUrl }}
+            - name: CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE
+              value: {{ .Values.node.max_csi_volumes_per_node }}
             - name: CLOUDSCALE_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:

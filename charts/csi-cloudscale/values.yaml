@@ -90,6 +90,7 @@ node:
     repository: quay.io/cloudscalech/cloudscale-csi-plugin
     tag: v3.2.0
     pullPolicy: IfNotPresent
+  max_csi_volumes_per_node:
   serviceAccountName:
   resources: {}
 #     limits:
