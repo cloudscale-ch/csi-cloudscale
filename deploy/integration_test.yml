@@ -56,9 +56,9 @@
       yum:
         name: cryptsetup
 
-- name: Include the play that installs kubernetes
-  tags: [install-kubernetes]
-  import_playbook: kubespray/cluster.yml
+#- name: Include the play that installs kubernetes
+#  tags: [install-kubernetes]
+#  import_playbook: kubespray/cluster.yml
 
 - hosts: kube-master
   vars:
@@ -87,13 +87,24 @@
       debug:
         msg: "{{ secret_output.stdout_lines }}"
 
-    - name: Copy default cloudscale-csi config to kubernetes
-      copy:
-        src: "kubernetes/releases/csi-cloudscale-{{ version }}.yaml"
-        dest: "{{ config_file }}"
+    # It would be nice to install helm using the tasks/roles in kubepsray,
+    # but I could not get it working.
+    - name: Get Helm installer
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: "./get_helm.sh"
+        mode: '0700'
 
-    - name: Apply default cloudscale-csi config to kubernetes
-      shell: "kubectl apply -f {{ config_file }}"
+    - name: Install Helm
+      shell: "./get_helm.sh"
+
+    - name: Copy chart
+      copy:
+        src: "../charts/csi-cloudscale"
+        dest: "charts"
+
+    - name: Install csi-driver
+      shell: "helm install -g -n kube-system --set controller.image.tag={{ version }} --set node.image.tag={{ version }} ./charts/csi-cloudscale"
 
     - name: Copy kubernetes config to localhost
       fetch:

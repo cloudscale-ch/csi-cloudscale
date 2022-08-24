@@ -129,7 +129,7 @@ $ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscal
 There are also `dev` images available:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-dev.yaml
+$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev ./charts/csi-cloudscale
 ```
 
 The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
