@@ -9,11 +9,13 @@ deploy kubernetes::
 
     python3 -m venv venv
     . venv/bin/activate
+    # or requirements-{VERSION}.txt, see https://github.com/kubernetes-sigs/kubespray/blob/master/docs/ansible.md#ansible-python-compatibility
     pip install -r kubespray/requirements.txt
+    cd kubespray/
 
 After this you run::
 
-    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -i inventory/hosts.ini
+    CLOUDSCALE_TOKEN="foobar" ansible-playbook ../integration_test.yml -i inventory/hosts.ini
 
 to install kubernetes on cloudscale.ch and run the integration tests. The
 playbook will also clean up VMs after the test.
