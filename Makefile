@@ -94,6 +94,3 @@ vendor:
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=${OS} go clean -i -x ./...
-
-debug:
-	@echo ${VERSION:v%=%}
