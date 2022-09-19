@@ -1,5 +1,9 @@
 ## unreleased
 
+## v3.2.1 - 2022.07.12
+* Ensure that the device has the expected size in NodeExpandVolume to avoid a race-condition that appeared in testing.
+* Minor changes to the integration test suite.
+
 ## v3.2.0 - 2022.05.16
 * Update cloudscale-go-sdk to 1.11.0.
 * Use k8s mount library.
