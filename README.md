@@ -317,7 +317,7 @@ Build out the `charts/` directory from the `Chart.lock` file:
 $ helm dependency build charts/csi-cloudscale
 ```
 
-Install the chart from local soruces:
+Install the chart from local sources:
 
 ```
 $ helm install -n kube-system -g ./charts/csi-cloudscale
