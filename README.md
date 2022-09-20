@@ -158,6 +158,13 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 | cloudscale.token.existingSecret | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
 | extraDeploy                     | `[]`                         | To deploy extra objects together with the driver.                                          |
 | nameOverride                    | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
+| provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
+| attacher.resources              | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
+| resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
+| controller.resources            | `{}`                         | Resource limits and requests for the controller container.                                 |
+| node.resources                  | `{}`                         | Resource limits and requests for the node container.                                       |
+| driverRegistrar.resources       | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
+
 
 Note: if you want to test a debug/dev release, you can use the following command:
 
