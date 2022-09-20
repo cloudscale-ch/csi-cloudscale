@@ -8,6 +8,17 @@ The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
 should also work on other Container Orchestrators, such as Mesos or
 Cloud Foundry. Feel free to test it on other COs and give us a feedback.
 
+## TL;DR
+
+```shell
+# Add a cloudscale.ch API token as secret, replace the placeholder string starting with `a05...` with your own secret
+$ kubectl -n kube-system create secret generic cloudscale --from-literal=access-token=a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da
+# Add repository
+$ helm repo add csi-cloudscale https://cloudscale-ch.github.io/csi-cloudscale
+# Install Driver
+$ helm install -n kube-system -g csi-cloudscale/csi-cloudscale
+```
+
 ## Volume parameters
 
 This plugin supports the following volume parameters (in case of kubernetes: parameters on the 
@@ -118,6 +129,44 @@ cloudscale            Opaque                                1         18h
 
 #### 2. Deploy the CSI plugin and sidecars:
 
+You can install the CSI plugin and sidecars using one of the following methods:
+ * Helm (requires a Helm installation)
+ * YAML Manifests (only kubectl required)
+
+
+#### 2a. Using Helm:
+
+Before you can install the csi-cloudscale chart, you need to add the helm repository:
+
+```
+$ helm repo add csi-cloudscale  https://cloudscale-ch.github.io/csi-cloudscale
+```
+
+Then install the latest stable version:
+
+```
+$ helm install -n kube-system -g csi-cloudscale/csi-cloudscale
+```
+
+Advanced users can customize the installation by specifying custom values.
+The following table summarizes the most-frequently used parameters.
+For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values.yaml)
+
+| Parameter                       | Default                      | Description                                                                                |
+|---------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
+| cloudscale.apiUrl               | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default                     |
+| cloudscale.token.existingSecret | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
+| extraDeploy                     | `[]`                         | To deploy extra objects together with the driver.                                          |
+| nameOverride                    | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
+
+Note: if you want to test a debug/dev release, you can use the following command:
+
+```
+$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev ./charts/csi-cloudscale
+```
+
+#### 2b. Using YAML Manifests:
+
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
@@ -127,19 +176,10 @@ For example, to use the latest stable version (`v3.2.1`) you can execute the fol
 $ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.2.1.yaml
 ```
 
-There are also `dev` images available:
-
-```
-$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev ./charts/csi-cloudscale
-```
-
 The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
 storage class `cloudscale-volume-ssd` is set to **"default"** for dynamic provisioning. If you're 
 using multiple storage classes you might want to remove the annotation and re-deploy it. This is
 based on the [recommended mechanism](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md#recommended-mechanism-for-deploying-csi-drivers-on-kubernetes) of deploying CSI drivers on Kubernetes
-
-*Note that the deployment proposal to Kubernetes is still a work in progress and not all of the written
-features are implemented. When in doubt, open an issue or ask #sig-storage in [Kubernetes Slack](http://slack.k8s.io)*
 
 #### 3. Test and verify:
 
@@ -213,15 +253,6 @@ $ kubectl exec -ti my-csi-app /bin/sh
 hello-world
 ```
 
-## Installing Using helm
-
-```
-helm install -n kube-system -g ./charts/csi-cloudscale
-
-helm template csi-cloudscale --dry-run -n kube-system --set nameOverride=csi-cloudscale charts/csi-cloudscale | kubectl-slice -f - -o deploy/kubernetes/releases/generated
-kubectl-slice -f deploy/kubernetes/releases/csi-cloudscale-v6.0.0.yaml -o deploy/kubernetes/releases/v3
-```
-
 ## Upgrading
 
 ### From csi-cloudscale v1.x to v2.x
@@ -280,10 +311,23 @@ Requirements:
 * Go: min `v1.10.x`
 * Helm
 
-Build out the charts/ directory from the Chart.lock file:
+Build out the `charts/` directory from the `Chart.lock` file:
 
 ```
 $ helm dependency build charts/csi-cloudscale
+```
+
+Install the chart from local soruces:
+
+```
+$ helm install -n kube-system -g ./charts/csi-cloudscale
+```
+
+Useful commands to compare the generated helm chart to the static YAML manifests:
+
+```
+$ helm template csi-cloudscale --dry-run -n kube-system --set nameOverride=csi-cloudscale charts/csi-cloudscale | kubectl-slice -f - -o deploy/kubernetes/releases/generated
+$ kubectl-slice -f deploy/kubernetes/releases/csi-cloudscale-v6.0.0.yaml -o deploy/kubernetes/releases/v3
 ```
 
 After making your changes, run the unit tests: 
