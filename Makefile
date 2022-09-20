@@ -12,7 +12,7 @@ LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} 
 PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 
 VERSION ?= $(shell cat VERSION)
-CHART_VERSION ?= $(shell awk '/version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
+CHART_VERSION ?= $(shell awk '/^version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
 
 all: check-unused test
