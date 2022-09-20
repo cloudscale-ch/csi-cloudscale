@@ -154,16 +154,18 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 
 | Parameter                       | Default                      | Description                                                                                |
 |---------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
+| attacher.resources              | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
 | cloudscale.apiUrl               | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default                     |
 | cloudscale.token.existingSecret | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
+| controller.resources            | `{}`                         | Resource limits and requests for the controller container.                                 |
+| controller.serviceAccountName   | `null`                       | Override the controller service account name.                                              |
+| driverRegistrar.resources       | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
 | extraDeploy                     | `[]`                         | To deploy extra objects together with the driver.                                          |
 | nameOverride                    | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
-| provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
-| attacher.resources              | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
-| resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
-| controller.resources            | `{}`                         | Resource limits and requests for the controller container.                                 |
 | node.resources                  | `{}`                         | Resource limits and requests for the node container.                                       |
-| driverRegistrar.resources       | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
+| node.serviceAccountName         | `null`                       | Override the controller node account name.                                                 |
+| provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
+| resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
 
 
 Note: if you want to test a debug/dev release, you can use the following command:
