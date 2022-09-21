@@ -33,7 +33,8 @@ csi:
 provisioner:
   name: csi.cloudscale.ch
   image:
-    repository: quay.io/k8scsi/csi-provisioner
+    registry: quay.io
+    repository: k8scsi/csi-provisioner
     tag: v2.0.4
     pullPolicy: IfNotPresent
   resources: {}
@@ -46,7 +47,8 @@ provisioner:
 
 attacher:
   image:
-    repository: quay.io/k8scsi/csi-attacher
+    registry: quay.io
+    repository: k8scsi/csi-attacher
     tag: v3.0.2
     pullPolicy: IfNotPresent
   resources: {}
@@ -59,7 +61,8 @@ attacher:
 
 resizer:
   image:
-    repository: quay.io/k8scsi/csi-resizer
+    registry: quay.io
+    repository: k8scsi/csi-resizer
     tag: v1.0.1
     pullPolicy: IfNotPresent
   resources: {}
@@ -73,7 +76,8 @@ resizer:
 controller:
   replicas: 1
   image:
-    repository: quay.io/cloudscalech/cloudscale-csi-plugin
+    registry: quay.io
+    repository: cloudscalech/cloudscale-csi-plugin
     tag: v3.2.1
     pullPolicy: IfNotPresent
   serviceAccountName:
@@ -87,7 +91,8 @@ controller:
 
 node:
   image:
-    repository: quay.io/cloudscalech/cloudscale-csi-plugin
+    registry: quay.io
+    repository: cloudscalech/cloudscale-csi-plugin
     tag: v3.2.1
     pullPolicy: IfNotPresent
   max_csi_volumes_per_node:
@@ -102,7 +107,8 @@ node:
 
 driverRegistrar:
   image:
-    repository: quay.io/k8scsi/csi-node-driver-registrar
+    registry: quay.io
+    repository: k8scsi/csi-node-driver-registrar
     tag: v2.0.1
     pullPolicy: IfNotPresent
   resources: {}

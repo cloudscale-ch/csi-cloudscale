@@ -20,7 +20,7 @@ spec:
       serviceAccount: {{ include "csi-cloudscale.controller-service-account-name" . }}
       containers:
         - name: csi-provisioner
-          image: {{ .Values.provisioner.image.repository }}:{{ .Values.provisioner.image.tag }}
+          image: "{{ .Values.provisioner.image.registry }}/{{ .Values.provisioner.image.repository }}:{{ .Values.provisioner.image.tag }}"
           imagePullPolicy: {{ .Values.provisioner.image.pullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -37,7 +37,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-attacher
-          image: {{ .Values.attacher.image.repository }}:{{ .Values.attacher.image.tag }}
+          image: "{{ .Values.attacher.image.registry }}/{{ .Values.attacher.image.repository }}:{{ .Values.attacher.image.tag }}"
           imagePullPolicy: {{ .Values.attacher.image.pullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
@@ -53,7 +53,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-resizer
-          image: {{ .Values.resizer.image.repository }}:{{ .Values.resizer.image.tag }}
+          image: "{{ .Values.resizer.image.registry }}/{{ .Values.resizer.image.repository }}:{{ .Values.resizer.image.tag }}"
           args:
             - "--csi-address=$(ADDRESS)"
             - "--timeout=30s"
@@ -71,7 +71,7 @@ spec:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
-          image: {{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}
+          image: "{{ .Values.controller.image.registry }}/{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}"
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"

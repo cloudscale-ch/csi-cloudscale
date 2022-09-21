@@ -18,7 +18,7 @@ spec:
       hostNetwork: true
       containers:
         - name: csi-node-driver-registrar
-          image: {{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}
+          image: "{{ .Values.driverRegistrar.image.registry }}/{{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}"
           imagePullPolicy: {{ .Values.driverRegistrar.image.pullPolicy }}
           args:
             - "--v=5"
@@ -47,7 +47,7 @@ spec:
             - name: registration-dir
               mountPath: /registration/
         - name: csi-cloudscale-plugin
-          image: {{ .Values.node.image.repository }}:{{ .Values.node.image.tag }}
+          image: "{{ .Values.node.image.registry}}/{{ .Values.node.image.repository }}:{{ .Values.node.image.tag }}"
           imagePullPolicy: {{ .Values.node.image.pullPolicy }}
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
