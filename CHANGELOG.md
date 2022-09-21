@@ -1,4 +1,6 @@
 ## unreleased
+* Package as Helm chart.
+* Always set `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE` in manifest.
 
 ## v3.2.1 - 2022.07.12
 * Ensure that the device has the expected size in NodeExpandVolume to avoid a race-condition that appeared in testing.
