@@ -162,11 +162,11 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 | driverRegistrar.resources       | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
 | extraDeploy                     | `[]`                         | To deploy extra objects together with the driver.                                          |
 | nameOverride                    | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
+| node.max_csi_volumes_per_node   | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node)       |
 | node.resources                  | `{}`                         | Resource limits and requests for the node container.                                       |
 | node.serviceAccountName         | `null`                       | Override the controller node account name.                                                 |
 | provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
 | resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
-
 
 Note: if you want to test a debug/dev release, you can use the following command:
 
@@ -308,6 +308,8 @@ env:
  - name: CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE
    value: '10'
 ```
+
+Or use the `node.max_csi_volumes_per_node` value of the [Helm chart](#2a-using-helm).
 
 Note that there are currently the following hard-limits per Node:
  * 26 volumes (including root) for `virtio-blk` (`/dev/vdX`).
