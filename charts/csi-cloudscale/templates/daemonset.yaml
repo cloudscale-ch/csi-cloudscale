@@ -85,6 +85,10 @@ spec:
               mountPath: /dev
             - name: tmpfs
               mountPath: /tmp
+      {{- with .Values.node.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
       volumes:
         - name: registration-dir
           hostPath:

@@ -165,6 +165,7 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 | node.max_csi_volumes_per_node   | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node)       |
 | node.resources                  | `{}`                         | Resource limits and requests for the node container.                                       |
 | node.serviceAccountName         | `null`                       | Override the controller node account name.                                                 |
+| node.tolerations                | `[]`                         | Set tolerations on the node daemonSet.                                                     |
 | provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
 | resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
 
