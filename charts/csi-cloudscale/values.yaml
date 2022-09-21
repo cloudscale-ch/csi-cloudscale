@@ -37,6 +37,7 @@ provisioner:
     repository: k8scsi/csi-provisioner
     tag: v2.0.4
     pullPolicy: IfNotPresent
+  logLevelVerbosity: 5
   resources: {}
 #     limits:
 #      cpu: 100m
@@ -51,6 +52,7 @@ attacher:
     repository: k8scsi/csi-attacher
     tag: v3.0.2
     pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
   resources: {}
 #     limits:
 #      cpu: 100m
@@ -65,6 +67,7 @@ resizer:
     repository: k8scsi/csi-resizer
     tag: v1.0.1
     pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
   resources: {}
 #     limits:
 #      cpu: 100m
@@ -111,6 +114,7 @@ driverRegistrar:
     repository: k8scsi/csi-node-driver-registrar
     tag: v2.0.1
     pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
   resources: {}
 #     limits:
 #      cpu: 100m

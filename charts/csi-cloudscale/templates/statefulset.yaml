@@ -25,7 +25,7 @@ spec:
           args:
             - "--csi-address=$(ADDRESS)"
             - "--default-fstype=ext4"
-            - "--v=5"
+            - "--v={{ .Values.provisioner.logLevelVerbosity }}"
           {{- with .Values.provisioner.resources }}
           resources:
 {{ toYaml . | indent 12 }}
@@ -41,7 +41,7 @@ spec:
           imagePullPolicy: {{ .Values.attacher.image.pullPolicy }}
           args:
             - "--csi-address=$(ADDRESS)"
-            - "--v=5"
+            - "--v={{ .Values.attacher.logLevelVerbosity }}"
           {{- with .Values.attacher.resources }}
           resources:
 {{ toYaml . | indent 12 }}
@@ -57,7 +57,7 @@ spec:
           args:
             - "--csi-address=$(ADDRESS)"
             - "--timeout=30s"
-            - "--v=5"
+            - "--v={{ .Values.resizer.logLevelVerbosity }}"
             - "--handle-volume-inuse-error=false"
           {{- with .Values.resizer.resources }}
           resources:

@@ -21,7 +21,7 @@ spec:
           image: "{{ .Values.driverRegistrar.image.registry }}/{{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}"
           imagePullPolicy: {{ .Values.driverRegistrar.image.pullPolicy }}
           args:
-            - "--v=5"
+            - "--v={{ .Values.driverRegistrar.logLevelVerbosity }}"
             - "--csi-address=$(ADDRESS)"
             - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
           lifecycle:
