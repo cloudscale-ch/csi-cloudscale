@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.3.0 - 2022.09.22
 * Package as Helm chart.
 * Always set `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE` in manifest.
 
