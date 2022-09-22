@@ -1,0 +1,2 @@
+## chart-releaser config
+release-name-template: "helm-{{ .Name }}-{{ .Version }}"
