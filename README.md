@@ -15,7 +15,7 @@ Cloud Foundry. Feel free to test it on other COs and give us a feedback.
 $ kubectl -n kube-system create secret generic cloudscale --from-literal=access-token=a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da
 # Add repository
 $ helm repo add csi-cloudscale https://cloudscale-ch.github.io/csi-cloudscale
-# Install Driver
+# Install driver
 $ helm install -n kube-system -g csi-cloudscale/csi-cloudscale
 ```
 
