@@ -8,6 +8,8 @@ nameOverride:
 
 csi:
   allowVolumeExpansion: true
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate
   storageClasses:
     - name: cloudscale-volume-ssd
       volumeType: ssd

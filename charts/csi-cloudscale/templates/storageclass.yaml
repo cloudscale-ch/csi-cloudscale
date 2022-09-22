@@ -12,6 +12,8 @@ metadata:
 {{- end }}
 provisioner: {{ $storageClass.provisioner | default $provisioner.name }}
 allowVolumeExpansion: {{ $storageClass.allowVolumeExpansion | default $csi.allowVolumeExpansion }}
+reclaimPolicy: {{ $storageClass.reclaimPolicy | default $csi.reclaimPolicy }}
+volumeBindingMode: {{ $storageClass.volumeBindingMode | default $csi.volumeBindingMode }}
 parameters:
   csi.cloudscale.ch/volume-type: {{ $storageClass.volumeType }}
 {{- if  $storageClass.luks.enabled }}
