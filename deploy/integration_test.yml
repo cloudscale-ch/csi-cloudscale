@@ -58,9 +58,9 @@
       yum:
         name: cryptsetup
 
-#- name: Include the play that installs kubernetes
-#  tags: [install-kubernetes]
-#  import_playbook: kubespray/cluster.yml
+- name: Include the play that installs kubernetes
+  tags: [install-kubernetes]
+  import_playbook: kubespray/cluster.yml
 
 - hosts: kube_control_plane
   vars:
