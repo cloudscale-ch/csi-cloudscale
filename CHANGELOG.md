@@ -3,6 +3,7 @@
 ## v3.3.0 - 2022.09.22
 * Package as Helm chart.
 * Always set `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE` in manifest.
+* Explicitly set `reclaimPolicy` and `volumeBindingMode` for storage classes to Kubernetes default values. 
 
 ## v3.2.1 - 2022.07.12
 * Ensure that the device has the expected size in NodeExpandVolume to avoid a race-condition that appeared in testing.
