@@ -94,3 +94,7 @@ vendor:
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=${OS} go clean -i -x ./...
+
+.PHONY: helm-template
+helm-template:
+	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale
