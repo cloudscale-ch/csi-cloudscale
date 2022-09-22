@@ -1,0 +1,112 @@
+---
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: {{ include "csi-cloudscale.driver-name" . }}-node
+  {{ include "csi-cloudscale.namespace-in-yaml-manifest" . }}
+spec:
+  selector:
+    matchLabels:
+      app: csi-cloudscale-node
+  template:
+    metadata:
+      labels:
+        app: csi-cloudscale-node
+        role: csi-cloudscale
+    spec:
+      priorityClassName: system-node-critical
+      serviceAccount: {{ include "csi-cloudscale.node-service-account-name" . }}
+      hostNetwork: true
+      containers:
+        - name: csi-node-driver-registrar
+          image: "{{ .Values.driverRegistrar.image.registry }}/{{ .Values.driverRegistrar.image.repository }}:{{ .Values.driverRegistrar.image.tag }}"
+          imagePullPolicy: {{ .Values.driverRegistrar.image.pullPolicy }}
+          args:
+            - "--v={{ .Values.driverRegistrar.logLevelVerbosity }}"
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "rm -rf /registration/csi.cloudscale.ch /registration/csi.cloudscale.ch-reg.sock"]
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+            - name: DRIVER_REG_SOCK_PATH
+              value: /var/lib/kubelet/plugins/csi.cloudscale.ch/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          {{- with .Values.driverRegistrar.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi/
+            - name: registration-dir
+              mountPath: /registration/
+        - name: csi-cloudscale-plugin
+          image: "{{ .Values.node.image.registry}}/{{ .Values.node.image.repository }}:{{ .Values.node.image.tag }}"
+          imagePullPolicy: {{ .Values.node.image.pullPolicy }}
+          args :
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--url=$(CLOUDSCALE_API_URL)"
+          {{- with .Values.node.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///csi/csi.sock
+            - name: CLOUDSCALE_API_URL
+              value: {{ .Values.cloudscale.apiUrl }}
+            - name: CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE
+              value: {{ .Values.cloudscale.max_csi_volumes_per_node | quote }}
+            - name: CLOUDSCALE_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "csi-cloudscale.api-token-name" . }}
+                  key: access-token
+          securityContext:
+            privileged: true
+            capabilities:
+              add: ["SYS_ADMIN"]
+            allowPrivilegeEscalation: true
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: pods-mount-dir
+              mountPath: /var/lib/kubelet
+              # needed so that any mounts setup inside this container are
+              # propagated back to the host machine.
+              mountPropagation: "Bidirectional"
+            - name: device-dir
+              mountPath: /dev
+            - name: tmpfs
+              mountPath: /tmp
+      {{- with .Values.node.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: DirectoryOrCreate
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.cloudscale.ch
+            type: DirectoryOrCreate
+        - name: pods-mount-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: device-dir
+          hostPath:
+            path: /dev
+        # to make sure temporary stored luks keys never touch a disk
+        - name: tmpfs
+          emptyDir:
+            medium: Memory

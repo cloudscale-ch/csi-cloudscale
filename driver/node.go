@@ -48,7 +48,7 @@ const (
 	//   - 1 for root
 	//   - 1 for /var/lib/docker
 	//   - 1 additional volume outside of CSI
-	defaultMaxVolumesPerNode = 125
+	fallbackMaxVolumesPerNode = 125
 
 	volumeModeBlock      = "block"
 	volumeModeFilesystem = "filesystem"
@@ -330,7 +330,7 @@ func getEnvAsInt(key string, fallback int64) int64 {
 func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	d.log.WithField("method", "node_get_info").Info("node get info called")
 
-	maxVolumesPerNode := getEnvAsInt("CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE", defaultMaxVolumesPerNode)
+	maxVolumesPerNode := getEnvAsInt("CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE", fallbackMaxVolumesPerNode)
 
 	return &csi.NodeGetInfoResponse{
 		NodeId:            d.serverId,

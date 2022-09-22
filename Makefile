@@ -12,6 +12,7 @@ LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} 
 PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 
 VERSION ?= $(shell cat VERSION)
+CHART_VERSION ?= $(shell awk '/^version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
 
 all: check-unused test
@@ -30,13 +31,22 @@ bump-version:
 	@(echo ${NEW_VERSION} | grep -E "^v") || ( echo "NEW_VERSION must be a semver ('v' prefix is required)"; exit 1 )
 	@echo "Bumping VERSION from $(VERSION) to $(NEW_VERSION)"
 	@echo $(NEW_VERSION) > VERSION
-	@cp deploy/kubernetes/releases/csi-cloudscale-${VERSION}.yaml deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
-	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' README.md
+	@sed -i'' -e 's/${VERSION}/${NEW_VERSION}/g' charts/csi-cloudscale/values.yaml
+	@sed -i'' -e 's/${VERSION:v%=%}/${NEW_VERSION:v%=%}/g' charts/csi-cloudscale/Chart.yaml
+	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale --set renderNamespace=true ./charts/csi-cloudscale > deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml
 	$(eval NEW_DATE = $(shell date +%Y.%m.%d))
 	@sed -i'' -e 's/## unreleased/## ${NEW_VERSION} - ${NEW_DATE}/g' CHANGELOG.md
 	@ echo '## unreleased\n' | cat - CHANGELOG.md > temp && mv temp CHANGELOG.md
-	@rm README.md-e CHANGELOG.md-e deploy/kubernetes/releases/csi-cloudscale-${NEW_VERSION}.yaml-e
+	@rm README.md-e CHANGELOG.md-e charts/csi-cloudscale/Chart.yaml-e charts/csi-cloudscale/values.yaml-e
+
+.PHONY: bump-chart-version
+bump-chart-version:
+	@[ "${NEW_CHART_VERSION}" ] || ( echo "NEW_CHART_VERSION must be set (ex. make NEW_CHART_VERSION=v1.x.x bump-version)"; exit 1 )
+	@(echo ${NEW_CHART_VERSION} | grep -E "^v") || ( echo "NEW_CHART_VERSION must be a semver ('v' prefix is required)"; exit 1 )
+	@echo "Bumping CHART_VERSION from $(CHART_VERSION) to $(NEW_CHART_VERSION)"
+	@sed -i'' -e 's/${CHART_VERSION:v%=%}/${NEW_CHART_VERSION:v%=%}/g' charts/csi-cloudscale/Chart.yaml
+	@rm charts/csi-cloudscale/Chart.yaml-e
 
 .PHONY: compile
 compile:
@@ -84,3 +94,7 @@ vendor:
 clean:
 	@echo "==> Cleaning releases"
 	@GOOS=${OS} go clean -i -x ./...
+
+.PHONY: helm-template
+helm-template:
+	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale

@@ -34,8 +34,9 @@
         hostname: "{{ created_servers.results[0].name }}"
         ansible_ssh_host: "{{ created_servers.results[0].interfaces[0].addresses[0].address }}"
         groups:
-          - kube-master
+          - kube_control_plane
           - etcd
+          - k8s_cluster
         ansible_user: 'root'
 
     - name: Register nodes in inventory
@@ -43,13 +44,14 @@
         hostname: "{{ item.name }}"
         ansible_ssh_host: "{{ item.interfaces[0].addresses[0].address }}"
         groups:
-          - kube-node
+          - kube_node
+          - k8s_cluster
         ansible_user: 'root'
       loop: ["{{ created_servers.results[1] }}", "{{ created_servers.results[2] }}"]
 
 # this is not needed for the plugin or the integration tests to work, but helps if you want
 # to take a closer look at the LUKS volumes with SSH on a node
-- hosts: k8s-cluster
+- hosts: k8s_cluster
   tags: [install-cryptsetup]
   tasks:
     - name: "Install cryptsetup on nodes"
@@ -60,7 +62,7 @@
   tags: [install-kubernetes]
   import_playbook: kubespray/cluster.yml
 
-- hosts: kube-master
+- hosts: kube_control_plane
   vars:
     cloudscale_api_token: "{{ lookup('env','CLOUDSCALE_TOKEN') }}"
     secret_file: 'secret.yml'
@@ -87,13 +89,24 @@
       debug:
         msg: "{{ secret_output.stdout_lines }}"
 
-    - name: Copy default cloudscale-csi config to kubernetes
-      copy:
-        src: "kubernetes/releases/csi-cloudscale-{{ version }}.yaml"
-        dest: "{{ config_file }}"
+    # It would be nice to install helm using the tasks/roles in kubepsray,
+    # but I could not get it working.
+    - name: Get Helm installer
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: "./get_helm.sh"
+        mode: '0700'
 
-    - name: Apply default cloudscale-csi config to kubernetes
-      shell: "kubectl apply -f {{ config_file }}"
+    - name: Install Helm
+      shell: "./get_helm.sh"
+
+    - name: Copy chart
+      copy:
+        src: "../charts/csi-cloudscale"
+        dest: "charts"
+
+    - name: Install csi-driver
+      shell: "helm install -g -n kube-system --set controller.image.tag={{ version }} --set node.image.tag={{ version }} ./charts/csi-cloudscale"
 
     - name: Copy kubernetes config to localhost
       fetch:

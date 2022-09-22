@@ -1,0 +1,131 @@
+cloudscale:
+  apiUrl: https://api.cloudscale.ch/
+  token:
+     existingSecret: cloudscale
+  max_csi_volumes_per_node: 125
+
+nameOverride:
+
+csi:
+  allowVolumeExpansion: true
+  reclaimPolicy: Delete
+  volumeBindingMode: Immediate
+  storageClasses:
+    - name: cloudscale-volume-ssd
+      volumeType: ssd
+      default: true
+      luks:
+        enabled: false
+    - name: cloudscale-volume-ssd-luks
+      volumeType: ssd
+      luks:
+        enabled: true
+        cipher: aes-xts-plain64
+        keySize: 512
+    - name: cloudscale-volume-bulk
+      volumeType: bulk
+      luks:
+        enabled: false
+    - name: cloudscale-volume-bulk-luks
+      volumeType: bulk
+      luks:
+        enabled: true
+        cipher: aes-xts-plain64
+        keySize: 512
+
+provisioner:
+  name: csi.cloudscale.ch
+  image:
+    registry: quay.io
+    repository: k8scsi/csi-provisioner
+    tag: v2.0.4
+    pullPolicy: IfNotPresent
+  logLevelVerbosity: 5
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+attacher:
+  image:
+    registry: quay.io
+    repository: k8scsi/csi-attacher
+    tag: v3.0.2
+    pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+resizer:
+  image:
+    registry: quay.io
+    repository: k8scsi/csi-resizer
+    tag: v1.0.1
+    pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+controller:
+  replicas: 1
+  image:
+    registry: quay.io
+    repository: cloudscalech/cloudscale-csi-plugin
+    tag: v3.3.0
+    pullPolicy: IfNotPresent
+  serviceAccountName:
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+node:
+  image:
+    registry: quay.io
+    repository: cloudscalech/cloudscale-csi-plugin
+    tag: v3.3.0
+    pullPolicy: IfNotPresent
+  tolerations: []
+  serviceAccountName:
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+driverRegistrar:
+  image:
+    registry: quay.io
+    repository: k8scsi/csi-node-driver-registrar
+    tag: v2.0.1
+    pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
+  resources: {}
+#     limits:
+#      cpu: 100m
+#      memory: 128Mi
+#     requests:
+#      cpu: 100m
+#      memory: 128Mi
+
+extraDeploy: []
+
+renderNamespace: false
