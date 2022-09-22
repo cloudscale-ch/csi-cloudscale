@@ -3,6 +3,7 @@ kind: StatefulSet
 apiVersion: apps/v1
 metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-controller
+  {{ include "csi-cloudscale.namespace-in-yaml-manifest" . }}
 spec:
   serviceName: "csi-cloudscale"
   selector:

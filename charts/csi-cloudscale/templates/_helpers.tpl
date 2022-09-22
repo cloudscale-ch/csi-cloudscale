@@ -29,3 +29,11 @@
     {{ include "csi-cloudscale.driver-name" . }}-node-sa
 {{- end -}}
 {{- end -}}
+
+{{/* When renderNamespace is true, include a Namespace definition. This is for emitting old-school YAMLs  */}}
+{{- define "csi-cloudscale.namespace-in-yaml-manifest" -}}
+{{/* See: https://github.com/helm/helm/issues/5465#issuecomment-473942223 */}}
+{{- if .Values.renderNamespace -}}
+namespace: {{ .Release.Namespace }}
+{{- end -}}
+{{- end -}}

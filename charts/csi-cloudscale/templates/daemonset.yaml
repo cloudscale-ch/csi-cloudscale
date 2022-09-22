@@ -3,6 +3,7 @@ kind: DaemonSet
 apiVersion: apps/v1
 metadata:
   name: {{ include "csi-cloudscale.driver-name" . }}-node
+  {{ include "csi-cloudscale.namespace-in-yaml-manifest" . }}
 spec:
   selector:
     matchLabels:

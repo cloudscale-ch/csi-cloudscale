@@ -127,3 +127,5 @@ driverRegistrar:
 #      memory: 128Mi
 
 extraDeploy: []
+
+renderNamespace: false
