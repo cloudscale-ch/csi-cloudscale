@@ -2,6 +2,7 @@ cloudscale:
   apiUrl: https://api.cloudscale.ch/
   token:
      existingSecret: cloudscale
+  max_csi_volumes_per_node: 125
 
 nameOverride:
 
@@ -98,7 +99,6 @@ node:
     repository: cloudscalech/cloudscale-csi-plugin
     tag: v3.2.1
     pullPolicy: IfNotPresent
-  max_csi_volumes_per_node: 125
   tolerations: []
   serviceAccountName:
   resources: {}

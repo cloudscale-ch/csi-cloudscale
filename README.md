@@ -152,22 +152,22 @@ Advanced users can customize the installation by specifying custom values.
 The following table summarizes the most-frequently used parameters.
 For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values.yaml)
 
-| Parameter                       | Default                      | Description                                                                                |
-|---------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
-| attacher.resources              | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
-| cloudscale.apiUrl               | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default                     |
-| cloudscale.token.existingSecret | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
-| controller.resources            | `{}`                         | Resource limits and requests for the controller container.                                 |
-| controller.serviceAccountName   | `null`                       | Override the controller service account name.                                              |
-| driverRegistrar.resources       | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
-| extraDeploy                     | `[]`                         | To deploy extra objects together with the driver.                                          |
-| nameOverride                    | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
-| node.max_csi_volumes_per_node   | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node)       |
-| node.resources                  | `{}`                         | Resource limits and requests for the node container.                                       |
-| node.serviceAccountName         | `null`                       | Override the controller node account name.                                                 |
-| node.tolerations                | `[]`                         | Set tolerations on the node daemonSet.                                                     |
-| provisioner.resources           | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
-| resizer.resources               | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
+| Parameter                           | Default                      | Description                                                                                |
+|-------------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
+| attacher.resources                  | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
+| cloudscale.apiUrl                   | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default                     |
+| cloudscale.max_csi_volumes_per_node | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node)       |
+| cloudscale.token.existingSecret     | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
+| controller.resources                | `{}`                         | Resource limits and requests for the controller container.                                 |
+| controller.serviceAccountName       | `null`                       | Override the controller service account name.                                              |
+| driverRegistrar.resources           | `{}`                         | Resource limits and requests for the driverRegistrar side-car.                             |
+| extraDeploy                         | `[]`                         | To deploy extra objects together with the driver.                                          |
+| nameOverride                        | `null`                       | Override the default `{{ .Release.Name }}-csi-cloudscale` name pattern with a custom name. |
+| node.resources                      | `{}`                         | Resource limits and requests for the node container.                                       |
+| node.serviceAccountName             | `null`                       | Override the controller node account name.                                                 |
+| node.tolerations                    | `[]`                         | Set tolerations on the node daemonSet.                                                     |
+| provisioner.resources               | `{}`                         | Resource limits and requests for the provisioner side-car.                                 |
+| resizer.resources                   | `{}`                         | Resource limits and requests for the resizer side-car.                                     |
 
 Note: if you want to test a debug/dev release, you can use the following command:
 
@@ -310,7 +310,7 @@ env:
    value: '10'
 ```
 
-Or use the `node.max_csi_volumes_per_node` value of the [Helm chart](#2a-using-helm).
+Or use the `cloudscale.max_csi_volumes_per_node` value of the [Helm chart](#2a-using-helm).
 
 Note that there are currently the following hard-limits per Node:
  * 26 volumes (including root) for `virtio-blk` (`/dev/vdX`).
