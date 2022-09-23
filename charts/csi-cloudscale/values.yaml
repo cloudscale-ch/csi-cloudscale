@@ -38,7 +38,7 @@ provisioner:
   image:
     registry: quay.io
     repository: k8scsi/csi-provisioner
-    tag: v2.0.4
+    tag: v3.1.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: 5
   resources: {}
@@ -53,7 +53,7 @@ attacher:
   image:
     registry: quay.io
     repository: k8scsi/csi-attacher
-    tag: v3.0.2
+    tag: v3.4.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -68,7 +68,7 @@ resizer:
   image:
     registry: quay.io
     repository: k8scsi/csi-resizer
-    tag: v1.0.1
+    tag: v1.4.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -115,7 +115,7 @@ driverRegistrar:
   image:
     registry: quay.io
     repository: k8scsi/csi-node-driver-registrar
-    tag: v2.0.1
+    tag: v2.5.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
