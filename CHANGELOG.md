@@ -1,4 +1,5 @@
 ## unreleased
+* Update all side-cars.
 
 ## v3.3.0 - 2022.09.22
 * Package as Helm chart.
