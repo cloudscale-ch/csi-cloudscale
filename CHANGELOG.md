@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.4.0 - 2022.09.30
 * Update all side-cars.
 
 ## v3.3.0 - 2022.09.22
