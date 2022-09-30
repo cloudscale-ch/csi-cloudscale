@@ -36,9 +36,9 @@ csi:
 provisioner:
   name: csi.cloudscale.ch
   image:
-    registry: quay.io
-    repository: k8scsi/csi-provisioner
-    tag: v2.0.4
+    registry: k8s.gcr.io
+    repository: sig-storage/csi-provisioner
+    tag: v3.2.1
     pullPolicy: IfNotPresent
   logLevelVerbosity: 5
   resources: {}
@@ -51,9 +51,9 @@ provisioner:
 
 attacher:
   image:
-    registry: quay.io
-    repository: k8scsi/csi-attacher
-    tag: v3.0.2
+    registry: k8s.gcr.io
+    repository: sig-storage/csi-attacher
+    tag: v4.0.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -66,9 +66,9 @@ attacher:
 
 resizer:
   image:
-    registry: quay.io
-    repository: k8scsi/csi-resizer
-    tag: v1.0.1
+    registry: k8s.gcr.io
+    repository: sig-storage/csi-resizer
+    tag: v1.6.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -113,9 +113,9 @@ node:
 
 driverRegistrar:
   image:
-    registry: quay.io
-    repository: k8scsi/csi-node-driver-registrar
-    tag: v2.0.1
+    registry: k8s.gcr.io
+    repository: sig-storage/csi-node-driver-registrar
+    tag: v2.5.1
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
