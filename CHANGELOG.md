@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.4.1 - 2022.10.04
 * Use `registry.k8s.io` instead of `k8s.gcr.io`.
 
 ## v3.4.0 - 2022.09.30
