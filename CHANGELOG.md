@@ -1,4 +1,5 @@
 ## unreleased
+* Use `registry.k8s.io` instead of `k8s.gcr.io`.
 
 ## v3.4.0 - 2022.09.30
 * Update all side-cars.
