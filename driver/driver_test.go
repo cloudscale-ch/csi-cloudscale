@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
-	"github.com/kubernetes-csi/csi-test/pkg/sanity"
+	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
 )
 
