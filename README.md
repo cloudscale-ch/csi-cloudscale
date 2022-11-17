@@ -348,6 +348,14 @@ After making your changes, run the unit tests:
 $ make test
 ```
 
+Note: If you want to run just a single test case, from `csi-test`, find the corresponding,
+`It` in the source code, and temporarly replace it with `FIt`, example:
+
+```
+- It("should work if node-expand is called after node-publish", func() {
++ FIt("should work if node-expand is called after node-publish", func() {
+```
+
 If you want to test your changes, create a new image with the version set to `dev`:
 
 ```
