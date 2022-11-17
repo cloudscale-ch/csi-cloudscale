@@ -133,6 +133,10 @@ func (f *fakeMounter) GetDeviceName(_ mount.Interface, mountPath string) (string
 	return "", nil
 }
 
+func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
+	return "/dev/sdb", nil
+}
+
 func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
 	return true, nil
 }

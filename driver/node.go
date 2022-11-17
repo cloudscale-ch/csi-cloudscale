@@ -36,7 +36,6 @@ import (
 	utilexec "k8s.io/utils/exec"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -445,7 +444,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		return nil, status.Error(codes.InvalidArgument, "NodeExpandVolume volume ID not provided")
 	}
 
-	source, err := findAbsoluteDeviceByIDPath(volumeID)
+	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeID, err)
 	}
@@ -556,7 +555,7 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, log *logrus.Entry) error {
 	volumeId := req.VolumeId
 
-	source, err := findAbsoluteDeviceByIDPath(volumeId)
+	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeId)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeId, err)
 	}
@@ -575,25 +574,4 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 	}
 
 	return nil
-}
-
-// findAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
-func findAbsoluteDeviceByIDPath(volumeName string) (string, error) {
-	path := guessDiskIDPathByVolumeID(volumeName)
-	if path == nil {
-		return "", fmt.Errorf("could not find device-path for volume: %s", volumeName)
-	}
-
-	// EvalSymlinks returns relative link if the file is not a symlink
-	// so we do not have to check if it is symlink prior to evaluation
-	resolved, err := filepath.EvalSymlinks(*path)
-	if err != nil {
-		return "", fmt.Errorf("could not resolve symlink %q: %v", *path, err)
-	}
-
-	if !strings.HasPrefix(resolved, "/dev") {
-		return "", fmt.Errorf("resolved symlink %q for %q was unexpected", resolved, *path)
-	}
-
-	return resolved, nil
 }
