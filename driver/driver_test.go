@@ -167,6 +167,11 @@ func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error)
 		usedInodes:      7000,
 	}, nil
 }
+
+func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+	return true, nil
+}
+
 func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
 	path := "SomePath"
 	return &path, nil

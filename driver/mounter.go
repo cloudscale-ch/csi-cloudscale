@@ -98,6 +98,7 @@ type Mounter interface {
 	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
 
 	FindAbsoluteDeviceByIDPath(volumeName string) (string, error)
+	HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -491,7 +492,7 @@ func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (stri
 	return devicePath, err
 }
 
-// findAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
+// FindAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
 func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
 	path := guessDiskIDPathByVolumeID(volumeName)
 	if path == nil {
@@ -510,6 +511,21 @@ func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) 
 	}
 
 	return resolved, nil
+}
+
+func (m *mounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+	log.Infof("Checking device size: %s", path)
+	output, err := exec.Command("blockdev", "--getsize64", path).CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", path, string(output), err)
+	}
+	strOut := strings.TrimSpace(string(output))
+	gotSizeBytes, err := strconv.ParseInt(strOut, 10, 64)
+	if err != nil {
+		return false, err
+	}
+	log.Infof("actual=%v, requiredSize=%v", gotSizeBytes, requiredSize)
+	return gotSizeBytes == requiredSize, nil
 }
 
 func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {

@@ -27,7 +27,6 @@ package driver
 
 import (
 	"context"
-	"fmt"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -35,9 +34,7 @@ import (
 	"k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
 	"os"
-	"os/exec"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -423,21 +420,6 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 	}, nil
 }
 
-func hasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
-	log.Infof("Checking device size: %s", path)
-	output, err := exec.Command("blockdev", "--getsize64", path).CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", path, string(output), err)
-	}
-	strOut := strings.TrimSpace(string(output))
-	gotSizeBytes, err := strconv.ParseInt(strOut, 10, 64)
-	if err != nil {
-		return false, err
-	}
-	log.Infof("actual=%v, requiredSize=%v", gotSizeBytes, requiredSize)
-	return gotSizeBytes == requiredSize, nil
-}
-
 func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	volumeID := req.VolumeId
 	if len(volumeID) == 0 {
@@ -492,7 +474,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	log = log.WithFields(logrus.Fields{
 		"device_path": devicePath,
 	})
-	hasRequiredSize, err := hasRequiredSize(log, source, req.CapacityRange.RequiredBytes)
+	hasRequiredSize, err := d.mounter.HasRequiredSize(log, source, req.CapacityRange.RequiredBytes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to test if volume %q at %q has required size: %v", volumePath, source, err)
 	}
