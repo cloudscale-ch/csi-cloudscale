@@ -94,6 +94,8 @@ type Mounter interface {
 
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
+
+	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -480,6 +482,11 @@ func scsiHostRescan() {
 			ioutil.WriteFile(name, data, 0666)
 		}
 	}
+}
+
+func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (string, error) {
+	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, mountPath)
+	return devicePath, err
 }
 
 func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {

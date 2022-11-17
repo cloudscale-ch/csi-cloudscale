@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"github.com/google/uuid"
+	"k8s.io/mount-utils"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -122,6 +123,14 @@ func (f *fakeMounter) Mount(source string, target string, fsType string, luksCon
 func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
 	delete(f.mounted, target)
 	return nil
+}
+
+func (f *fakeMounter) GetDeviceName(_ mount.Interface, mountPath string) (string, error) {
+	if _, ok := f.mounted[mountPath]; ok {
+		return "/mnt/sda1", nil
+	}
+
+	return "", nil
 }
 
 func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
