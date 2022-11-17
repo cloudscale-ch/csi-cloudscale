@@ -527,6 +527,14 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: nodeExpansionRequired}, nil
 }
 
+// ControllerGetVolume gets a specific volume.
+// The call is used for the CSI health check feature
+// (https://github.com/kubernetes/enhancements/pull/1077) which we do not
+// support yet.
+func (d *Driver) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
+}
+
 // calculateStorageGB extracts the storage size in GB from the given capacity
 // range. If the capacity range is not satisfied it returns the default volume
 // size.

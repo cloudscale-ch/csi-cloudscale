@@ -2,7 +2,7 @@ module github.com/cloudscale-ch/csi-cloudscale
 
 require (
 	github.com/cloudscale-ch/cloudscale-go-sdk v1.11.0
-	github.com/container-storage-interface/spec v1.2.0
+	github.com/container-storage-interface/spec v1.3.0
 	github.com/fsnotify/fsnotify v1.4.9 // indirect
 	github.com/golang/protobuf v1.4.3
 	github.com/imdario/mergo v0.3.6 // indirect
