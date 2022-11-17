@@ -295,10 +295,23 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
+	// check if volume exist before trying to detach it
+	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok {
+			if errorResponse.StatusCode == http.StatusNotFound {
+				ll.Info("assuming volume is detached because it does not exist")
+				return &csi.ControllerUnpublishVolumeResponse{}, nil
+			}
+		}
+		return nil, err
+	}
+
 	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
 	}
-	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
 		return nil, reraiseNotFound(err, ll, "unpublish volume")
 	}
