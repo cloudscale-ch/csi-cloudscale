@@ -172,7 +172,7 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 Note: if you want to test a debug/dev release, you can use the following command:
 
 ```
-$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev ./charts/csi-cloudscale
+$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
 ```
 
 #### 2b. Using YAML Manifests:
