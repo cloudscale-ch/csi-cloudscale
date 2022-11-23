@@ -1,5 +1,8 @@
 ## unreleased
 
+## v3.5.0 - 2022.11.23
+* Update CSI spec to 1.6.0
+
 ## v3.4.1 - 2022.10.04
 * Use `registry.k8s.io` instead of `k8s.gcr.io`.
 
