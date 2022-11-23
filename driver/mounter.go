@@ -94,6 +94,11 @@ type Mounter interface {
 
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
+
+	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
+
+	FindAbsoluteDeviceByIDPath(volumeName string) (string, error)
+	HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -480,6 +485,47 @@ func scsiHostRescan() {
 			ioutil.WriteFile(name, data, 0666)
 		}
 	}
+}
+
+func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (string, error) {
+	devicePath, _, err := mount.GetDeviceNameFromMount(mounter, mountPath)
+	return devicePath, err
+}
+
+// FindAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
+func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
+	path := guessDiskIDPathByVolumeID(volumeName)
+	if path == nil {
+		return "", fmt.Errorf("could not find device-path for volume: %s", volumeName)
+	}
+
+	// EvalSymlinks returns relative link if the file is not a symlink
+	// so we do not have to check if it is symlink prior to evaluation
+	resolved, err := filepath.EvalSymlinks(*path)
+	if err != nil {
+		return "", fmt.Errorf("could not resolve symlink %q: %v", *path, err)
+	}
+
+	if !strings.HasPrefix(resolved, "/dev") {
+		return "", fmt.Errorf("resolved symlink %q for %q was unexpected", resolved, *path)
+	}
+
+	return resolved, nil
+}
+
+func (m *mounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+	log.Infof("Checking device size: %s", path)
+	output, err := exec.Command("blockdev", "--getsize64", path).CombinedOutput()
+	if err != nil {
+		return false, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", path, string(output), err)
+	}
+	strOut := strings.TrimSpace(string(output))
+	gotSizeBytes, err := strconv.ParseInt(strOut, 10, 64)
+	if err != nil {
+		return false, err
+	}
+	log.Infof("actual=%v, requiredSize=%v", gotSizeBytes, requiredSize)
+	return gotSizeBytes == requiredSize, nil
 }
 
 func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {

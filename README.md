@@ -172,7 +172,7 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 Note: if you want to test a debug/dev release, you can use the following command:
 
 ```
-$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev ./charts/csi-cloudscale
+$ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
 ```
 
 #### 2b. Using YAML Manifests:
@@ -346,6 +346,14 @@ After making your changes, run the unit tests:
 
 ```
 $ make test
+```
+
+Note: If you want to run just a single test case, from `csi-test`, find the corresponding,
+`It` in the source code, and temporarly replace it with `FIt`, example:
+
+```
+- It("should work if node-expand is called after node-publish", func() {
++ FIt("should work if node-expand is called after node-publish", func() {
 ```
 
 If you want to test your changes, create a new image with the version set to `dev`:

@@ -295,10 +295,23 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	})
 	ll.Info("controller unpublish volume called")
 
+	// check if volume exist before trying to detach it
+	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok {
+			if errorResponse.StatusCode == http.StatusNotFound {
+				ll.Info("assuming volume is detached because it does not exist")
+				return &csi.ControllerUnpublishVolumeResponse{}, nil
+			}
+		}
+		return nil, err
+	}
+
 	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
 	}
-	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
 		return nil, reraiseNotFound(err, ll, "unpublish volume")
 	}
@@ -525,6 +538,14 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	}
 
 	return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(resizeGigaBytes) * GB, NodeExpansionRequired: nodeExpansionRequired}, nil
+}
+
+// ControllerGetVolume gets a specific volume.
+// The call is used for the CSI health check feature
+// (https://github.com/kubernetes/enhancements/pull/1077) which we do not
+// support yet.
+func (d *Driver) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "")
 }
 
 // calculateStorageGB extracts the storage size in GB from the given capacity

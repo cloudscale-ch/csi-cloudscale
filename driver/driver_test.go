@@ -20,21 +20,30 @@ package driver
 import (
 	"context"
 	"errors"
+	"github.com/google/uuid"
+	"k8s.io/mount-utils"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk"
-	"github.com/kubernetes-csi/csi-test/pkg/sanity"
+	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
 )
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
+
+const (
+	numDroplets = 100
+)
+
+type idGenerator struct{}
 
 var DefaultZone = cloudscale.Zone{Slug: "dev1"}
 
@@ -50,29 +59,33 @@ func TestDriverSuite(t *testing.T) {
 		serverId: {UUID: serverId},
 	}
 	cloudscaleClient := NewFakeClient(initialServers)
+	fm := &fakeMounter{
+		mounted: map[string]string{},
+	}
 	driver := &Driver{
 		endpoint:         endpoint,
 		serverId:         serverId,
 		zone:             DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
-		mounter: &fakeMounter{
-			mounted: map[string]string{},
-		},
-		log: logrus.New().WithField("test_enabed", true),
+		mounter:          fm,
+		log:              logrus.New().WithField("test_enabed", true),
 	}
 	defer driver.Stop()
 
 	go driver.Run()
 
-	targetDir := os.TempDir() + "/csi-target"
-	stagingDir := os.TempDir() + "/csi-staging"
-
-	cfg := &sanity.Config{
-		Address:        endpoint,
-		TestVolumeSize: 50 * 1024 * 1024 * 1024,
-		TargetPath:     targetDir,
-		StagingPath:    stagingDir,
+	cfg := sanity.NewTestConfig()
+	if err := os.RemoveAll(cfg.TargetPath); err != nil {
+		t.Fatalf("failed to delete target path %s: %s", cfg.TargetPath, err)
 	}
+	if err := os.RemoveAll(cfg.StagingPath); err != nil {
+		t.Fatalf("failed to delete staging path %s: %s", cfg.StagingPath, err)
+	}
+	cfg.Address = endpoint
+	cfg.IDGen = &idGenerator{}
+	cfg.IdempotentCount = 5
+	cfg.TestNodeVolumeAttachLimit = true
+	cfg.CheckPath = fm.checkMountPath
 	cfg.TestNodeVolumeAttachLimit = true
 
 	sanity.Test(t, cfg)
@@ -112,12 +125,35 @@ func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
 	return nil
 }
 
+func (f *fakeMounter) GetDeviceName(_ mount.Interface, mountPath string) (string, error) {
+	if _, ok := f.mounted[mountPath]; ok {
+		return "/mnt/sda1", nil
+	}
+
+	return "", nil
+}
+
+func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
+	return "/dev/sdb", nil
+}
+
 func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
 	return true, nil
 }
 func (f *fakeMounter) IsMounted(target string) (bool, error) {
 	_, ok := f.mounted[target]
 	return ok, nil
+}
+
+func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
+	isMounted, err := f.IsMounted(path)
+	if err != nil {
+		return "", err
+	}
+	if isMounted {
+		return sanity.PathIsDir, nil
+	}
+	return sanity.PathIsNotFound, nil
 }
 
 func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error) {
@@ -131,6 +167,11 @@ func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error)
 		usedInodes:      7000,
 	}, nil
 }
+
+func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+	return true, nil
+}
+
 func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
 	path := "SomePath"
 	return &path, nil
@@ -326,4 +367,20 @@ func randString(n int) string {
 		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
 	return string(b)
+}
+
+func (g *idGenerator) GenerateUniqueValidVolumeID() string {
+	return uuid.New().String()
+}
+
+func (g *idGenerator) GenerateInvalidVolumeID() string {
+	return g.GenerateUniqueValidVolumeID()
+}
+
+func (g *idGenerator) GenerateUniqueValidNodeID() string {
+	return strconv.Itoa(numDroplets * 10)
+}
+
+func (g *idGenerator) GenerateInvalidNodeID() string {
+	return "not-an-integer"
 }
