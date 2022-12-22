@@ -84,7 +84,7 @@ spec:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
             - name: CLOUDSCALE_API_URL
-              value: https://api.cloudscale.ch/
+              value: {{ .Values.cloudscale.apiUrl }}
             - name: CLOUDSCALE_ACCESS_TOKEN
               valueFrom:
                 secretKeyRef:
