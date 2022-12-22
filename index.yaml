@@ -3,6 +3,23 @@ entries:
   csi-cloudscale:
   - apiVersion: v2
     appVersion: 3.5.0
+    created: "2022-12-22T13:15:07.770010674Z"
+    dependencies:
+    - name: common
+      repository: https://charts.bitnami.com/bitnami
+      version: 1.17.1
+    description: A Container Storage Interface Driver for cloudscale.ch volumes.
+    digest: c9441e40e48e098053ca239b9868d6f88eee53970017200348718370e8254800
+    home: https://github.com/cloudscale-ch/csi-cloudscale
+    name: csi-cloudscale
+    sources:
+    - https://github.com/cloudscale-ch/csi-cloudscale.git
+    type: application
+    urls:
+    - https://github.com/cloudscale-ch/csi-cloudscale/releases/download/helm-csi-cloudscale-1.2.1/csi-cloudscale-1.2.1.tgz
+    version: 1.2.1
+  - apiVersion: v2
+    appVersion: 3.5.0
     created: "2022-11-23T14:53:36.187869482Z"
     dependencies:
     - name: common
@@ -69,4 +86,4 @@ entries:
     urls:
     - https://github.com/cloudscale-ch/csi-cloudscale/releases/download/helm-csi-cloudscale-1.0.0/csi-cloudscale-1.0.0.tgz
     version: 1.0.0
-generated: "2022-11-23T14:53:36.187884482Z"
+generated: "2022-12-22T13:15:07.770033975Z"
