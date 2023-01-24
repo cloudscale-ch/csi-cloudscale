@@ -91,6 +91,10 @@
 
     # It would be nice to install helm using the tasks/roles in kubepsray,
     # but I could not get it working.
+    - name: "Install git on nodes"
+      yum:
+        name: git
+
     - name: Get Helm installer
       ansible.builtin.get_url:
         url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
