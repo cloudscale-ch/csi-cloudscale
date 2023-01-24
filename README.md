@@ -85,6 +85,7 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.22               | v3.1.0                           | v3.5.0                           |
 | 1.23               | v3.1.0                           | v3.5.0                           |
 | 1.24               | v3.1.0                           | v3.5.0                           |
+| 1.25               | v3.3.0                           | v3.5.0                           |
 
 **Requirements:**
 
@@ -373,7 +374,7 @@ To run the integration tests run the following:
 
 ```
 $ export KUBECONFIG=$(pwd)/kubeconfig 
-$ TESTARGS='-run Bulk' make test-integration
+$ TESTARGS='-run TestPod_Single_SSD_Volume' make test-integration
 ```
 
 
