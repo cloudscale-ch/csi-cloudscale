@@ -101,6 +101,7 @@ node:
     repository: cloudscalech/cloudscale-csi-plugin
     tag: v3.5.0
     pullPolicy: IfNotPresent
+  nodeSelector: {}
   tolerations: []
   serviceAccountName:
   resources: {}
