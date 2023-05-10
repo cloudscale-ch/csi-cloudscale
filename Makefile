@@ -70,7 +70,7 @@ test-integration:
 .PHONY: build
 build: compile
 	@echo "==> Building the docker image"
-	@docker build -t $(DOCKER_REPO):$(VERSION) cmd/cloudscale-csi-plugin -f cmd/cloudscale-csi-plugin/Dockerfile
+	@docker build --platform linux/amd64 -t $(DOCKER_REPO):$(VERSION) cmd/cloudscale-csi-plugin -f cmd/cloudscale-csi-plugin/Dockerfile
 
 .PHONY: push
 push:
