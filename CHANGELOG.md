@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.1 - 2023.05.10
 * Update base image to latest alpine version.
 
 ## v3.5.0 - 2022.11.23
