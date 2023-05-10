@@ -1,4 +1,5 @@
 ## unreleased
+* Update base image to latest alpine version.
 
 ## v3.5.0 - 2022.11.23
 * Update CSI spec to 1.6.0
