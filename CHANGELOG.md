@@ -1,4 +1,5 @@
 ## unreleased
+* Bump golang.org/x/net
 
 ## v3.5.1 - 2023.05.10
 * Update base image to latest alpine version.
