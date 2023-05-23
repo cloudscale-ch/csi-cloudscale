@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.2 - 2023.05.23
 * Bump golang.org/x/net
 
 ## v3.5.1 - 2023.05.10

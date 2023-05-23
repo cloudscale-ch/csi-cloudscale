@@ -61,7 +61,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v3.5.1`**.
+The current version is: **`v3.5.2`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -80,12 +80,12 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.17               | v1.3.1                           | v3.0.0                           |
 | 1.18               | v1.3.1                           | v3.3.0                           |
 | 1.19               | v1.3.1                           | v3.3.0                           |
-| 1.20               | v2.0.0                           | v3.5.1                           |
-| 1.21               | v2.0.0                           | v3.5.1                           |
-| 1.22               | v3.1.0                           | v3.5.1                           |
-| 1.23               | v3.1.0                           | v3.5.1                           |
-| 1.24               | v3.1.0                           | v3.5.1                           |
-| 1.25               | v3.3.0                           | v3.5.1                           |
+| 1.20               | v2.0.0                           | v3.5.2                           |
+| 1.21               | v2.0.0                           | v3.5.2                           |
+| 1.22               | v3.1.0                           | v3.5.2                           |
+| 1.23               | v3.1.0                           | v3.5.2                           |
+| 1.24               | v3.1.0                           | v3.5.2                           |
+| 1.25               | v3.3.0                           | v3.5.2                           |
 
 **Requirements:**
 
@@ -181,10 +181,10 @@ $ helm install -g -n kube-system --set controller.image.tag=dev --set node.image
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v3.5.1`) you can execute the following command:
+For example, to use the latest stable version (`v3.5.2`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.5.1.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.5.2.yaml
 ```
 
 The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
@@ -398,15 +398,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v3.5.1` and then publish a new docker build:
+master with the version `v3.5.2` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v3.5.1` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v3.5.1`
+This will create a binary with version `v3.5.2` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v3.5.2`
 
 ## Contributing
 
