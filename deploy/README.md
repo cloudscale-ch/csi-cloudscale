@@ -2,9 +2,12 @@
 
 ## Testing
 
-To test kubernetes csi-cloudscale on kubernetes, you can install
-kubespray to deploy kubernetes:
+To test csi-cloudscale on Kubernetes, you can install kubespray to deploy Kubernetes:
 
+    cd deploy
+    # kubspray is provided as a git submodule
+    git submodule init
+    git submodule update
     python3 -m venv venv
     . venv/bin/activate
     # or requirements-{VERSION}.txt, see https://github.com/kubernetes-sigs/kubespray/blob/master/docs/ansible.md#ansible-python-compatibility
@@ -15,15 +18,13 @@ After this you run:
 
     CLOUDSCALE_TOKEN="foobar" ansible-playbook ../integration_test.yml -i inventory/hosts.ini
 
-to install kubernetes on cloudscale.ch and run the integration tests.
+to install Kubernetes on cloudscale.ch and run the integration tests.
 The playbook will also clean up VMs after the test.
 
 -   If you just want to provision a cluster, you can use an additional
     `--skip-tags cleanup --skip-tags test`.
 -   If you want to a test release other than `dev`, you can use an
-    additional `-e version=v1.0.0`.
--   If you want to use a non-default Kubernetes version, you can use an
-    additional `-e kube_version=v1.20.7`.
+    additional `-e version=v1.0.0`. Caution: This does only inject the docker image tag in to helm, but uses the chart from the current working directory.
 
 ## Debugging
 
@@ -36,7 +37,7 @@ You can just redeploy all csi pods and push a new version to docker hub:
 Kubernetes will then automatically reinstall the pods you just deleted
 with newer versions.
 
-To follow logs on kubernetes master server:
+To follow logs on Kubernetes master server:
 
     kubectl logs -n kube-system csi-cloudscale-controller-0 --all-containers --timestamps -f
 

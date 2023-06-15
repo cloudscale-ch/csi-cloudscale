@@ -2,11 +2,11 @@
 
 [![test](https://github.com/cloudscale-ch/csi-cloudscale/actions/workflows/test.yaml/badge.svg)](https://github.com/cloudscale-ch/csi-cloudscale/actions/workflows/test.yaml)
 
-A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) Driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
+A Container Storage Interface ([CSI](https://github.com/container-storage-interface/spec)) driver for cloudscale.ch volumes. The CSI plugin allows you to use cloudscale.ch volumes with your preferred Container Orchestrator.
 
-The cloudscale.ch CSI plugin is mostly tested on Kubernetes. Theoretically it
-should also work on other Container Orchestrators, such as Mesos or
-Cloud Foundry. Feel free to test it on other COs and give us a feedback.
+The cloudscale.ch CSI plugin is mostly tested on Kubernetes. In theory, it
+should also work on other Container Orchestrators like Mesos or
+Cloud Foundry. Feel free to test it on other COs and give us feedback.
 
 ## TL;DR
 
@@ -21,7 +21,7 @@ $ helm install -n kube-system -g csi-cloudscale/csi-cloudscale
 
 ## Volume parameters
 
-This plugin supports the following volume parameters (in case of kubernetes: parameters on the 
+This plugin supports the following volume parameters (in case of Kubernetes: parameters on the 
 `StorageClass` object):
 
 * `csi.cloudscale.ch/volume-type`: `ssd` or `bulk`; defaults to `ssd` if not set
@@ -30,7 +30,7 @@ For LUKS encryption:
 
 * `csi.cloudscale.ch/luks-encrypted`: set to the string `"true"` if the volume should be encrypted
   with LUKS
-* `csi.cloudscale.ch/luks-cipher`: cipher to use; must be supported by the kernel and luks, we
+* `csi.cloudscale.ch/luks-cipher`: cipher to use; must be supported by the kernel and LUKS, we
   suggest `aes-xts-plain64`
 * `csi.cloudscale.ch/luks-key-size`: key-size to use; we suggest `512` for `aes-xts-plain64`
 
@@ -44,16 +44,16 @@ folder for examples.
 The default deployment bundled in the `deploy/kubernetes/releases` folder includes the following
 storage classes:
 
-* `cloudscale-volume-ssd` - the default storage class; uses an ssd volume, no luks encryption
-* `cloudscale-volume-bulk` - uses a bulk volume, no luks encryption
-* `cloudscale-volume-ssd-luks` - uses an ssd volume that will be encrypted with luks; a luks-key
+* `cloudscale-volume-ssd` - the default storage class; uses an ssd volume, no LUKS encryption
+* `cloudscale-volume-bulk` - uses a bulk volume, no LUKS encryption
+* `cloudscale-volume-ssd-luks` - uses an ssd volume that will be encrypted with LUKS; a luks-key
   must be supplied
-* `cloudscale-volume-bulk-luks` - uses a bulk volume that will be encrypted with luks; a luks-key
+* `cloudscale-volume-bulk-luks` - uses a bulk volume that will be encrypted with LUKS; a luks-key
   must be supplied
 
-To use one of the shipped luks storage classes, you need to create a secret named 
+To use one of the shipped LUKS storage classes, you need to create a secret named 
 `${pvc.name}-luks-key` in the same namespace as the persistent volume claim. The secret must
-contain an element called `luksKey` that will be used as the luks encryption key.
+contain an element called `luksKey` that will be used as the LUKS encryption key.
 
 Example: If you create a persistent volume claim with the name `my-pvc`, you need to create a
 secret `my-pvc-luks-key`.
@@ -74,7 +74,7 @@ The current version is: **`v3.5.2`**.
 The following table describes the required cloudscale.ch driver version per Kubernetes release.
 We recommend using the latest cloudscale.ch CSI driver compatible with your Kubernetes release.
 
-| Kubernetes Release | Minimum cloudscale.ch CSI Driver | Maximum cloudscale.ch CSI Driver |
+| Kubernetes Release | Minimum cloudscale.ch CSI driver | Maximum cloudscale.ch CSI driver |
 |--------------------|----------------------------------|----------------------------------|
 | <= 1.16            |                                  | v1.3.1                           |
 | 1.17               | v1.3.1                           | v3.0.0                           |
@@ -86,6 +86,7 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.23               | v3.1.0                           | v3.5.2                           |
 | 1.24               | v3.1.0                           | v3.5.2                           |
 | 1.25               | v3.3.0                           | v3.5.2                           |
+| 1.26               | v3.3.0                           | v3.5.2                           |
 
 **Requirements:**
 
@@ -156,8 +157,8 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 | Parameter                           | Default                      | Description                                                                                |
 |-------------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
 | attacher.resources                  | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
-| cloudscale.apiUrl                   | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default                     |
-| cloudscale.max_csi_volumes_per_node | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node)       |
+| cloudscale.apiUrl                   | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default.                    |
+| cloudscale.max_csi_volumes_per_node | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node).      |
 | cloudscale.token.existingSecret     | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
 | controller.resources                | `{}`                         | Resource limits and requests for the controller container.                                 |
 | controller.serviceAccountName       | `null`                       | Override the controller service account name.                                              |
@@ -222,10 +223,10 @@ The above output means that the CSI plugin successfully created (provisioned) a
 new Volume on behalf of you. You should be able to see this newly created
 volumes in the server detail view in the cloudscale.ch UI.
 
-The volume is not attached to any node yet. It'll only attached to a node if a
+The volume is not attached to any node yet. It will only attach to a node if a
 workload (i.e: pod) is scheduled to a specific node. Now let us create a Pod
 that refers to the above volume. When the Pod is created, the volume will be
-attached, formatted and mounted to the specified Container:
+attached, formatted and mounted to the specified container:
 
 ```
 kind: Pod
