@@ -47,7 +47,7 @@ To run this test suite, a Kubernetes cluster is required. For this purpose, this
     make test-integration
 
 *Command line options for the playbook:*  
--   If you just want to provision a cluster, you can use an additional `--skip-tags cleanup --skip-tags test`.
+-   If you just want to provision a cluster, you can use an additional `--skip-tags cleanup --skip-tags test`. If not, the VMs will be removed again.
 -   If you want to a test release other than `dev`, you can use an
     additional `-e version=v1.0.0`. Caution: This does only inject the docker image tag in to helm, but uses the chart from the current working directory.
 
