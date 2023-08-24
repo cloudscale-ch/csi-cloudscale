@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+#
+# Ensures that a Kubernetes test cluster is present and updated
+#
+set -euo pipefail
+
+# Default values
+RANDOM_NUMBER=$((RANDOM % 8193))
+K8TEST_SHA="cefd4ab"
+ZONE="lpg1"
+CLUSTER_PREFIX="csi-test-$RANDOM_NUMBER"
+KUBERNETES="latest"
+FLAVOR="plus-8-4"
+CONTROL_COUNT=1
+WORKER_COUNT=3
+IMAGE="ubuntu-22.04"
+VOLUME_SIZE_GB="25"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        --k8test-sha)
+            K8TEST_SHA="$2"
+            shift
+            shift
+            ;;
+        --zone)
+            ZONE="$2"
+            shift
+            shift
+            ;;
+        --cluster-prefix)
+            CLUSTER_PREFIX="$2"
+            shift
+            shift
+            ;;
+        --kubernetes)
+            KUBERNETES="$2"
+            shift
+            shift
+            ;;
+        --control-count)
+            CONTROL_COUNT="$2"
+            shift
+            shift
+            ;;
+        --worker-count)
+            WORKER_COUNT="$2"
+            shift
+            shift
+            ;;
+        --image)
+            IMAGE="$2"
+            shift
+            shift
+            ;;
+        --flavor)
+            FLAVOR="$2"
+            shift
+            shift
+            ;;
+        --volume-size-gb)
+            VOLUME_SIZE_GB="$2"
+            shift
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Prepares k8test with an existing virtual env, or a newly created on
+function ensure-k8test() {
+  if ! test -d k8test; then
+    git clone git@github.com:cloudscale-ch/k8test.git
+    git -C k8test checkout "$K8TEST_SHA"
+  fi
+
+  if [[ "${VIRTUAL_ENV:-}" == "" ]]; then
+
+    if ! test -d k8test/venv; then
+      python3 -m venv k8test/venv
+    fi
+
+    # shellcheck source=/dev/null
+    source k8test/venv/bin/activate
+  fi
+
+  if ! command -v poetry > /dev/null; then
+    pip install poetry
+  fi
+
+  if ! command -v ansible > /dev/null; then
+    poetry install --directory k8test
+  fi
+}
+
+# Launches the test cluster, if there's no inventory yet
+function ensure-inventory() {
+  if ! test -d k8test/cluster; then
+    mkdir k8test/cluster
+  fi
+
+  if ! test -f k8test/cluster/ssh.pub; then
+    ssh-keygen -t ed25519 -N '' -f k8test/cluster/ssh
+  fi
+
+  if ! test -f k8test/cluster/inventory.yml; then
+    k8test/playbooks/create-cluster.yml \
+      -e ssh_key=k8test/cluster/ssh.pub \
+      -e zone="$ZONE" \
+      -e cluster_prefix="$CLUSTER_PREFIX" \
+      -e kubernetes="$KUBERNETES" \
+      -e control_count="$CONTROL_COUNT" \
+      -e worker_count="$WORKER_COUNT" \
+      -e image="$IMAGE" \
+      -e flavor="$FLAVOR" \
+      -e volume_size_gb="$VOLUME_SIZE_GB"
+
+    # Those won't really change between runs, so update them during install
+    k8test/playbooks/update-secrets.yml \
+      -i k8test/cluster/inventory.yml
+  fi
+}
+
+ensure-k8test
+ensure-inventory
