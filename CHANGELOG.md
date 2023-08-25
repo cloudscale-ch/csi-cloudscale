@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.3 - 2023.08.25
 * Update base image to newer alpine minor version.
 * Bump google.golang.org/grpc
 
