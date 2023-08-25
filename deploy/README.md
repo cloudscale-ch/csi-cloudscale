@@ -9,24 +9,31 @@ To run this test suite, a Kubernetes cluster is required. For this purpose, this
 > ⚠️ Running these tests yourself may incur unexpected costs and may result in data loss if run against a production account with live systems. herefore, we strongly advise you to use a separate account for these tests.
 > The Kubernetes cluster created is not production ready and should not be used for any purpose other than testing.
 
-    # Bootstrap the cluster
-    export CLOUDSCALE_API_TOKEN="..."  # export your CLOUDSCALE_API_TOKEN
-    ./helpers/bootstrap-cluster        # see the script for options, sensible defaults apply
-    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
-    kubectl get nodes -o wide          # verify cluster
+First bootstrap the cluster
 
-    # Install driver using dev image from working dir:
-    # setup all required charts in the local folder
-    cd charts/csi-cloudscale/
-    helm repo add bitnami https://charts.bitnami.com/bitnami
-    helm repo update
-    helm dependency build
-    cd ../../
-    helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
+    # Export your API Token obtained from http://control.cloudscale.ch
+    export CLOUDSCALE_API_TOKEN="..."
     
-    # Or install using released version
+    # See the script for options, sensible defaults apply
+    ./helpers/bootstrap-cluster
+    
+    # Verify cluster setup and access
+    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
+    kubectl get nodes -o wide
+
+
+You can **either** install the driver from your working directory
+
+    # Install driver using dev image from working dir
+    # Pre-requesit: ensure the you have run `helm dependency build` as described in the main README file.
+    helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
+
+**Or** you can install a released version:
+
+    # List all released versions
     helm search repo csi-cloudscale/csi-cloudscale  --versions
-    helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ] 
+    # Install a specific Chart version or latest if --version is omitted
+    helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ]
 
 Then execute the test suite:
 
