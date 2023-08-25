@@ -2,27 +2,52 @@
 
 ## Testing
 
-To test csi-cloudscale on Kubernetes, you can install kubespray to deploy Kubernetes:
+To test csi-cloudscale in conjunction with Kubernetes, a suite of integration tests has been implemented.
+To run this test suite, a Kubernetes cluster is required. For this purpose, this setup was prepared using kubespray.
 
-    cd deploy
+> ⚠️ Running these tests yourself may incur unexpected costs and may result in data loss if run against a production account with live systems. herefore, we strongly advise you to use a separate account for these tests. 
+> The Kubernetes cluster created is not production ready and should not be used for any purpose other than testing.
+
+
+    # setup all required charts in the local folder, as they will be used by the ansible playbook.
+    cd charts/csi-cloudscale/
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm repo update
+    helm dependency build
+    cd ../../
+    
     # kubspray is provided as a git submodule
     git submodule init
     git submodule update
+    # if you want to test against another Kubernetes version, checkout a differnt tag in the the kubspray folder
+    
+    # setup the python venv
+    cd deploy
     python3 -m venv venv
     . venv/bin/activate
     # or requirements-{VERSION}.txt, see https://github.com/kubernetes-sigs/kubespray/blob/master/docs/ansible.md#ansible-python-compatibility
     pip install -r kubespray/requirements.txt
+    
+    # setup the cluster    
     cd kubespray/
+    # get a token from the cloudscale.ch Control Panel and set it as CLOUDSCALE_TOKEN envrionment variable
+    export CLOUDSCALE_TOKEN="foobar"
+    # running this playbook will install a Kubernetes cluster on cloudscale.ch
+    ansible-playbook ../integration_test.yml -i inventory/hosts.ini --skip-tags cleanup --skip-tags test
 
-After this you run:
+    # get the IP address of server "test-kubernetes-master" from the cloudscale.ch Control Panel
+    # add the IP in the property "server" in the file "kubeconfig.yml", keep the https prefix and the port
+    cd ../../
+    vi deploy/kubeconfig.yml
 
-    CLOUDSCALE_TOKEN="foobar" ansible-playbook ../integration_test.yml -i inventory/hosts.ini
+    # add the path of this file to the KUBECONFIG env variable
+    export KUBECONFIG=$(pwd)/deploy/kubeconfig.yml
 
-to install Kubernetes on cloudscale.ch and run the integration tests.
-The playbook will also clean up VMs after the test.
+    # finally, run the integration tests
+    make test-integration
 
--   If you just want to provision a cluster, you can use an additional
-    `--skip-tags cleanup --skip-tags test`.
+*Command line options for the playbook:*  
+-   If you just want to provision a cluster, you can use an additional `--skip-tags cleanup --skip-tags test`. If not, the VMs will be removed again.
 -   If you want to a test release other than `dev`, you can use an
     additional `-e version=v1.0.0`. Caution: This does only inject the docker image tag in to helm, but uses the chart from the current working directory.
 
