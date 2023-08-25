@@ -1,5 +1,6 @@
 ## unreleased
 * Update base image to newer alpine minor version.
+* Bump google.golang.org/grpc
 
 ## v3.5.2 - 2023.05.23
 * Bump golang.org/x/net
