@@ -2,19 +2,29 @@
 
 ## Testing
 
-To test csi-cloudscale on Kubernetes, you can deploye a kubernetes cluster using
+To test csi-cloudscale in conjunction with Kubernetes, a suite of integration tests has been implemented.
+To run this test suite, a Kubernetes cluster is required. For this purpose, this setup was prepared using
 [k8test](https://github.com/cloudscale-ch/k8test).
 
-    export CLOUDSCALE_API_TOKEN="..."
-    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
+> ⚠️ Running these tests yourself may incur unexpected costs and may result in data loss if run against a production account with live systems. herefore, we strongly advise you to use a separate account for these tests.
+> The Kubernetes cluster created is not production ready and should not be used for any purpose other than testing.
 
+    # Bootstrap the cluster
+    export CLOUDSCALE_API_TOKEN="..."  # export your CLOUDSCALE_API_TOKEN
     ./helpers/bootstrap-cluster        # see the script for options, sensible defaults apply
-    kubectl get nodes -o wide          # verify setup
+    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
+    kubectl get nodes -o wide          # verify cluster
 
-    # Install using dev image from working dir:
+    # Install driver using dev image from working dir:
+    # setup all required charts in the local folder
+    cd charts/csi-cloudscale/
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm repo update
+    helm dependency build
+    cd ../../
     helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
     
-    # or install using repo version
+    # Or install using released version
     helm search repo csi-cloudscale/csi-cloudscale  --versions
     helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ] 
 
