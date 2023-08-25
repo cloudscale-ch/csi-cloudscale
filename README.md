@@ -71,7 +71,8 @@ The current version is: **`v3.5.2`**.
 
 ### Kubernetes Compatibility
 
-The following table describes the required cloudscale.ch driver version per Kubernetes release.
+The following table describes the required cloudscale.ch driver version per
+[Kubernetes release](https://kubernetes.io/releases/#release-history).
 We recommend using the latest cloudscale.ch CSI driver compatible with your Kubernetes release.
 
 | Kubernetes Release | Minimum cloudscale.ch CSI driver | Maximum cloudscale.ch CSI driver |
