@@ -3,57 +3,49 @@
 ## Testing
 
 To test csi-cloudscale in conjunction with Kubernetes, a suite of integration tests has been implemented.
-To run this test suite, a Kubernetes cluster is required. For this purpose, this setup was prepared using kubespray.
+To run this test suite, a Kubernetes cluster is required. For this purpose, this setup was prepared using
+[k8test](https://github.com/cloudscale-ch/k8test).
 
-> ⚠️ Running these tests yourself may incur unexpected costs and may result in data loss if run against a production account with live systems. herefore, we strongly advise you to use a separate account for these tests. 
+> ⚠️ Running these tests yourself may incur unexpected costs and may result in data loss if run against a production account with live systems. herefore, we strongly advise you to use a separate account for these tests.
 > The Kubernetes cluster created is not production ready and should not be used for any purpose other than testing.
 
+First bootstrap the cluster
 
-    # setup all required charts in the local folder, as they will be used by the ansible playbook.
-    cd charts/csi-cloudscale/
-    helm repo add bitnami https://charts.bitnami.com/bitnami
-    helm repo update
-    helm dependency build
-    cd ../../
+    # Export your API Token obtained from http://control.cloudscale.ch
+    export CLOUDSCALE_API_TOKEN="..."
     
-    # kubspray is provided as a git submodule
-    git submodule init
-    git submodule update
-    # if you want to test against another Kubernetes version, checkout a differnt tag in the the kubspray folder
+    # See the script for options, sensible defaults apply
+    ./helpers/bootstrap-cluster
     
-    # setup the python venv
-    cd deploy
-    python3 -m venv venv
-    . venv/bin/activate
-    # or requirements-{VERSION}.txt, see https://github.com/kubernetes-sigs/kubespray/blob/master/docs/ansible.md#ansible-python-compatibility
-    pip install -r kubespray/requirements.txt
-    
-    # setup the cluster    
-    cd kubespray/
-    # get a token from the cloudscale.ch Control Panel and set it as CLOUDSCALE_TOKEN envrionment variable
-    export CLOUDSCALE_TOKEN="foobar"
-    # running this playbook will install a Kubernetes cluster on cloudscale.ch
-    ansible-playbook ../integration_test.yml -i inventory/hosts.ini --skip-tags cleanup --skip-tags test
+    # Verify cluster setup and access
+    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
+    kubectl get nodes -o wide
 
-    # get the IP address of server "test-kubernetes-master" from the cloudscale.ch Control Panel
-    # add the IP in the property "server" in the file "kubeconfig.yml", keep the https prefix and the port
-    cd ../../
-    vi deploy/kubeconfig.yml
 
-    # add the path of this file to the KUBECONFIG env variable
-    export KUBECONFIG=$(pwd)/deploy/kubeconfig.yml
+You can **either** install the driver from your working directory
 
-    # finally, run the integration tests
+    # Install driver using dev image from working dir
+    # Pre-requesit: ensure the you have run `helm dependency build` as described in the main README file.
+    helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
+
+**Or** you can install a released version:
+
+    # List all released versions
+    helm search repo csi-cloudscale/csi-cloudscale  --versions
+    # Install a specific Chart version or latest if --version is omitted
+    helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ]
+
+Then execute the test suite:
+
     make test-integration
 
-*Command line options for the playbook:*  
--   If you just want to provision a cluster, you can use an additional `--skip-tags cleanup --skip-tags test`. If not, the VMs will be removed again.
--   If you want to a test release other than `dev`, you can use an
-    additional `-e version=v1.0.0`. Caution: This does only inject the docker image tag in to helm, but uses the chart from the current working directory.
+The get rid of the cluster:
+
+    ./helpers/clean-up
 
 ## Debugging
 
-If the playbook does not pass, there are a good number of ways to debug.
+If the suite does not pass, there are a good number of ways to debug.
 You can just redeploy all csi pods and push a new version to docker hub:
 
     VERSION=dev make publish
@@ -127,11 +119,3 @@ Using etcdctl:
 > <https://1.1.1.1/k8s/clusters/c-xfmg6> kubectl get nodes \# get nodes
 > name kubectl get \--raw /k8s/clusters/{}/api/v1/nodes/{}/proxy/metrics
 > \| grep kubelet_vol
-
-Ansible:
-
-    # Keep cluster after test run
-    CLOUDSCALE_TOKEN="foobar" ansible-playbook integration_test.yml -i inventory/hosts.ini --skip-tags cleanup
-
-    # Just run tests
-    ansible-playbook -i inventory/hosts.ini integration_test.yml --tags test

@@ -331,6 +331,9 @@ Requirements:
 Build out the `charts/` directory from the `Chart.lock` file:
 
 ```
+$ cd charts/csi-cloudscale/
+$ helm repo add bitnami https://charts.bitnami.com/bitnami
+$ helm repo update
 $ helm dependency build charts/csi-cloudscale
 ```
 

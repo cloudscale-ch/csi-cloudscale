@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#
+# Ensures that any Kubernetes cluster is cleaned up
+#
+set -euo pipefail
+
+if test -f k8test/cluster/inventory.yml; then
+  source k8test/venv/bin/activate
+  k8test/playbooks/destroy-cluster.yml -i k8test/cluster/inventory.yml
+fi
+
+if test -d k8test; then
+  rm -rf k8test
+fi
