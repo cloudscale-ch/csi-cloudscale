@@ -24,6 +24,7 @@ type CustomImage struct {
 	SizeGB           int               `json:"size_gb,omitempty"`
 	Checksums        map[string]string `json:"checksums,omitempty"`
 	UserDataHandling string            `json:"user_data_handling,omitempty"`
+	FirmwareType     string            `json:"firmware_type,omitempty"`
 	Zones            []Zone            `json:"zones"`
 	CreatedAt        time.Time         `json:"created_at"`
 }

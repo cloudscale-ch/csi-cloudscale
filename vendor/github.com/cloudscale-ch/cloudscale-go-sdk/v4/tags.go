@@ -12,7 +12,7 @@ type TaggedResource struct {
 }
 
 type TaggedResourceRequest struct {
-	Tags TagMap `json:"tags,omitempty"`
+	Tags *TagMap `json:"tags,omitempty"`
 }
 
 func WithTagFilter(tags TagMap) ListRequestModifier {

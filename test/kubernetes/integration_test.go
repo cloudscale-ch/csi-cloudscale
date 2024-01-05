@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"

@@ -32,6 +32,7 @@ type CustomImageImportRequest struct {
 	Name             string   `json:"name,omitempty"`
 	Slug             string   `json:"slug,omitempty"`
 	UserDataHandling string   `json:"user_data_handling,omitempty"`
+	FirmwareType     string   `json:"firmware_type,omitempty"`
 	SourceFormat     string   `json:"source_format,omitempty"`
 	Zones            []string `json:"zones,omitempty"`
 }

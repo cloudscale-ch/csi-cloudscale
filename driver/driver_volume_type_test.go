@@ -2,7 +2,7 @@ package driver
 
 import (
 	"context"
-	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"

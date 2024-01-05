@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"

@@ -81,22 +81,27 @@ type Address struct {
 type ServerRequest struct {
 	ZonalResourceRequest
 	TaggedResourceRequest
-	Name              string              `json:"name"`
-	Flavor            string              `json:"flavor"`
-	Image             string              `json:"image"`
-	Zone              string              `json:"zone,omitempty"`
-	VolumeSizeGB      int                 `json:"volume_size_gb,omitempty"`
-	Volumes           *[]Volume           `json:"volumes,omitempty"`
-	Interfaces        *[]InterfaceRequest `json:"interfaces,omitempty"`
-	BulkVolumeSizeGB  int                 `json:"bulk_volume_size_gb,omitempty"`
-	SSHKeys           []string            `json:"ssh_keys"`
-	Password          string              `json:"password,omitempty"`
-	UsePublicNetwork  *bool               `json:"use_public_network,omitempty"`
-	UsePrivateNetwork *bool               `json:"use_private_network,omitempty"`
-	UseIPV6           *bool               `json:"use_ipv6,omitempty"`
-	AntiAffinityWith  string              `json:"anti_affinity_with,omitempty"`
-	ServerGroups      []string            `json:"server_groups,omitempty"`
-	UserData          string              `json:"user_data,omitempty"`
+	Name              string                 `json:"name"`
+	Flavor            string                 `json:"flavor"`
+	Image             string                 `json:"image"`
+	Zone              string                 `json:"zone,omitempty"`
+	VolumeSizeGB      int                    `json:"volume_size_gb,omitempty"`
+	Volumes           *[]ServerVolumeRequest `json:"volumes,omitempty"`
+	Interfaces        *[]InterfaceRequest    `json:"interfaces,omitempty"`
+	BulkVolumeSizeGB  int                    `json:"bulk_volume_size_gb,omitempty"`
+	SSHKeys           []string               `json:"ssh_keys"`
+	Password          string                 `json:"password,omitempty"`
+	UsePublicNetwork  *bool                  `json:"use_public_network,omitempty"`
+	UsePrivateNetwork *bool                  `json:"use_private_network,omitempty"`
+	UseIPV6           *bool                  `json:"use_ipv6,omitempty"`
+	AntiAffinityWith  string                 `json:"anti_affinity_with,omitempty"`
+	ServerGroups      []string               `json:"server_groups,omitempty"`
+	UserData          string                 `json:"user_data,omitempty"`
+}
+
+type ServerVolumeRequest struct {
+	SizeGB int    `json:"size_gb,omitempty"`
+	Type   string `json:"type,omitempty"`
 }
 
 type InterfaceRequest struct {

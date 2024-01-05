@@ -41,12 +41,18 @@ If you want to give params to `go test`, you can use something like this:
 TESTARGS='-run FloatingIP' make integration
 ```
 
+Some test default to "rma1" for testing. To override this, you can set the following variable
+```
+INTEGRATION_TEST_ZONE="lpg1"  make integration
+```
+
 ## Releasing
 
 To create a new release, please do the following:
  * Merge all feature branches into a release branch
  * Checkout the release branch
  * Run `make NEW_VERSION=v1.x.x bump-version`
+   * For a new major release, follow [these instructions](https://go.dev/doc/modules/major-version)
  * Commit the changes
  * Merge the release branch into master
  * Create a [new release](https://github.com/cloudscale-ch/cloudscale-go-sdk/releases/new) on GitHub.
