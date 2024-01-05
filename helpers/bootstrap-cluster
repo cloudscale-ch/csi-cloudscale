@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Default values
 RANDOM_NUMBER=$((RANDOM % 8193))
-K8TEST_SHA="cefd4ab"
+K8TEST_SHA="da91af6"
 ZONE="lpg1"
 CLUSTER_PREFIX="csi-test-$RANDOM_NUMBER"
 KUBERNETES="latest"
