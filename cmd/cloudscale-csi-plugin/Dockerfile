@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM alpine:3.17.5
+FROM alpine:3.17.6
 
 # e2fsprogs-extra is required for resize2fs used for the resize operation
 # blkid: block device identification tool from util-linux

@@ -1,6 +1,6 @@
 NAME=cloudscale-csi-plugin
 OS ?= linux
-GO_VERSION := 1.18.1
+GO_VERSION := $(shell awk '/^go/ {print $$2}' go.mod)
 ifeq ($(strip $(shell git status --porcelain 2>/dev/null)),)
   GIT_TREE_STATE=clean
 else

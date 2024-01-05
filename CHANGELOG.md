@@ -1,4 +1,6 @@
 ## unreleased
+* Update base image to newer alpine minor version.
+* Update go version used during build.
 
 ## v3.5.3 - 2023.08.25
 * Update base image to newer alpine minor version.
@@ -22,7 +24,7 @@
 ## v3.3.0 - 2022.09.22
 * Package as Helm chart.
 * Always set `CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE` in manifest.
-* Explicitly set `reclaimPolicy` and `volumeBindingMode` for storage classes to Kubernetes default values. 
+* Explicitly set `reclaimPolicy` and `volumeBindingMode` for storage classes to Kubernetes default values.
 
 ## v3.2.1 - 2022.07.12
 * Ensure that the device has the expected size in NodeExpandVolume to avoid a race-condition that appeared in testing.
@@ -65,7 +67,7 @@
 * Update side-cars to support Kubernetes >=1.20.
 * Update Makefile and related scripts.
 * Update go libraries.
-* Update go version used. 
+* Update go version used.
 
 ## v1.3.1 - 2021.03.31
 
@@ -94,7 +96,7 @@
 
 * Update to CSI spec v1.1.0
 
-* Add support for [Volume Expansion](https://kubernetes-csi.github.io/docs/volume-expansion.html). 
+* Add support for [Volume Expansion](https://kubernetes-csi.github.io/docs/volume-expansion.html).
 
 ## v1.0.1 - 2020.01.15
 
@@ -115,26 +117,26 @@
 
 * Forked this repository from csi-digitalocean. They have a similar API. Thanks
   a lot to DigitalOcean - mostly Fatih Arslan - for his work.
-  
+
 ### Important
- 
+
 This release contains breaking changes, because of the update to the CSI
 spec v1.0.0 and the introduction of the `csi.cloudscale.ch/volume-type` parameter.
- 
+
 Your kubernetes version must be **at least v1.13.0** to support CSI spec v1.0.0.
 
 If you have deployed previous versions of the CSI plugin, you cannot update the existing
 `cloudscale-volume-ssd` storage class, because parameters of a storage class cannot be changed.
 However, the default behaviour of the CSI plugin is to use volumes of type ssd unless specified
-otherwise, so you can just leave the `cloudscale-volume-ssd` storage class as it is. 
+otherwise, so you can just leave the `cloudscale-volume-ssd` storage class as it is.
 
-Make sure you have the following [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/) 
+Make sure you have the following [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
 activated:
 
 * `CSINodeInfo=true`
 * `CSIDriverRegistry=true`
 
-The following features are required but are GA in kubernetes v1.13.0. No explicit 
+The following features are required but are GA in kubernetes v1.13.0. No explicit
 feature gate activation is needed:
 
 * `CSIPersistentVolume=true`
@@ -143,7 +145,7 @@ feature gate activation is needed:
 
 ## v0.2.0 - 2018.09.05
 
-* Add support to CSI Spec `v0.3.0`. This includes many new changes, make sure 
+* Add support to CSI Spec `v0.3.0`. This includes many new changes, make sure
   to read the Github PR for more information
   [[GH-72]](https://github.com/digitalocean/csi-digitalocean/pull/72)
 * Check volume limits before provisioning calls
@@ -153,7 +155,7 @@ feature gate activation is needed:
   [[GH-74]](https://github.com/digitalocean/csi-digitalocean/pull/74)
 
 **IMPORTANT**:This release contains breaking changes, mainly about how thing
-are deployed. The minimum Kubernetes version needs to be now **v1.10.5**. 
+are deployed. The minimum Kubernetes version needs to be now **v1.10.5**.
 To upgrade from a prior `v0.1.x` versions please remove the old CSI plugin
 completely and re-install the new one:
 
@@ -200,7 +202,7 @@ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/
 ## v0.1.2 - 2018.08.02
 
 * Check if mounts are propagated (`MountPropagation` is enabled on the host) in
-  Node plugin to prevent silent failing. 
+  Node plugin to prevent silent failing.
   [[GH-46]](https://github.com/digitalocean/csi-digitalocean/pull/46)
 * Fix `IsMounted()` for bind mounts where it was returning false positives.
   [[GH-46]](https://github.com/digitalocean/csi-digitalocean/pull/46)
@@ -214,7 +216,7 @@ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/
 
 ## v0.1.0 (alpha) - 2018.05.15
 
-* Add method names to each log entry 
+* Add method names to each log entry
   [[GH-22]](https://github.com/digitalocean/csi-digitalocean/pull/22)
 * Kubernetes deployment uses the `kube-system` namespace instead of the prior
   `default` namespace. Please make sure to delete and re-deploy the plugin.
