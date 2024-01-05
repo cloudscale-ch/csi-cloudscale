@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	libraryVersion = "v1.11.0"
+	libraryVersion = "v4.0.0"
 	defaultBaseURL = "https://api.cloudscale.ch/"
 	userAgent      = "cloudscale/" + libraryVersion
 	mediaType      = "application/json"
@@ -34,17 +34,22 @@ type Client struct {
 	// User agent for client
 	UserAgent string
 
-	Regions            RegionService
-	Servers            ServerService
-	Volumes            VolumeService
-	Networks           NetworkService
-	Subnets            SubnetService
-	FloatingIPs        FloatingIPsService
-	ServerGroups       ServerGroupService
-	ObjectsUsers       ObjectsUsersService
-	CustomImages       CustomImageService
-	CustomImageImports CustomImageImportsService
-	Metrics            MetricsService
+	Regions                    RegionService
+	Servers                    ServerService
+	Volumes                    VolumeService
+	Networks                   NetworkService
+	Subnets                    SubnetService
+	FloatingIPs                FloatingIPsService
+	ServerGroups               ServerGroupService
+	ObjectsUsers               ObjectsUsersService
+	CustomImages               CustomImageService
+	CustomImageImports         CustomImageImportsService
+	LoadBalancers              LoadBalancerService
+	LoadBalancerPools          LoadBalancerPoolService
+	LoadBalancerPoolMembers    LoadBalancerPoolMemberService
+	LoadBalancerListeners      LoadBalancerListenerService
+	LoadBalancerHealthMonitors LoadBalancerHealthMonitorService
+	Metrics                    MetricsService
 }
 
 // NewClient returns a new CloudScale API client.
@@ -73,6 +78,25 @@ func NewClient(httpClient *http.Client) *Client {
 	c.ObjectsUsers = ObjectsUsersServiceOperations{client: c}
 	c.CustomImages = CustomImageServiceOperations{client: c}
 	c.CustomImageImports = CustomImageImportsServiceOperations{client: c}
+	c.LoadBalancers = GenericServiceOperations[LoadBalancer, LoadBalancerRequest, LoadBalancerRequest]{
+		client: c,
+		path:   loadBalancerBasePath,
+	}
+	c.LoadBalancerPools = GenericServiceOperations[LoadBalancerPool, LoadBalancerPoolRequest, LoadBalancerPoolRequest]{
+		client: c,
+		path:   loadBalancerPoolBasePath,
+	}
+	c.LoadBalancerPoolMembers = LoadBalancerPoolMemberServiceOperations{
+		client: c,
+	}
+	c.LoadBalancerListeners = GenericServiceOperations[LoadBalancerListener, LoadBalancerListenerRequest, LoadBalancerListenerRequest]{
+		client: c,
+		path:   loadBalancerListenerBasePath,
+	}
+	c.LoadBalancerHealthMonitors = GenericServiceOperations[LoadBalancerHealthMonitor, LoadBalancerHealthMonitorRequest, LoadBalancerHealthMonitorRequest]{
+		client: c,
+		path:   loadBalancerHealthMonitorBasePath,
+	}
 	c.Metrics = MetricsServiceOperations{client: c}
 
 	return c
