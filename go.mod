@@ -81,4 +81,4 @@ replace (
 	k8s.io/sample-controller => k8s.io/sample-controller v0.0.0-20190805142825-b16fad786282
 )
 
-go 1.18
+go 1.21
