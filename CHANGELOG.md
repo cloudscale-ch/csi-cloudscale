@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.4 - 2024.01.05
 * Update base image to newer alpine minor version.
 * Update go version used during build.
 * Update cloudscale-go-sdk to 4.0.0.
