@@ -296,7 +296,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	ll.Info("controller unpublish volume called")
 
 	// check if volume exist before trying to detach it
-	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
 		errorResponse, ok := err.(*cloudscale.ErrorResponse)
 		if ok {
@@ -307,6 +307,20 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		}
 		return nil, err
 	}
+
+	isAttachedToNode := false
+	for _, serverUUID := range *volume.ServerUUIDs {
+		if serverUUID == req.NodeId {
+			isAttachedToNode = true
+		}
+	}
+
+	if req.NodeId != "" && !isAttachedToNode {
+		ll.WithField("volume", volume).Warn("Volume is not attached to node given in request.")
+		return &csi.ControllerUnpublishVolumeResponse{}, nil
+	}
+
+	ll.WithField("volume", volume).Warn("Volume is attached to node given in request or NodeID in request is not set.")
 
 	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
