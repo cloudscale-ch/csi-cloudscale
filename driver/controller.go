@@ -315,12 +315,19 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 		}
 	}
 
+	ll = ll.WithFields(logrus.Fields{
+		"volume_api_uuid":     volume.UUID,
+		"volume_api_name":     volume.Name,
+		"volume_api_server":   volume.ServerUUIDs,
+		"is_attached_to_node": isAttachedToNode,
+	})
+
 	if req.NodeId != "" && !isAttachedToNode {
-		ll.WithField("volume", volume).Warn("Volume is not attached to node given in request.")
+		ll.Warn("Volume is not attached to node given in request.")
 		return &csi.ControllerUnpublishVolumeResponse{}, nil
 	}
 
-	ll.WithField("volume", volume).Warn("Volume is attached to node given in request or NodeID in request is not set.")
+	ll.Info("Volume is attached to node given in request or NodeID in request is not set.")
 
 	detachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{},
