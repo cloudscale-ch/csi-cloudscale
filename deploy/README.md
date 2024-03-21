@@ -35,6 +35,10 @@ You can **either** install the driver from your working directory
     # Install a specific Chart version or latest if --version is omitted
     helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ]
 
+You can verify that the csi-driver has been installed by running the following command and checking if the csi-cloudscale pods are running:
+
+    kubectl get pods -n kube-system
+
 Then execute the test suite:
 
     make test-integration
