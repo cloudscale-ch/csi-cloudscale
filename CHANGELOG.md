@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.5 - 2024.03.21
 * Take into account `ControllerUnpublishVolumeRequest.NodeId` in `ControllerUnpublishVolume` to prevent undesired detach operations during overlapping CSI calls.
 * Update base image to newer alpine minor version.
 
