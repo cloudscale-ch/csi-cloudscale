@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.5.6 - 2024.04.18
 * Add support for Kubernetes 1.30
 * 
 ## v3.5.5 - 2024.03.21
