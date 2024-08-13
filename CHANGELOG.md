@@ -1,8 +1,9 @@
 ## unreleased
 
 ## v3.5.6 - 2024.04.18
-* Add support for Kubernetes 1.30
-* 
+* ~~Add support for Kubernetes 1.30~~
+* No changes in the release
+
 ## v3.5.5 - 2024.03.21
 * Take into account `ControllerUnpublishVolumeRequest.NodeId` in `ControllerUnpublishVolume` to prevent undesired detach operations during overlapping CSI calls.
 * Update base image to newer alpine minor version.
