@@ -93,6 +93,7 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.29               | v3.3.0                           | v3.5.6                           |
 | 1.30               | v3.3.0                           | v3.5.6                           |
 | 1.31               | v3.3.0                           | v3.5.6                           |
+| 1.32               | v3.3.0                           | v3.5.6                           |
 
 **Requirements:**
 
