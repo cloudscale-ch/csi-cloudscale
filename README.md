@@ -95,6 +95,11 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.31               | v3.3.0                           | v3.5.6                           |
 | 1.32               | v3.3.0                           | v3.5.6                           |
 | 1.33               | v3.3.0                           | v3.5.6                           |
+| 1.34 [1]           | v3.3.0                           | v3.5.6                           |
+
+[1] Prometheus `kubelet_volume_stats_*` metrics not available in 1.34.0 due to a 
+    [bug in Kubelet](https://github.com/kubernetes/kubernetes/issues/133847).
+    We expect this to be fixed in `>1.34.0`.
 
 **Requirements:**
 
