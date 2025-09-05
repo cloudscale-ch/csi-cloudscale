@@ -6,7 +6,7 @@ set -euo pipefail
 
 # Default values
 RANDOM_NUMBER=$((RANDOM % 8193))
-K8TEST_SHA="4d32e52"
+K8TEST_SHA="ea272c0"
 ZONE="lpg1"
 CLUSTER_PREFIX="csi-test-$RANDOM_NUMBER"
 KUBERNETES="latest"
@@ -82,7 +82,7 @@ function ensure-k8test() {
   if [[ "${VIRTUAL_ENV:-}" == "" ]]; then
 
     if ! test -d k8test/venv; then
-      python3 -m venv k8test/venv
+      python3.12 -m venv k8test/venv
     fi
 
     # shellcheck source=/dev/null
@@ -90,7 +90,7 @@ function ensure-k8test() {
   fi
 
   if ! command -v poetry > /dev/null; then
-    pip install poetry
+    python3.12 -m pip install poetry
   fi
 
   if ! command -v ansible > /dev/null; then
