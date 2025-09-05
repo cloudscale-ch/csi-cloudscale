@@ -171,7 +171,7 @@ For a complete list please refer to [values.yaml](./charts/csi-cloudscale/values
 |-------------------------------------|------------------------------|--------------------------------------------------------------------------------------------|
 | attacher.resources                  | `{}`                         | Resource limits and requests for the attacher side-car.                                    |
 | cloudscale.apiUrl                   | `https://api.cloudscale.ch/` | URL of the cloudscale.ch API. You can almost certainly use the default.                    |
-| cloudscale.max_csi_volumes_per_node | `125`                        | Override [max. Number of CSI Volumes per Node](#Max.-Number-of-CSI-Volumes-per-Node).      |
+| cloudscale.max_csi_volumes_per_node | `125`                        | Override [max. Number of CSI Volumes per Node](#max-number-of-csi-volumes-per-node).       |
 | cloudscale.token.existingSecret     | `cloudscale`                 | Name of the Kubernetes Secret which contains the cloudscale.ch API Token.                  |
 | controller.resources                | `{}`                         | Resource limits and requests for the controller container.                                 |
 | controller.serviceAccountName       | `null`                       | Override the controller service account name.                                              |
