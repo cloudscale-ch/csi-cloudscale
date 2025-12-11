@@ -116,7 +116,7 @@ driverRegistrar:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-node-driver-registrar
-    tag: v2.5.1
+    tag: v2.15.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
