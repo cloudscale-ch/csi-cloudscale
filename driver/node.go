@@ -552,7 +552,7 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 
 	log.Info("mounting the volume")
 	if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
-		return status.Errorf(codes.Internal, err.Error())
+		return status.Errorf(codes.Internal, "%v", err)
 	}
 
 	return nil

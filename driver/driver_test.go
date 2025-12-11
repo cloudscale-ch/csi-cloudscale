@@ -20,8 +20,6 @@ package driver
 import (
 	"context"
 	"errors"
-	"github.com/google/uuid"
-	"k8s.io/mount-utils"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -29,6 +27,10 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/cenkalti/backoff/v5"
+	"github.com/google/uuid"
+	"k8s.io/mount-utils"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
@@ -95,11 +97,11 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 	userAgent := "cloudscale/" + "fake"
 	fakeClient := &cloudscale.Client{BaseURL: nil, UserAgent: userAgent}
 
-	fakeClient.Servers = FakeServerServiceOperations{
+	fakeClient.Servers = &FakeServerServiceOperations{
 		fakeClient: fakeClient,
 		servers:    initialServers,
 	}
-	fakeClient.Volumes = FakeVolumeServiceOperations{
+	fakeClient.Volumes = &FakeVolumeServiceOperations{
 		fakeClient: fakeClient,
 		volumes:    make(map[string]*cloudscale.Volume),
 	}
@@ -350,6 +352,14 @@ func (f FakeServerServiceOperations) Start(ctx context.Context, serverID string)
 }
 
 func (f FakeServerServiceOperations) Stop(ctx context.Context, serverID string) error {
+	panic("implement me")
+}
+
+func (f *FakeServerServiceOperations) WaitFor(ctx context.Context, id string, condition func(*cloudscale.Server) (bool, error), opts ...backoff.RetryOption) (*cloudscale.Server, error) {
+	panic("implement me")
+}
+
+func (f *FakeVolumeServiceOperations) WaitFor(ctx context.Context, id string, condition func(*cloudscale.Volume) (bool, error), opts ...backoff.RetryOption) (*cloudscale.Volume, error) {
 	panic("implement me")
 }
 
