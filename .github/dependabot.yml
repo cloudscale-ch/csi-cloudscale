@@ -12,8 +12,20 @@ updates:
     schedule:
       interval: "weekly"
 
+  # Check for helm updates
+  - package-ecosystem: "helm"
+    directory: "/charts/csi-cloudscale"
+    schedule:
+      interval: "weekly"
+
   # Check docker base image updates
   - package-ecosystem: "docker"
     directory: "/cmd/cloudscale-csi-plugin"
+    schedule:
+      interval: "weekly"
+
+  # Check docker side-car containers in helm updates
+  - package-ecosystem: "docker"
+    directory: "/charts/csi-cloudscale"
     schedule:
       interval: "weekly"
