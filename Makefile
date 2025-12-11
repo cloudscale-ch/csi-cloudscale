@@ -51,7 +51,7 @@ bump-chart-version:
 .PHONY: compile
 compile:
 	@echo "==> Building the project"
-	@docker run --rm -it -e GOOS=${OS} -e GOARCH=amd64 -v ${PWD}/:/app -w /app golang:${GO_VERSION}-alpine sh -c 'apk add git && go build -mod=vendor -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}'
+	@docker run --rm -it -e GOOS=${OS} -e GOARCH=amd64 -v ${PWD}/:/app -w /app golang:${GO_VERSION}-alpine sh -c 'apk add git && go build -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}'
 
 .PHONY: check-unused
 check-unused: vendor
@@ -60,12 +60,12 @@ check-unused: vendor
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@GO111MODULE=on go test -mod=vendor -v ./...
+	@GO111MODULE=on go test -v ./...
 
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env GO111MODULE=on go test -mod=vendor -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
+	@env GO111MODULE=on go test -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
