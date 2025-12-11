@@ -6,7 +6,7 @@ require (
 	github.com/golang/protobuf v1.5.3
 	github.com/google/uuid v1.3.0
 	github.com/kubernetes-csi/csi-test/v5 v5.0.0
-	github.com/sirupsen/logrus v1.8.3
+	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.7.0
 	golang.org/x/oauth2 v0.7.0
 	golang.org/x/sys v0.31.0
