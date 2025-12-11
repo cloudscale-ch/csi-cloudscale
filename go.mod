@@ -1,6 +1,7 @@
 module github.com/cloudscale-ch/csi-cloudscale
 
 require (
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cloudscale-ch/cloudscale-go-sdk/v4 v4.0.0
 	github.com/container-storage-interface/spec v1.6.0
 	github.com/golang/protobuf v1.5.3
