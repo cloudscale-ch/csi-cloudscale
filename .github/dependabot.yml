@@ -9,6 +9,7 @@ updates:
   # Check for Go module updates
   - package-ecosystem: "gomod"
     directory: "/"
+    dependency-type: "direct"
     schedule:
       interval: "weekly"
 
