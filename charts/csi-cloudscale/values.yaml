@@ -87,6 +87,7 @@ controller:
     tag: v3.5.6
     pullPolicy: IfNotPresent
   serviceAccountName:
+  logLevel: info
   resources: {}
 #     limits:
 #      cpu: 100m
@@ -104,6 +105,7 @@ node:
   nodeSelector: {}
   tolerations: []
   serviceAccountName:
+  logLevel: info
   resources: {}
 #     limits:
 #      cpu: 100m

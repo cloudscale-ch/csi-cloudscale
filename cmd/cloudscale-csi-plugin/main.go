@@ -24,6 +24,7 @@ import (
 	"os"
 
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -32,6 +33,7 @@ func main() {
 		token    = flag.String("token", "", "cloudscale.ch access token")
 		url      = flag.String("url", "https://api.cloudscale.ch/", "cloudscale.ch API URL")
 		version  = flag.Bool("version", false, "Print the version and exit.")
+		logLevel = flag.String("log-level", "info", "Log level (trace, debug, info, warn, error, fatal, panic)")
 	)
 	flag.Parse()
 
@@ -44,7 +46,12 @@ func main() {
 		os.Exit(0)
 	}
 
-	drv, err := driver.NewDriver(*endpoint, *token, *url)
+	level, err := logrus.ParseLevel(*logLevel)
+	if err != nil {
+		log.Fatalf("invalid log level %q: %v", *logLevel, err)
+	}
+
+	drv, err := driver.NewDriver(*endpoint, *token, *url, level)
 	if err != nil {
 		log.Fatalln(err)
 	}
