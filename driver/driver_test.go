@@ -35,6 +35,9 @@ import (
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
+	"k8s.io/mount-utils"
+
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
 )
 
 func init() {
@@ -174,9 +177,9 @@ func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSi
 	return true, nil
 }
 
-func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
+func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (string, error) {
 	path := "SomePath"
-	return &path, nil
+	return path, nil
 }
 
 type FakeVolumeServiceOperations struct {
