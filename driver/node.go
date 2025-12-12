@@ -27,14 +27,16 @@ package driver
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strconv"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	"os"
-	"strconv"
 )
 
 const (
@@ -71,11 +73,26 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// Apparently sometimes we need to call udevadm trigger to get the volume
 	// properly registered in /dev/disk. More information can be found here:
 	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	sourcePtr, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), req.VolumeId)
+	source, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(d.log.WithFields(logrus.Fields{"volume_id": req.VolumeId}), req.VolumeId)
 	if err != nil {
 		return nil, err
 	}
-	source := *sourcePtr
+
+	// Debug logging to help diagnose potential race conditions with concurrent volume mounts
+	resolvedSource, resolveErr := filepath.EvalSymlinks(source)
+	if resolveErr != nil {
+		d.log.WithFields(logrus.Fields{
+			"volume_id":    req.VolumeId,
+			"source":       source,
+			"resolve_error": resolveErr,
+		}).Debug("failed to resolve source symlink")
+	} else {
+		d.log.WithFields(logrus.Fields{
+			"volume_id":       req.VolumeId,
+			"source_symlink":  source,
+			"resolved_device": resolvedSource,
+		}).Debug("resolved source device path")
+	}
 
 	publishContext := req.GetPublishContext()
 	if publishContext == nil {

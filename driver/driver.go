@@ -48,10 +48,9 @@ var (
 
 // Driver implements the following CSI interfaces:
 //
-//   csi.IdentityServer
-//   csi.ControllerServer
-//   csi.NodeServer
-//
+//	csi.IdentityServer
+//	csi.ControllerServer
+//	csi.NodeServer
 type Driver struct {
 	endpoint string
 	serverId string
@@ -71,7 +70,7 @@ type Driver struct {
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing cloudscale.ch Volumes
-func NewDriver(ep, token, urlstr string) (*Driver, error) {
+func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error) {
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
 		AccessToken: token,
 	})
@@ -95,7 +94,9 @@ func NewDriver(ep, token, urlstr string) (*Driver, error) {
 	}
 	cloudscaleClient.BaseURL = baseURL
 
-	log := logrus.New().WithFields(logrus.Fields{
+	logger := logrus.New()
+	logger.SetLevel(logLevel)
+	log := logger.WithFields(logrus.Fields{
 		"zone":    zone,
 		"node_id": serverId,
 		"version": version,
@@ -172,7 +173,9 @@ func (d *Driver) Stop() {
 
 // When building any packages that import version, pass the build/install cmd
 // ldflags like so:
-//   go build -ldflags "-X github.com/cloudscale-ch/csi-cloudscale/driver.version=0.0.1"
+//
+//	go build -ldflags "-X github.com/cloudscale-ch/csi-cloudscale/driver.version=0.0.1"
+//
 // GetVersion returns the current release version, as inserted at build time.
 func GetVersion() string {
 	return version
