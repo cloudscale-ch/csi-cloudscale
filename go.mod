@@ -5,7 +5,7 @@ require (
 	github.com/cloudscale-ch/cloudscale-go-sdk/v4 v4.0.0
 	github.com/container-storage-interface/spec v1.6.0
 	github.com/golang/protobuf v1.5.4
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/kubernetes-csi/csi-test/v5 v5.0.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.7.0
