@@ -39,5 +39,4 @@ set -x
 # shellcheck disable=SC2086
 go mod edit ${deps[*]}
 go mod tidy
-go mod vendor
 set +x
