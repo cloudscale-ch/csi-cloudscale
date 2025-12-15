@@ -27,14 +27,15 @@ package driver
 
 import (
 	"context"
+	"os"
+	"strconv"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
 	utilexec "k8s.io/utils/exec"
-	"os"
-	"strconv"
 )
 
 const (
@@ -552,7 +553,7 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 
 	log.Info("mounting the volume")
 	if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
-		return status.Errorf(codes.Internal, err.Error())
+		return status.Error(codes.Internal, err.Error())
 	}
 
 	return nil

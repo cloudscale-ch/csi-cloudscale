@@ -261,7 +261,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
 		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
-			return nil, status.Errorf(codes.ResourceExhausted, err.Error())
+			return nil, status.Error(codes.ResourceExhausted, err.Error())
 		}
 
 		return nil, reraiseNotFound(err, ll, "attaching volume")
@@ -686,12 +686,12 @@ func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
 		})
 		if errorResponse.StatusCode == http.StatusNotFound {
 			lt.Warnf("%q: Server or volume not found", operation)
-			return status.Errorf(codes.NotFound, err.Error())
+			return status.Error(codes.NotFound, err.Error())
 		} else {
 			lt.Warnf("%q: operation failed", operation)
-			return status.Errorf(codes.Aborted, operation+": Request failed")
+			return status.Errorf(codes.Aborted, "%s: Request failed", operation)
 		}
 	}
 	log.Warnf("%q: random error", operation)
-	return status.Errorf(codes.Aborted, operation+": Random error")
+	return status.Errorf(codes.Aborted, "%s: Random error", operation)
 }
