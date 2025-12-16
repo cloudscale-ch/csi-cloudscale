@@ -74,10 +74,10 @@ build: compile
 
 .PHONY: push
 push:
-ifeq ($(DOCKER_REPO),cloudscalech/cloudscale-csi-plugin)
-  ifneq ($(BRANCH),master)
+ifeq ($(DOCKER_REPO),quay.io/cloudscalech/cloudscale-csi-plugin)
+  ifeq ($(filter master,$(BRANCH))$(filter release/%,$(BRANCH)),)
     ifneq ($(VERSION),dev)
-	  $(error "Only the `dev` tag can be published from non-master branches")
+	  $(error "Only the `dev` tag can be published from non-master/non-release branches")
     endif
   endif
 endif

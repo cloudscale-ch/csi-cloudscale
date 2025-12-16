@@ -417,6 +417,14 @@ $ make publish
 This will create a binary with version `v3.5.6` and docker image pushed to
 `cloudscalech/cloudscale-csi-plugin:v3.5.6`
 
+### Release a pre-release version
+
+To release a new pre-release (or a patch version based on an existing tag) version, follow the following steps:
+
+1. create a new branch called `release/x.y` (or with the full version)
+2. push it to GitHub
+3. Follow the flow for creating a new release, making sure to set the appropriate versions.
+
 ## Contributing
 
 At cloudscale.ch we value and love our community! If you have any issues or
