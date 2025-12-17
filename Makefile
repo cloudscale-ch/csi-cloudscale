@@ -60,7 +60,7 @@ check-unused:
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@GO111MODULE=on go test -v ./...
+	@GO111MODULE=on go test -v ./... $(TEST_ARGS)
 
 .PHONY: test-integration
 test-integration:
