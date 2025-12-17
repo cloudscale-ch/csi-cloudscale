@@ -1,4 +1,5 @@
 ## unreleased
+* Minimum supported Kubernetes version is now 1.28.
 
 ## v3.5.6 - 2024.04.18
 * ~~Add support for Kubernetes 1.30~~
