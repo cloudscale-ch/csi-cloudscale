@@ -1,9 +1,10 @@
 package driver
 
 import (
+	"testing"
+
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestCalculateStorageGBEmpty(t *testing.T) {
