@@ -63,8 +63,10 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-// This is a public CSI driver, therefor we pin all kubernetes modules to a single patch release to avoid issues vua trasitive dpeendencies or tooling.
-// This matches the approach by other cloud provider CSI drivers and ensures reprodcuible builds adn kublet behaivour.
+// This is a public CSI driver, therefore we pin all Kubernetes modules to a single patch release
+// to avoid issues via transitive dependencies or tooling.
+// This matches the approach used by other cloud provider CSI drivers and ensures reproducible
+// builds and consistent kubelet behaviour.
 // Run helpers/update-k8s.sh to update Kubernetes.
 
 replace k8s.io/api => k8s.io/api v0.28.15
