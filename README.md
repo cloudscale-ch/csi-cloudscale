@@ -366,13 +366,16 @@ After making your changes, run the unit tests:
 $ make test
 ```
 
-Note: If you want to run just a single test case, from `csi-test`, find the corresponding,
-`It` in the source code, and temporarly replace it with `FIt`, example:
+To run only the [csi-test](https://github.com/kubernetes-csi/csi-test) suite and filter
+which Ginkgo cases, pass flags via TEST_ARGS, for example:
 
 ```
-- It("should work if node-expand is called after node-publish", func() {
-+ FIt("should work if node-expand is called after node-publish", func() {
+$ make test TEST_ARGS='-run TestDriverSuite -args --ginkgo.skip="node-expand is called after node-publish"'
 ```
+
+Note for macOS users: the test case skipped in the example above is known to fail on macOS (see 
+[here](https://github.com/kubernetes/mount-utils/blob/cc92c79b5a6fcd4a0d6d5a1de2c55c7f6ddaa55c/resizefs_unsupported.go#L39-L41)).
+
 
 If you want to test your changes, create a new image with the version set to `dev`:
 
