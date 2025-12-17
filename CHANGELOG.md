@@ -1,5 +1,11 @@
 ## unreleased
 
+## v3.5.7-rc1 - 2025.12.17
+* Adjust udevadm calls & reorder them, and put them behind a mutex to avoid a potential race condition
+* Improve logging by adding debug logs
+* Add `--log-level=(trace|debug|info|warn|error)` flag to customize log level
+
+
 ## v3.5.6 - 2024.04.18
 * Add support for Kubernetes 1.30
 * 
