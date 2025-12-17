@@ -32,7 +32,7 @@ import (
 	"github.com/google/uuid"
 	"k8s.io/mount-utils"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v4"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
 )

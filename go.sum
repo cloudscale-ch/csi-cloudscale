@@ -41,8 +41,8 @@ github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWR
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
-github.com/cloudscale-ch/cloudscale-go-sdk/v4 v4.0.0 h1:sB3uRgv3UVAdnpGM2ZxR6H5XyCbLHLRmaLheq8drRt4=
-github.com/cloudscale-ch/cloudscale-go-sdk/v4 v4.0.0/go.mod h1:FfL+Dw1kbt/iutAP/vGqJV+1nu6azcKkYexjYIswDVw=
+github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.1 h1:2P+TKwtB50hogQ2neIPX+7ARNMy7vaDU9bkMGEhOz3k=
+github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.1/go.mod h1:NLC7XW7HqG0HggDaOBCvmf7WplTDaAqTF9u08yh6k0E=
 github.com/container-storage-interface/spec v1.12.0 h1:zrFOEqpR5AghNaaDG4qyedwPBqU2fU0dWjLQMP/azK0=
 github.com/container-storage-interface/spec v1.12.0/go.mod h1:txsm+MA2B2WDa5kW69jNbqPnvTtfvZma7T/zsAZ9qX8=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
