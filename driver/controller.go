@@ -142,7 +142,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		AccessibleTopology: []*csi.Topology{
 			{
 				Segments: map[string]string{
-					"zone": d.zone,
+					"csi.cloudscale.ch/zone": d.zone,
 				},
 			},
 		},
