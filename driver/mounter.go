@@ -22,8 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"k8s.io/mount-utils"
-	kexec "k8s.io/utils/exec"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +29,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"k8s.io/mount-utils"
+	kexec "k8s.io/utils/exec"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
