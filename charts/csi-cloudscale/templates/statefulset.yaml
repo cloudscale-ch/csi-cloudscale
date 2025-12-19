@@ -27,6 +27,7 @@ spec:
             - "--csi-address=$(ADDRESS)"
             - "--default-fstype=ext4"
             - "--v={{ .Values.provisioner.logLevelVerbosity }}"
+            - "--feature-gates=Topology=false"
           {{- with .Values.provisioner.resources }}
           resources:
 {{ toYaml . | indent 12 }}
