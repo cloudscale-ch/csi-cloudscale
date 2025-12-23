@@ -87,7 +87,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	if req.AccessibilityRequirements != nil {
 		for _, t := range req.AccessibilityRequirements.Requisite {
-			zone, ok := t.Segments["zone"]
+			zone, ok := t.Segments[topologyZonePrefix]
 			if !ok {
 				continue // nothing to do
 			}
@@ -142,7 +142,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		AccessibleTopology: []*csi.Topology{
 			{
 				Segments: map[string]string{
-					"zone": d.zone,
+					topologyZonePrefix: d.zone,
 				},
 			},
 		},

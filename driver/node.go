@@ -49,6 +49,8 @@ const (
 
 	volumeModeBlock      = "block"
 	volumeModeFilesystem = "filesystem"
+
+	topologyZonePrefix = "csi.cloudscale.ch/zone"
 )
 
 // NodeStageVolume mounts the volume to a staging path on the node. This is
@@ -336,7 +338,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 		// make sure that the driver works on this particular region only
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{
-				"csi.cloudscale.ch/zone": d.zone,
+				topologyZonePrefix: d.zone,
 			},
 		},
 	}, nil

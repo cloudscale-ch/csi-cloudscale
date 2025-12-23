@@ -38,7 +38,7 @@ provisioner:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-provisioner
-    tag: v3.2.1
+    tag: v5.3.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: 5
   resources: {}
@@ -53,7 +53,7 @@ attacher:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-attacher
-    tag: v4.0.0
+    tag: v4.10.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -68,7 +68,7 @@ resizer:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-resizer
-    tag: v1.6.0
+    tag: v2.0.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
@@ -116,7 +116,7 @@ driverRegistrar:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-node-driver-registrar
-    tag: v2.5.1
+    tag: v2.15.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
