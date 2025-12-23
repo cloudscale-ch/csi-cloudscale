@@ -29,12 +29,11 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/google/uuid"
-	"k8s.io/mount-utils"
-
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
+	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
+	"k8s.io/mount-utils"
 )
 
 func init() {
@@ -71,6 +70,7 @@ func TestDriverSuite(t *testing.T) {
 		cloudscaleClient: cloudscaleClient,
 		mounter:          fm,
 		log:              logrus.New().WithField("test_enabed", true),
+		volumeLocks:      NewVolumeLocks(),
 	}
 	defer driver.Stop()
 
@@ -174,9 +174,9 @@ func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSi
 	return true, nil
 }
 
-func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
+func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (string, error) {
 	path := "SomePath"
-	return &path, nil
+	return path, nil
 }
 
 type FakeVolumeServiceOperations struct {
