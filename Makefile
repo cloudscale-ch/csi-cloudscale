@@ -15,7 +15,7 @@ VERSION ?= $(shell cat VERSION)
 CHART_VERSION ?= $(shell awk '/^version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
 
-all: check-unused test
+all: lint check-unused test
 
 publish: build push clean
 
@@ -60,12 +60,12 @@ check-unused:
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@GO111MODULE=on go test -v ./... $(TEST_ARGS)
+	@GO111MODULE=on go test -race -v ./... $(TEST_ARGS)
 
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env GO111MODULE=on go test -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
+	@env GO111MODULE=on go test -race -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
@@ -93,3 +93,24 @@ clean:
 .PHONY: helm-template
 helm-template:
 	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale
+
+## Development tooling
+GOBIN=$(shell go env GOPATH)/bin
+GOLANGCI_LINT_VER=v2.8.0
+
+golangci-lint: $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER) ## installs golangci-lint if not yet installed
+	ln -sf $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER) $(GOBIN)/golangci-lint
+	golangci-lint --version
+$(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER):
+	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(GOBIN) $(GOLANGCI_LINT_VER)
+	mv $(GOBIN)/golangci-lint $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER)
+
+fmt: ## Run go fmt against code.
+	go fmt ./...
+
+vet: ## Run go vet against code.
+	go vet ./...
+
+.PHONY: lint
+lint: fmt vet golangci-lint ## Combined target to run linters
+	golangci-lint run --timeout 2m0s ./...

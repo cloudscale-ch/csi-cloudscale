@@ -84,7 +84,7 @@ controller:
   image:
     registry: quay.io
     repository: cloudscalech/cloudscale-csi-plugin
-    tag: v3.5.7-rc1
+    tag: v3.5.7-rc2
     pullPolicy: IfNotPresent
   serviceAccountName:
   logLevel: info
@@ -100,7 +100,7 @@ node:
   image:
     registry: quay.io
     repository: cloudscalech/cloudscale-csi-plugin
-    tag: v3.5.7-rc1
+    tag: v3.5.7-rc2
     pullPolicy: IfNotPresent
   nodeSelector: {}
   tolerations: []

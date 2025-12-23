@@ -65,6 +65,10 @@ type Driver struct {
 	mounter          Mounter
 	log              *logrus.Entry
 
+	// A map storing all volumes with ongoing operations so that additional operations
+	// for that same volume (as defined by VolumeID) return an Aborted error
+	volumeLocks *VolumeLocks
+
 	// ready defines whether the driver is ready to function. This value will
 	// be used by the `Identity` service via the `Probe()` method.
 	readyMu sync.Mutex // protects ready
@@ -113,6 +117,7 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 		cloudscaleClient: cloudscaleClient,
 		mounter:          newMounter(log),
 		log:              log,
+		volumeLocks:      NewVolumeLocks(),
 	}, nil
 }
 

@@ -20,7 +20,6 @@ package driver
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -204,9 +203,9 @@ func luksPrepareMount(source string, ctx LuksContext, log *logrus.Entry) (string
 		return "", err
 	}
 	defer func() {
-		e := os.Remove(filename)
-		if e != nil {
-			log.Errorf("cannot delete temporary file %s: %s", filename, e.Error())
+		err := os.Remove(filename)
+		if err != nil {
+			log.Errorf("cannot delete temporary file %s: %s", filename, err.Error())
 		}
 	}()
 
@@ -378,10 +377,14 @@ func writeLuksKey(key string, log *logrus.Entry) (string, error) {
 	if !checkTmpFs("/tmp") {
 		return "", errors.New("temporary directory /tmp is not a tmpfs volume; refusing to write luks key to a volume backed by a disk")
 	}
-	tmpFile, err := ioutil.TempFile("/tmp", "luks-")
+	tmpFile, err := os.CreateTemp("/tmp", "luks-")
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		_ = tmpFile.Close()
+	}()
+
 	_, err = tmpFile.WriteString(key)
 	if err != nil {
 		log.WithField("tmp_file", tmpFile.Name()).Warnf("Unable to write luks key file: %s", err.Error())

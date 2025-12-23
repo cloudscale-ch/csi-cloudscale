@@ -90,7 +90,6 @@ func TestCreateVolumeInvalidType(t *testing.T) {
 	)
 
 	assert.Error(t, err)
-	//assert.Error(t, err, "invalid volume capabilities requested for LUKS xx.")
 }
 
 func TestCreateVolumeInvalidLUKSAndRaw(t *testing.T) {
@@ -183,5 +182,6 @@ func createDriverForTest(t *testing.T) *Driver {
 		mounter:          &fakeMounter{},
 		log:              logrus.New().WithField("test_enabled", true),
 		cloudscaleClient: cloudscaleClient,
+		volumeLocks:      NewVolumeLocks(),
 	}
 }
