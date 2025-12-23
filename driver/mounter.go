@@ -25,14 +25,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
-
-	"k8s.io/mount-utils"
-	kexec "k8s.io/utils/exec"
 
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -204,7 +202,9 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		if err != nil {
 			return fmt.Errorf("failed to create target file for raw block bind mount: %v", err)
 		}
-		file.Close()
+		if err := file.Close(); err != nil {
+			m.log.WithFields(logrus.Fields{"target": target}).Error("failed to close file handle")
+		}
 	} else {
 		// create target, os.Mkdirall is noop if directory exists
 		err := os.MkdirAll(target, 0750)
@@ -222,6 +222,7 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 			}).Error("failed to prepare luks volume for mounting")
 			return err
 		}
+		// source is /dev/mapper/<volumeName> now
 		source = luksSource
 	}
 
@@ -267,6 +268,9 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 	// a luks volume needs to be closed after unmounting; get the source
 	// of the mount to check if that is a luks volume
 	mountSources, err := getMountSources(target)
+	if err != nil {
+		return fmt.Errorf("failed to get mount sources for target %q: %v", target, err)
+	}
 
 	err = mount.CleanupMountPoint(target, m.kMounter, true)
 	if err != nil {
@@ -476,15 +480,35 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volu
 				logger.WithFields(logrus.Fields{
 					"disk_id_path": diskIDPath,
 					"error":        err,
-				}).Debug("FinalizeVolumeAttachmentAndFindPath: found path but failed to resolve symlink")
-			} else {
+				}).Error("FinalizeVolumeAttachmentAndFindPath: found path but failed to resolve symlink")
+				return "", fmt.Errorf("FinalizeVolumeAttachmentAndFindPath: found path %s but failed to resolve symlink: %w", diskIDPath, err)
+			}
+			logger.WithFields(logrus.Fields{
+				"disk_id_path":    diskIDPath,
+				"resolved_device": resolved,
+				"num_tries":       numTries,
+			}).Debug("FinalizeVolumeAttachmentAndFindPath: found device path")
+
+			devFsSerial, innerErr := getScsiSerial(resolved)
+			if innerErr != nil {
 				logger.WithFields(logrus.Fields{
 					"disk_id_path":    diskIDPath,
 					"resolved_device": resolved,
 					"num_tries":       numTries,
-				}).Debug("FinalizeVolumeAttachmentAndFindPath: found device path")
+				}).Error("FinalizeVolumeAttachmentAndFindPath: unable to get device serial")
+				return "", fmt.Errorf("FinalizeVolumeAttachmentAndFindPath: unable to get serial number for disk %s at path %s: %w", diskIDPath, resolved, innerErr)
 			}
-			return diskIDPath, nil
+			// success: found a path in /dev/disk/by-id/* which resolved to a symlink in /dev/* and that returned the right serial.
+			if devFsSerial != "" && devFsSerial == volumeID {
+				logger.WithFields(logrus.Fields{
+					"disk_id_path":    diskIDPath,
+					"resolved_device": resolved,
+					"serial":          devFsSerial,
+					"num_tries":       numTries,
+				}).Debug("FinalizeVolumeAttachmentAndFindPath: found device and resolved serial")
+				return diskIDPath, nil
+			}
+			// A /dev/* path exists, but it's not matching the right serial. Attempt to repair by triggering udevadm.
 		}
 
 		logger.WithFields(logrus.Fields{
@@ -500,6 +524,41 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volu
 		time.Sleep(time.Second)
 	}
 	return "", errors.New("FinalizeVolumeAttachmentAndFindPath: Timeout after 30s")
+}
+
+// getScsiSerial assumes that scsiIdPath exists and will error if it
+// doesnt. It is the callers responsibility to verify the existence of this
+// tool. Calls scsi_id on the given devicePath to get the serial number reported
+// by that device.
+func getScsiSerial(devicePath string) (string, error) {
+	out, err := exec.Command(
+		"/usr/lib/udev/scsi_id",
+		"--page=0x83",
+		"--whitelisted",
+		fmt.Sprintf("--device=%v", devicePath)).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("scsi_id failed for device %q with output %s: %w", devicePath, string(out), err)
+	}
+
+	return parseScsiSerial(string(out))
+}
+
+var (
+	// scsi_id output should be in the form of:
+	// 0QEMU QEMU HARDDISK <disk id>
+	scsiPattern = `^0QEMU\s+QEMU\sHARDDISK\s+([\S]+)\s*$`
+	// regex to parse scsi_id output and extract the serial
+	scsiRegex = regexp.MustCompile(scsiPattern)
+)
+
+// Parse the output returned by scsi_id and extract the serial number
+func parseScsiSerial(output string) (string, error) {
+	substrings := scsiRegex.FindStringSubmatch(output)
+	if substrings == nil {
+		return "", fmt.Errorf("scsi_id output cannot be parsed: %q", output)
+	}
+
+	return substrings[1], nil
 }
 
 func runCmdWithTimeout(name string, args []string, logger *logrus.Entry, timeout time.Duration) {
