@@ -53,6 +53,7 @@ spec:
           args :
             - "--endpoint=$(CSI_ENDPOINT)"
             - "--url=$(CLOUDSCALE_API_URL)"
+            - "--log-level={{ .Values.node.logLevel }}"
           {{- with .Values.node.resources }}
           resources:
 {{ toYaml . | indent 12 }}
