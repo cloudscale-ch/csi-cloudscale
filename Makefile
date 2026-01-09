@@ -60,12 +60,12 @@ check-unused:
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@GO111MODULE=on go test -v ./... $(TEST_ARGS)
+	@GO111MODULE=on go test -race -v ./... $(TEST_ARGS)
 
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env GO111MODULE=on go test -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
+	@env GO111MODULE=on go test -race -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
