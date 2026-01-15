@@ -95,15 +95,6 @@ helm-template:
 	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale
 
 ## Development tooling
-GOBIN=$(shell go env GOPATH)/bin
-GOLANGCI_LINT_VER=v2.8.0
-
-golangci-lint: $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER) ## installs golangci-lint if not yet installed
-	ln -sf $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER) $(GOBIN)/golangci-lint
-	golangci-lint --version
-$(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER):
-	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(GOBIN) $(GOLANGCI_LINT_VER)
-	mv $(GOBIN)/golangci-lint $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VER)
 
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -112,5 +103,5 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: lint
-lint: fmt vet golangci-lint ## Combined target to run linters
-	golangci-lint run --timeout 2m0s ./...
+lint: fmt vet ## Combined target to run linters
+	go tool -modfile tool.mod golangci-lint run --timeout 2m0s ./...

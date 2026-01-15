@@ -226,24 +226,25 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		source = luksSource
 	}
 
-	// Resolve source symlink for debug logging
-	resolvedSource, resolveErr := filepath.EvalSymlinks(source)
-	if resolveErr != nil {
-		m.log.WithFields(logrus.Fields{
-			"source":        source,
-			"target":        target,
-			"fs_type":       fsType,
-			"options":       options,
-			"resolve_error": resolveErr,
-		}).Debug("Mount: failed to resolve source symlink")
-	} else {
-		m.log.WithFields(logrus.Fields{
-			"source":          source,
-			"resolved_source": resolvedSource,
-			"target":          target,
-			"fs_type":         fsType,
-			"options":         options,
-		}).Debug("Mount: resolved source device")
+	if m.log.Logger.IsLevelEnabled(logrus.DebugLevel) {
+		resolvedSource, resolveErr := filepath.EvalSymlinks(source)
+		if resolveErr != nil {
+			m.log.WithFields(logrus.Fields{
+				"source":        source,
+				"target":        target,
+				"fs_type":       fsType,
+				"options":       options,
+				"resolve_error": resolveErr,
+			}).Debug("Mount: failed to resolve source symlink")
+		} else {
+			m.log.WithFields(logrus.Fields{
+				"source":          source,
+				"resolved_source": resolvedSource,
+				"target":          target,
+				"fs_type":         fsType,
+				"options":         options,
+			}).Debug("Mount: resolved source device")
+		}
 	}
 
 	m.log.WithFields(logrus.Fields{

@@ -20,7 +20,6 @@ package driver
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -79,22 +78,6 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"volume_id":   req.VolumeId,
 		"device_path": source,
 	}).Info("successfully found attached volume_id at device_path")
-
-	// Debug logging to help diagnose potential race conditions with concurrent volume mounts
-	resolvedSource, resolveErr := filepath.EvalSymlinks(source)
-	if resolveErr != nil {
-		d.log.WithFields(logrus.Fields{
-			"volume_id":     req.VolumeId,
-			"source":        source,
-			"resolve_error": resolveErr,
-		}).Debug("failed to resolve source symlink")
-	} else {
-		d.log.WithFields(logrus.Fields{
-			"volume_id":       req.VolumeId,
-			"source_symlink":  source,
-			"resolved_device": resolvedSource,
-		}).Debug("resolved source device path")
-	}
 
 	publishContext := req.GetPublishContext()
 	if publishContext == nil {
