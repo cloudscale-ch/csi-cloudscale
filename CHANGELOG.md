@@ -1,4 +1,6 @@
 ## unreleased
+
+## v3.6.0 - 2026.01.15
 * The minimum supported Kubernetes version is now 1.28.
 * Upgrade all sidecars to latest version
   * Please note the RBAC changes as a result of this upgrade
