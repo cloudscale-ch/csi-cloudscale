@@ -25,21 +25,20 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/google/uuid"
-	"k8s.io/mount-utils"
-
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"k8s.io/mount-utils"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 const (
 	numDroplets = 100
@@ -71,10 +70,15 @@ func TestDriverSuite(t *testing.T) {
 		cloudscaleClient: cloudscaleClient,
 		mounter:          fm,
 		log:              logrus.New().WithField("test_enabed", true),
+		volumeLocks:      NewVolumeLocks(),
 	}
 	defer driver.Stop()
 
-	go driver.Run()
+	go func() {
+		if err := driver.Run(); err != nil {
+			panic(err)
+		}
+	}()
 
 	cfg := sanity.NewTestConfig()
 	if err := os.RemoveAll(cfg.TargetPath); err != nil {
@@ -111,6 +115,7 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 
 type fakeMounter struct {
 	mounted map[string]string
+	mu      sync.RWMutex
 }
 
 func (f *fakeMounter) Format(source string, fsType string, luksContext LuksContext) error {
@@ -118,16 +123,22 @@ func (f *fakeMounter) Format(source string, fsType string, luksContext LuksConte
 }
 
 func (f *fakeMounter) Mount(source string, target string, fsType string, luksContext LuksContext, options ...string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.mounted[target] = source
 	return nil
 }
 
 func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	delete(f.mounted, target)
 	return nil
 }
 
 func (f *fakeMounter) GetDeviceName(_ mount.Interface, mountPath string) (string, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	if _, ok := f.mounted[mountPath]; ok {
 		return "/mnt/sda1", nil
 	}
@@ -143,6 +154,8 @@ func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool,
 	return true, nil
 }
 func (f *fakeMounter) IsMounted(target string) (bool, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	_, ok := f.mounted[target]
 	return ok, nil
 }
@@ -174,9 +187,9 @@ func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSi
 	return true, nil
 }
 
-func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (*string, error) {
+func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (string, error) {
 	path := "SomePath"
-	return &path, nil
+	return path, nil
 }
 
 type FakeVolumeServiceOperations struct {
@@ -184,7 +197,7 @@ type FakeVolumeServiceOperations struct {
 	volumes    map[string]*cloudscale.Volume
 }
 
-func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
+func (f *FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
 	id := randString(32)
 	vol := &cloudscale.Volume{
 		UUID:        id,
@@ -204,7 +217,7 @@ func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *
 	return vol, nil
 }
 
-func (f FakeVolumeServiceOperations) Get(ctx context.Context, volumeID string) (*cloudscale.Volume, error) {
+func (f *FakeVolumeServiceOperations) Get(ctx context.Context, volumeID string) (*cloudscale.Volume, error) {
 	vol, ok := f.volumes[volumeID]
 	if ok != true {
 		return nil, generateNotFoundError()
@@ -212,7 +225,7 @@ func (f FakeVolumeServiceOperations) Get(ctx context.Context, volumeID string) (
 	return vol, nil
 }
 
-func (f FakeVolumeServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Volume, error) {
+func (f *FakeVolumeServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Volume, error) {
 	var volumes []cloudscale.Volume
 
 	for _, vol := range f.volumes {
@@ -254,7 +267,7 @@ func extractParams(modifiers []cloudscale.ListRequestModifier) url.Values {
 	return params
 }
 
-func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeRequest) error {
+func (f *FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeRequest) error {
 	vol, ok := f.volumes[volumeID]
 	if ok != true {
 		return generateNotFoundError()
@@ -267,7 +280,7 @@ func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string
 			}
 			if len(serverUUIDs) == 1 {
 				for _, serverUUID := range serverUUIDs {
-					_, err := f.fakeClient.Servers.Get(nil, serverUUID)
+					_, err := f.fakeClient.Servers.Get(ctx, serverUUID)
 					if err != nil {
 						return err
 					}
@@ -293,7 +306,7 @@ func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string
 	panic("implement me")
 }
 
-func getVolumesPerServer(f FakeVolumeServiceOperations, serverUUID string) int {
+func getVolumesPerServer(f *FakeVolumeServiceOperations, serverUUID string) int {
 	volumesCount := 0
 	for _, v := range f.volumes {
 		for _, uuid := range *v.ServerUUIDs {
@@ -305,7 +318,7 @@ func getVolumesPerServer(f FakeVolumeServiceOperations, serverUUID string) int {
 	return volumesCount
 }
 
-func (f FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
+func (f *FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
 	delete(f.volumes, volumeID)
 	return nil
 }
@@ -319,11 +332,11 @@ func (f *fakeMounter) IsBlockDevice(volumePath string) (bool, error) {
 	return false, nil
 }
 
-func (f FakeServerServiceOperations) Create(ctx context.Context, createRequest *cloudscale.ServerRequest) (*cloudscale.Server, error) {
+func (f *FakeServerServiceOperations) Create(ctx context.Context, createRequest *cloudscale.ServerRequest) (*cloudscale.Server, error) {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) Get(ctx context.Context, serverID string) (*cloudscale.Server, error) {
+func (f *FakeServerServiceOperations) Get(ctx context.Context, serverID string) (*cloudscale.Server, error) {
 	server, ok := f.servers[serverID]
 	if ok != true {
 		return nil, generateNotFoundError()
@@ -331,27 +344,27 @@ func (f FakeServerServiceOperations) Get(ctx context.Context, serverID string) (
 	return server, nil
 }
 
-func (f FakeServerServiceOperations) Update(ctx context.Context, serverID string, updateRequest *cloudscale.ServerUpdateRequest) error {
+func (f *FakeServerServiceOperations) Update(ctx context.Context, serverID string, updateRequest *cloudscale.ServerUpdateRequest) error {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) Delete(ctx context.Context, serverID string) error {
+func (f *FakeServerServiceOperations) Delete(ctx context.Context, serverID string) error {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Server, error) {
+func (f *FakeServerServiceOperations) List(ctx context.Context, modifiers ...cloudscale.ListRequestModifier) ([]cloudscale.Server, error) {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) Reboot(ctx context.Context, serverID string) error {
+func (f *FakeServerServiceOperations) Reboot(ctx context.Context, serverID string) error {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) Start(ctx context.Context, serverID string) error {
+func (f *FakeServerServiceOperations) Start(ctx context.Context, serverID string) error {
 	panic("implement me")
 }
 
-func (f FakeServerServiceOperations) Stop(ctx context.Context, serverID string) error {
+func (f *FakeServerServiceOperations) Stop(ctx context.Context, serverID string) error {
 	panic("implement me")
 }
 
@@ -393,4 +406,303 @@ func (g *idGenerator) GenerateUniqueValidNodeID() string {
 
 func (g *idGenerator) GenerateInvalidNodeID() string {
 	return "not-an-integer"
+}
+
+// FakeBlockingMounter wraps fakeMounter and adds blocking capability for concurrency testing.
+// It blocks at FinalizeVolumeAttachmentAndFindPath, which is called early in NodeStageVolume
+// after acquiring the volume lock.
+type FakeBlockingMounter struct {
+	*fakeMounter
+	ReadyToExecute chan chan struct{}
+}
+
+// FinalizeVolumeAttachmentAndFindPath blocks until signaled, allowing tests to control
+// the order of execution for concurrency testing.
+func (f *FakeBlockingMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (string, error) {
+	executeOp := make(chan struct{})
+	f.ReadyToExecute <- executeOp
+	<-executeOp
+	return f.fakeMounter.FinalizeVolumeAttachmentAndFindPath(logger, volumeID)
+}
+
+// NewFakeBlockingMounter creates a new FakeBlockingMounter with the given channel.
+func NewFakeBlockingMounter(readyToExecute chan chan struct{}) *FakeBlockingMounter {
+	return &FakeBlockingMounter{
+		fakeMounter: &fakeMounter{
+			mounted: map[string]string{},
+		},
+		ReadyToExecute: readyToExecute,
+	}
+}
+
+// initBlockingDriver creates a Driver with a FakeBlockingMounter for concurrency testing.
+func initBlockingDriver(t *testing.T, readyToExecute chan chan struct{}) *Driver {
+	serverId := "987654"
+	initialServers := map[string]*cloudscale.Server{
+		serverId: {UUID: serverId},
+	}
+	cloudscaleClient := NewFakeClient(initialServers)
+
+	return &Driver{
+		endpoint:         "unix:///tmp/csi-test.sock",
+		serverId:         serverId,
+		zone:             DefaultZone.Slug,
+		cloudscaleClient: cloudscaleClient,
+		mounter:          NewFakeBlockingMounter(readyToExecute),
+		log:              logrus.New().WithField("test_enabled", true),
+		volumeLocks:      NewVolumeLocks(),
+	}
+}
+
+// TestNodeStageVolume_ConcurrentSameVolume tests that concurrent NodeStageVolume
+// operations on the same volume are properly serialized with volume locks.
+// The second operation should return codes.Aborted while the first is in progress.
+func TestNodeStageVolume_ConcurrentSameVolume(t *testing.T) {
+	readyToExecute := make(chan chan struct{}, 1)
+	driver := initBlockingDriver(t, readyToExecute)
+
+	// Create the volume in the fake client first
+	ctx := t.Context()
+	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+		Name:   "test-volume",
+		SizeGB: 10,
+		Type:   "ssd",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume: %v", err)
+	}
+	volumeID := vol.UUID
+
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          volumeID,
+		StagingTargetPath: "/mnt/staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{
+					FsType: "ext4",
+				},
+			},
+		},
+		PublishContext: map[string]string{
+			LuksEncryptedAttribute: "false",
+			PublishInfoVolumeName:  "test-volume",
+		},
+	}
+
+	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
+		response := make(chan error, 1)
+		go func() {
+			_, err := driver.NodeStageVolume(context.Background(), req)
+			response <- err
+		}()
+		return response
+	}
+
+	// Start first NodeStageVolume and block until it reaches FinalizeVolumeAttachmentAndFindPath
+	respA := runNodeStage(req)
+	execA := <-readyToExecute
+
+	// Start second NodeStageVolume on the same volume - should get Aborted immediately
+	respB := runNodeStage(req)
+	select {
+	case err := <-respB:
+		if err == nil {
+			t.Errorf("Expected error for concurrent operation on same volume, got nil")
+		} else {
+			serverError, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("Could not get error status code from err: %v", err)
+			}
+			if serverError.Code() != codes.Aborted {
+				t.Errorf("Expected error code: %v, got: %v. err: %v", codes.Aborted, serverError.Code(), err)
+			}
+		}
+	case <-readyToExecute:
+		t.Errorf("The operation for second NodeStageVolume should have been aborted, but was started")
+	case <-time.After(time.Second):
+		t.Errorf("Timeout waiting for second operation to return Aborted")
+	}
+
+	// Clean up: allow first operation to complete
+	execA <- struct{}{}
+	<-respA
+}
+
+// TestNodeStageVolume_ConcurrentDifferentVolumes tests that concurrent NodeStageVolume
+// operations on different volumes can proceed in parallel without blocking each other.
+func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
+	readyToExecute := make(chan chan struct{}, 2)
+	driver := initBlockingDriver(t, readyToExecute)
+
+	ctx := t.Context()
+
+	// Create two different volumes
+	vol1, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+		Name:   "test-volume-1",
+		SizeGB: 10,
+		Type:   "ssd",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume 1: %v", err)
+	}
+
+	vol2, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+		Name:   "test-volume-2",
+		SizeGB: 10,
+		Type:   "ssd",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume 2: %v", err)
+	}
+
+	makeReq := func(volumeID, stagingPath, volumeName string) *csi.NodeStageVolumeRequest {
+		return &csi.NodeStageVolumeRequest{
+			VolumeId:          volumeID,
+			StagingTargetPath: stagingPath,
+			VolumeCapability: &csi.VolumeCapability{
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+				},
+				AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{
+						FsType: "ext4",
+					},
+				},
+			},
+			PublishContext: map[string]string{
+				LuksEncryptedAttribute: "false",
+				PublishInfoVolumeName:  volumeName,
+			},
+		}
+	}
+
+	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
+		response := make(chan error, 1)
+		go func() {
+			_, err := driver.NodeStageVolume(context.Background(), req)
+			response <- err
+		}()
+		return response
+	}
+
+	req1 := makeReq(vol1.UUID, "/mnt/staging1", vol1.Name)
+	req2 := makeReq(vol2.UUID, "/mnt/staging2", vol2.Name)
+
+	// Start first NodeStageVolume on volume 1 - will block
+	resp1 := runNodeStage(req1)
+	exec1 := <-readyToExecute
+
+	// Start second NodeStageVolume on volume 2 - should also start (different volume)
+	resp2 := runNodeStage(req2)
+
+	select {
+	case exec2 := <-readyToExecute:
+		// Good - operation 2 started, allow both to complete
+		exec1 <- struct{}{}
+		exec2 <- struct{}{}
+	case err := <-resp2:
+		t.Errorf("Operation 2 returned error instead of starting: %v", err)
+	case <-time.After(time.Second):
+		t.Errorf("Timeout waiting for second operation to start")
+	}
+
+	// Wait for both operations to complete
+	if err := <-resp1; err != nil {
+		t.Errorf("Unexpected error from operation 1: %v", err)
+	}
+	if err := <-resp2; err != nil {
+		t.Errorf("Unexpected error from operation 2: %v", err)
+	}
+}
+
+// TestNodeOperations_CrossOperationLocking tests that different node operations
+// (e.g., NodeStageVolume and NodeUnstageVolume) on the same volume are properly
+// serialized using volume locks.
+func TestNodeOperations_CrossOperationLocking(t *testing.T) {
+	readyToExecute := make(chan chan struct{}, 1)
+	driver := initBlockingDriver(t, readyToExecute)
+
+	ctx := t.Context()
+
+	// Create a volume
+	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+		Name:   "test-volume",
+		SizeGB: 10,
+		Type:   "ssd",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume: %v", err)
+	}
+
+	stageReq := &csi.NodeStageVolumeRequest{
+		VolumeId:          vol.UUID,
+		StagingTargetPath: "/mnt/staging",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{
+					FsType: "ext4",
+				},
+			},
+		},
+		PublishContext: map[string]string{
+			LuksEncryptedAttribute: "false",
+		},
+	}
+
+	unstageReq := &csi.NodeUnstageVolumeRequest{
+		VolumeId:          vol.UUID,
+		StagingTargetPath: "/mnt/staging",
+	}
+
+	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
+		response := make(chan error, 1)
+		go func() {
+			_, err := driver.NodeStageVolume(context.Background(), req)
+			response <- err
+		}()
+		return response
+	}
+
+	runNodeUnstage := func(req *csi.NodeUnstageVolumeRequest) <-chan error {
+		response := make(chan error, 1)
+		go func() {
+			_, err := driver.NodeUnstageVolume(context.Background(), req)
+			response <- err
+		}()
+		return response
+	}
+
+	// Start NodeStageVolume and block
+	respStage := runNodeStage(stageReq)
+	execStage := <-readyToExecute
+
+	// Start NodeUnstageVolume on the same volume - should get Aborted
+	respUnstage := runNodeUnstage(unstageReq)
+
+	select {
+	case err := <-respUnstage:
+		if err == nil {
+			t.Errorf("Expected error for concurrent operation on same volume, got nil")
+		} else {
+			serverError, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("Could not get error status code from err: %v", err)
+			}
+			if serverError.Code() != codes.Aborted {
+				t.Errorf("Expected error code: %v, got: %v. err: %v", codes.Aborted, serverError.Code(), err)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Errorf("Timeout waiting for unstage operation to return Aborted")
+	}
+
+	// Clean up: allow stage operation to complete
+	execStage <- struct{}{}
+	<-respStage
 }
