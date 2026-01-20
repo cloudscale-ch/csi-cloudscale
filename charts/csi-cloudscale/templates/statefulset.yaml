@@ -72,6 +72,18 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/
+        - name: csi-snapshotter
+          image: "{{ .Values.snapshotter.image.registry }}/{{ .Values.snapshotter.image.repository }}:{{ .Values.snapshotter.image.tag }}"
+          args:
+            - "--csi-address=$(CSI_ENDPOINT)"
+            - "--leader-election=true"
+            - "--v=5"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
         - name: csi-cloudscale-plugin
           image: "{{ .Values.controller.image.registry }}/{{ .Values.controller.image.repository }}:{{ .Values.controller.image.tag }}"
           args :

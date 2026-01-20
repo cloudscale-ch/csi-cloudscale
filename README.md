@@ -69,6 +69,26 @@ The current version is: **`v3.5.6`**.
 
 ## Installing to Kubernetes
 
+Follow these steps to deploy the cloudscale.ch CSI driver to your Kubernetes cluster.
+
+### Prerequisites for Snapshot Support
+
+To use CSI snapshots with this driver, your cluster must have the VolumeSnapshot CRDs and the snapshot controller installed.
+
+Note: Some Kubernetes distributions already include these CRDs and controllers. You only need to apply them manually if your cluster does not provide them.
+
+Install the snapshot resources:
+```
+# Create the necessary CRDs
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
+
+# Install snapshot controller with RBAC
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+```
+
 ### Kubernetes Compatibility
 
 The following table describes the required cloudscale.ch driver version per
