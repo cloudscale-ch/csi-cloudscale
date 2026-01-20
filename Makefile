@@ -15,7 +15,7 @@ VERSION ?= $(shell cat VERSION)
 CHART_VERSION ?= $(shell awk '/^version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
 
-all: check-unused test
+all: lint check-unused test
 
 publish: build push clean
 
@@ -60,12 +60,12 @@ check-unused:
 .PHONY: test
 test:
 	@echo "==> Testing all packages"
-	@GO111MODULE=on go test -v ./... $(TEST_ARGS)
+	@GO111MODULE=on go test -race -v ./... $(TEST_ARGS)
 
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env GO111MODULE=on go test -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
+	@env GO111MODULE=on go test -race -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
 
 .PHONY: build
 build: compile
@@ -74,10 +74,10 @@ build: compile
 
 .PHONY: push
 push:
-ifeq ($(DOCKER_REPO),cloudscalech/cloudscale-csi-plugin)
-  ifneq ($(BRANCH),master)
+ifeq ($(DOCKER_REPO),quay.io/cloudscalech/cloudscale-csi-plugin)
+  ifeq ($(filter master,$(BRANCH))$(filter release/%,$(BRANCH)),)
     ifneq ($(VERSION),dev)
-	  $(error "Only the `dev` tag can be published from non-master branches")
+	  $(error "Only the `dev` tag can be published from non-master/non-release branches")
     endif
   endif
 endif
@@ -93,3 +93,15 @@ clean:
 .PHONY: helm-template
 helm-template:
 	@helm template csi-cloudscale -n kube-system --set nameOverride=csi-cloudscale ./charts/csi-cloudscale
+
+## Development tooling
+
+fmt: ## Run go fmt against code.
+	go fmt ./...
+
+vet: ## Run go vet against code.
+	go vet ./...
+
+.PHONY: lint
+lint: fmt vet ## Combined target to run linters
+	go tool -modfile tool.mod golangci-lint run --timeout 2m0s ./...

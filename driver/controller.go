@@ -68,7 +68,7 @@ var (
 
 	// maxVolumesPerServerErrorMessage is the error message returned by the cloudscale.ch
 	// API when the per-server volume limit would be exceeded.
-	maxVolumesPerServerErrorMessageRe = regexp.MustCompile("Due to internal limitations, it is currently not possible to attach more than \\d+ volumes")
+	maxVolumesPerServerErrorMessageRe = regexp.MustCompile(`Due to internal limitations, it is currently not possible to attach more than \d+ volumes`)
 )
 
 // CreateVolume creates a new volume from the given request. The function is
@@ -78,7 +78,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Name must be provided")
 	}
 
-	if req.VolumeCapabilities == nil || len(req.VolumeCapabilities) == 0 {
+	if len(req.VolumeCapabilities) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume Volume capabilities must be provided")
 	}
 

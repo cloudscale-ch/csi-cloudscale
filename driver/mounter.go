@@ -18,23 +18,24 @@ limitations under the License.
 package driver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
-	"k8s.io/mount-utils"
-	kexec "k8s.io/utils/exec"
-
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
+	"k8s.io/mount-utils"
+	kexec "k8s.io/utils/exec"
 )
 
 const (
@@ -87,7 +88,7 @@ type Mounter interface {
 
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
-	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, VolumeId string) (*string, error)
+	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, VolumeId string) (string, error)
 
 	// GetStatistics returns capacity-related volume statistics for the given
 	// volume path.
@@ -201,7 +202,9 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		if err != nil {
 			return fmt.Errorf("failed to create target file for raw block bind mount: %v", err)
 		}
-		file.Close()
+		if err := file.Close(); err != nil {
+			m.log.WithFields(logrus.Fields{"target": target}).Error("failed to close file handle")
+		}
 	} else {
 		// create target, os.Mkdirall is noop if directory exists
 		err := os.MkdirAll(target, 0750)
@@ -219,10 +222,34 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 			}).Error("failed to prepare luks volume for mounting")
 			return err
 		}
+		// source is /dev/mapper/<volumeName> now
 		source = luksSource
 	}
 
+	if m.log.Logger.IsLevelEnabled(logrus.DebugLevel) {
+		resolvedSource, resolveErr := filepath.EvalSymlinks(source)
+		if resolveErr != nil {
+			m.log.WithFields(logrus.Fields{
+				"source":        source,
+				"target":        target,
+				"fs_type":       fsType,
+				"options":       options,
+				"resolve_error": resolveErr,
+			}).Debug("Mount: failed to resolve source symlink")
+		} else {
+			m.log.WithFields(logrus.Fields{
+				"source":          source,
+				"resolved_source": resolvedSource,
+				"target":          target,
+				"fs_type":         fsType,
+				"options":         options,
+			}).Debug("Mount: resolved source device")
+		}
+	}
+
 	m.log.WithFields(logrus.Fields{
+		"source":  source,
+		"target":  target,
 		"options": options,
 	}).Info("executing mount command")
 	err := m.kMounter.Mount(source, target, fsType, options)
@@ -242,6 +269,9 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 	// a luks volume needs to be closed after unmounting; get the source
 	// of the mount to check if that is a luks volume
 	mountSources, err := getMountSources(target)
+	if err != nil {
+		return fmt.Errorf("failed to get mount sources for target %q: %v", target, err)
+	}
 
 	err = mount.CleanupMountPoint(target, m.kMounter, true)
 	if err != nil {
@@ -419,7 +449,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-func guessDiskIDPathByVolumeID(volumeID string) *string {
+func guessDiskIDPathByVolumeID(volumeID string, logger *logrus.Entry) string {
 	// Get the first part of the UUID.
 	// The linux kernel limits volume serials to 20 bytes:
 	// include/uapi/linux/virtio_blk.h:#define VIRTIO_BLK_ID_BYTES 20 /* ID string length */
@@ -427,64 +457,158 @@ func guessDiskIDPathByVolumeID(volumeID string) *string {
 
 	globExpr := diskIDPath + "/*" + linuxSerial + "*"
 	matches, _ := filepath.Glob(globExpr)
+
+	logger.WithFields(logrus.Fields{
+		"volumeID":    volumeID,
+		"linuxSerial": linuxSerial,
+		"matches":     matches,
+	}).Debug("guessDiskIDPathByVolumeID")
+
 	if len(matches) > 0 {
-		return &matches[0]
+		return matches[0]
 	}
-	return nil
+	return ""
 }
 
-func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (*string, error) {
+func (m *mounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (string, error) {
 	numTries := 0
 	for {
-		probeAttachedVolume(logger)
+		diskIDPath := guessDiskIDPathByVolumeID(volumeID, logger)
+		if diskIDPath != "" {
+			// Resolve and log the actual device for debugging
+			resolved, err := filepath.EvalSymlinks(diskIDPath)
+			if err != nil {
+				logger.WithFields(logrus.Fields{
+					"disk_id_path": diskIDPath,
+					"error":        err,
+				}).Error("FinalizeVolumeAttachmentAndFindPath: found path but failed to resolve symlink")
+				return "", fmt.Errorf("FinalizeVolumeAttachmentAndFindPath: found path %s but failed to resolve symlink: %w", diskIDPath, err)
+			}
+			logger.WithFields(logrus.Fields{
+				"disk_id_path":    diskIDPath,
+				"resolved_device": resolved,
+				"num_tries":       numTries,
+			}).Debug("FinalizeVolumeAttachmentAndFindPath: found device path")
 
-		diskIDPath := guessDiskIDPathByVolumeID(volumeID)
-		if diskIDPath != nil {
-			return diskIDPath, nil
+			devFsSerial, innerErr := getScsiSerial(resolved)
+			if innerErr != nil {
+				logger.WithFields(logrus.Fields{
+					"disk_id_path":    diskIDPath,
+					"resolved_device": resolved,
+					"num_tries":       numTries,
+				}).Error("FinalizeVolumeAttachmentAndFindPath: unable to get device serial")
+				return "", fmt.Errorf("FinalizeVolumeAttachmentAndFindPath: unable to get serial number for disk %s at path %s: %w", diskIDPath, resolved, innerErr)
+			}
+			// success: found a path in /dev/disk/by-id/* which resolved to a symlink in /dev/* and that returned the right serial.
+			if devFsSerial != "" && devFsSerial == volumeID {
+				logger.WithFields(logrus.Fields{
+					"disk_id_path":    diskIDPath,
+					"resolved_device": resolved,
+					"serial":          devFsSerial,
+					"num_tries":       numTries,
+				}).Debug("FinalizeVolumeAttachmentAndFindPath: found device and resolved serial")
+				return diskIDPath, nil
+			}
+			// A /dev/* path exists, but it's not matching the right serial. Attempt to repair by triggering udevadm.
 		}
 
+		logger.WithFields(logrus.Fields{
+			"num_tries": numTries,
+		}).Debug("FinalizeVolumeAttachmentAndFindPath: device not found, probing")
+
+		probeAttachedVolume(logger)
+
 		numTries++
-		if numTries == 10 {
+		if numTries == 30 {
 			break
 		}
 		time.Sleep(time.Second)
 	}
-	return nil, errors.New("Could not attach disk: Timeout after 10s")
+	return "", errors.New("FinalizeVolumeAttachmentAndFindPath: Timeout after 30s")
 }
 
-func probeAttachedVolume(logger *logrus.Entry) error {
-	// rescan scsi bus
-	scsiHostRescan()
-
-	// udevadm settle waits for udevd to process the device creation
-	// events for all hardware devices, thus ensuring that any device
-	// nodes have been created successfully before proceeding.
-	argsSettle := []string{"settle"}
-	cmdSettle := exec.Command("udevadm", argsSettle...)
-	_, errSettle := cmdSettle.CombinedOutput()
-	if errSettle != nil {
-		logger.Errorf("error running udevadm settle %v\n", errSettle)
-	}
-
-	args := []string{"trigger"}
-	cmd := exec.Command("udevadm", args...)
-	_, err := cmd.CombinedOutput()
+// getScsiSerial assumes that scsiIdPath exists and will error if it
+// doesnt. It is the callers responsibility to verify the existence of this
+// tool. Calls scsi_id on the given devicePath to get the serial number reported
+// by that device.
+func getScsiSerial(devicePath string) (string, error) {
+	out, err := exec.Command(
+		"/usr/lib/udev/scsi_id",
+		"--page=0x83",
+		"--whitelisted",
+		fmt.Sprintf("--device=%v", devicePath)).CombinedOutput()
 	if err != nil {
-		logger.Errorf("error running udevadm trigger %v\n", err)
-		return err
+		return "", fmt.Errorf("scsi_id failed for device %q with output %s: %w", devicePath, string(out), err)
 	}
-	logger.Debugf("Successfully probed all attachments")
-	return nil
+
+	return parseScsiSerial(string(out))
 }
 
-func scsiHostRescan() {
-	scsiPath := "/sys/class/scsi_host/"
-	if dirs, err := ioutil.ReadDir(scsiPath); err == nil {
-		for _, f := range dirs {
-			name := scsiPath + f.Name() + "/scan"
-			data := []byte("- - -")
-			ioutil.WriteFile(name, data, 0666)
-		}
+var (
+	// scsi_id output should be in the form of:
+	// 0QEMU QEMU HARDDISK <disk id>
+	scsiPattern = `^0QEMU\s+QEMU\sHARDDISK\s+([\S]+)\s*$`
+	// regex to parse scsi_id output and extract the serial
+	scsiRegex = regexp.MustCompile(scsiPattern)
+)
+
+// Parse the output returned by scsi_id and extract the serial number
+func parseScsiSerial(output string) (string, error) {
+	substrings := scsiRegex.FindStringSubmatch(output)
+	if substrings == nil {
+		return "", fmt.Errorf("scsi_id output cannot be parsed: %q", output)
+	}
+
+	return substrings[1], nil
+}
+
+func runCmdWithTimeout(name string, args []string, logger *logrus.Entry, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	if err != nil {
+		logger.WithError(err).
+			WithFields(logrus.Fields{"out": out, "name": name, "args": args}).
+			Warn("unable to run cmd " + name)
+	}
+}
+
+var probeLock sync.Mutex
+
+func probeAttachedVolume(logger *logrus.Entry) {
+	const triggerTimeout = 15 * time.Second
+
+	// host rescan and udevadm are global actions and if run concurrently, may run into issues with
+	// symlinking and partial updates.
+	probeLock.Lock()
+	defer probeLock.Unlock()
+
+	// rescan scsi bus
+	logger.Debug("probeAttachedVolume: rescanning SCSI hosts")
+	scsiHostRescan(logger)
+
+	logger.Debug("probeAttachedVolume: running udevadm trigger")
+	runCmdWithTimeout("udevadm", []string{"trigger"}, logger, triggerTimeout)
+
+	logger.Debug("probeAttachedVolume: running udevadm settle")
+	runCmdWithTimeout("udevadm", []string{"settle"}, logger, triggerTimeout)
+
+	logger.Debugf("probeAttachedVolume: done")
+}
+
+func scsiHostRescan(logger *logrus.Entry) {
+	const scsiPath = "/sys/class/scsi_host/"
+	dirs, err := os.ReadDir(scsiPath)
+	if err != nil {
+		logger.WithError(err).Warn("scsiHostRescan: cannot read scsi_host directory")
+		return
+	}
+
+	for _, f := range dirs {
+		name := scsiPath + f.Name() + "/scan"
+		data := []byte("- - -")
+		_ = os.WriteFile(name, data, 0666)
 	}
 }
 
@@ -495,20 +619,20 @@ func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (stri
 
 // FindAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
 func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
-	path := guessDiskIDPathByVolumeID(volumeName)
-	if path == nil {
+	path := guessDiskIDPathByVolumeID(volumeName, m.log)
+	if path == "" {
 		return "", fmt.Errorf("could not find device-path for volume: %s", volumeName)
 	}
 
 	// EvalSymlinks returns relative link if the file is not a symlink
 	// so we do not have to check if it is symlink prior to evaluation
-	resolved, err := filepath.EvalSymlinks(*path)
+	resolved, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return "", fmt.Errorf("could not resolve symlink %q: %v", *path, err)
+		return "", fmt.Errorf("could not resolve symlink %q: %v", path, err)
 	}
 
 	if !strings.HasPrefix(resolved, "/dev") {
-		return "", fmt.Errorf("resolved symlink %q for %q was unexpected", resolved, *path)
+		return "", fmt.Errorf("resolved symlink %q for %q was unexpected", resolved, path)
 	}
 
 	return resolved, nil

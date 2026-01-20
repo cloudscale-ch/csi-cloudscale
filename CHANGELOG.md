@@ -1,5 +1,14 @@
 ## unreleased
-* Minimum supported Kubernetes version is now 1.28.
+
+## v3.6.0 - 2026.01.15
+* The minimum supported Kubernetes version is now 1.28.
+* Upgrade all sidecars to latest version
+  * Please note the RBAC changes as a result of this upgrade
+* Fix race conditions on stage/unstage/publish/unpublish volume
+  * Add volume locks to avoid concurrent operations on the same volume
+  * Add detection if symlinks don't add up to the right volume
+  * Adjust udevadm calls & reorder them and put them behind a mutex to avoid a potential race condition
+* Add `--log-level=(trace|debug|info|warn|error)` flag to customize log level
 
 ## v3.5.6 - 2024.04.18
 * ~~Add support for Kubernetes 1.30~~
