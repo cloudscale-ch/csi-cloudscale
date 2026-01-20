@@ -106,6 +106,11 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 		volumes:    make(map[string]*cloudscale.Volume),
 	}
 
+	fakeClient.VolumeSnapshots = &FakeVolumeSnapshotServiceOperations{
+		fakeClient: fakeClient,
+		snapshots:  make(map[string]*cloudscale.VolumeSnapshot),
+	}
+
 	return fakeClient
 }
 
@@ -184,8 +189,13 @@ type FakeVolumeServiceOperations struct {
 	volumes    map[string]*cloudscale.Volume
 }
 
-func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
+func (f FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeCreateRequest) (*cloudscale.Volume, error) {
 	id := randString(32)
+
+	// todo: CSI-test pass without this, but we could implement:
+	// - check if volumeSnapshot is present. Return error if volumeSnapshot does not exist
+	// - create volume with inferred values form snapshot.
+
 	vol := &cloudscale.Volume{
 		UUID:        id,
 		Name:        createRequest.Name,
@@ -254,7 +264,7 @@ func extractParams(modifiers []cloudscale.ListRequestModifier) url.Values {
 	return params
 }
 
-func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeRequest) error {
+func (f FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeUpdateRequest) error {
 	vol, ok := f.volumes[volumeID]
 	if ok != true {
 		return generateNotFoundError()
@@ -306,6 +316,23 @@ func getVolumesPerServer(f FakeVolumeServiceOperations, serverUUID string) int {
 }
 
 func (f FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
+
+	// prevent deletion if snapshots exist
+	snapshots, err := f.fakeClient.VolumeSnapshots.List(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	for _, snapshot := range snapshots {
+		if snapshot.Volume.UUID == volumeID {
+			return &cloudscale.ErrorResponse{
+				StatusCode: 409,
+				Message:    map[string]string{"detail": "volume has snapshots"},
+			}
+		}
+	}
+
 	delete(f.volumes, volumeID)
 	return nil
 }
@@ -360,6 +387,93 @@ func (f *FakeServerServiceOperations) WaitFor(ctx context.Context, id string, co
 }
 
 func (f *FakeVolumeServiceOperations) WaitFor(ctx context.Context, id string, condition func(*cloudscale.Volume) (bool, error), opts ...backoff.RetryOption) (*cloudscale.Volume, error) {
+	panic("implement me")
+}
+
+type FakeVolumeSnapshotServiceOperations struct {
+	fakeClient *cloudscale.Client
+	snapshots  map[string]*cloudscale.VolumeSnapshot
+}
+
+func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeSnapshotCreateRequest) (*cloudscale.VolumeSnapshot, error) {
+
+	vol, err := f.fakeClient.Volumes.Get(ctx, createRequest.SourceVolume)
+	if err != nil {
+		return nil, err
+	}
+
+	id := randString(32)
+	snap := &cloudscale.VolumeSnapshot{
+		UUID:      id,
+		Name:      createRequest.Name,
+		SizeGB:    vol.SizeGB,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Status:    "available",
+		Volume: cloudscale.VolumeStub{
+			UUID: createRequest.SourceVolume,
+		},
+	}
+
+	f.snapshots[id] = snap
+	return snap, nil
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) Get(
+	ctx context.Context,
+	snapshotID string,
+) (*cloudscale.VolumeSnapshot, error) {
+
+	snap, ok := f.snapshots[snapshotID]
+	if !ok {
+		return nil, generateNotFoundError()
+	}
+	return snap, nil
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) List(
+	ctx context.Context,
+	modifiers ...cloudscale.ListRequestModifier,
+) ([]cloudscale.VolumeSnapshot, error) {
+	var snapshots []cloudscale.VolumeSnapshot
+
+	for _, snapshot := range f.snapshots {
+		snapshots = append(snapshots, *snapshot)
+	}
+
+	if len(modifiers) == 0 {
+		return snapshots, nil
+	}
+	if len(modifiers) > 1 {
+		panic("implement me (support for more than one modifier)")
+	}
+
+	params := extractParams(modifiers)
+
+	if filterName := params.Get("name"); filterName != "" {
+		filtered := make([]cloudscale.VolumeSnapshot, 0, 1)
+		for _, snapshot := range snapshots {
+			if snapshot.Name == filterName {
+				filtered = append(filtered, snapshot)
+			}
+		}
+		return filtered, nil
+	}
+
+	panic("implement me (support for unknown param)")
+}
+
+func (f FakeVolumeSnapshotServiceOperations) Update(ctx context.Context, resourceID string, updateRequest *cloudscale.VolumeSnapshotUpdateRequest) error {
+	panic("implement me")
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) Delete(
+	ctx context.Context,
+	snapshotID string,
+) error {
+	delete(f.snapshots, snapshotID)
+	return nil
+}
+func (f FakeVolumeSnapshotServiceOperations) WaitFor(ctx context.Context, resourceID string, condition func(resource *cloudscale.VolumeSnapshot) (bool, error), opts ...backoff.RetryOption) (*cloudscale.VolumeSnapshot, error) {
 	panic("implement me")
 }
 
