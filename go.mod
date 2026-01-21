@@ -127,4 +127,4 @@ replace k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.15
 
 replace k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.15
 
-go 1.24.0
+go 1.25.5
