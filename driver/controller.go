@@ -383,6 +383,11 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	if err != nil {
 		errorResponse, ok := err.(*cloudscale.ErrorResponse)
 		if ok {
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Warn("cloudscale API returned error during volume deletion")
+
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
@@ -391,6 +396,14 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 					"resp":  errorResponse,
 				}).Warn("assuming volume is already deleted")
 				return &csi.DeleteVolumeResponse{}, nil
+			}
+
+			// Check if the error message indicates snapshots exist
+			if strings.Contains(err.Error(), "Snapshots exist") ||
+				strings.Contains(err.Error(), "snapshot") {
+				ll.Warn("volume has snapshots, cannot delete yet")
+				return nil, status.Error(codes.FailedPrecondition,
+					"volume has existing snapshots that must be deleted first")
 			}
 		}
 		return nil, err

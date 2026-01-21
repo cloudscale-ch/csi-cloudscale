@@ -233,6 +233,114 @@ func TestPod_Single_SSD_Volume_Snapshot(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc-original",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	originalVolume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, originalVolume.SizeGB)
+	assert.Equal(t, "ssd", originalVolume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, 5*driver.GB, disk.FilesystemSize)
+
+	// store the original filesystem UUID to verify it's preserved after restore
+	originalFilesystemUUID := disk.FilesystemUUID
+
+	// create a snapshot of the volume
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+
+	// wait for the snapshot to be ready
+	waitForVolumeSnapshot(t, client, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, client, snapshot.Name)
+	assert.NotNil(t, snapshot.Status)
+	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	// verify the snapshot exists in cloudscale.ch API
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.NotNil(t, snapshotContent.Status)
+	assert.NotNil(t, snapshotContent.Status.SnapshotHandle)
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, *snapshotContent.Status.SnapshotHandle)
+	assert.NotNil(t, cloudscaleSnapshot)
+	assert.Equal(t, *snapshotContent.Status.SnapshotHandle, cloudscaleSnapshot.UUID)
+	assert.Equal(t, "available", cloudscaleSnapshot.Status)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// create a new pod with a pvc restored from the snapshot
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc-restored",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	// wait for the restored pod to be running and verify that the pvc is bound
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	// load the restored volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 5, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	// verify that the restored disk has the same properties as the original
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", restoredDisk.Luks)
+	assert.Equal(t, "Filesystem", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", restoredDisk.Filesystem)
+	assert.Equal(t, 5*driver.GB, restoredDisk.DeviceSize)
+	assert.Equal(t, 5*driver.GB, restoredDisk.FilesystemSize)
+
+	// verify that the filesystem UUID is preserved (data was restored, not recreated)
+	assert.Equal(t, originalFilesystemUUID, restoredDisk.FilesystemUUID)
+
+	// finally cleanup the restored pod and pvc
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+}
+
 func TestPod_Single_SSD_Raw_Volume(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
@@ -1714,6 +1822,52 @@ func getVolumeSnapshotContent(t *testing.T, contentName string) *snapshotv1.Volu
 	assert.NoError(t, err)
 
 	return &content
+}
+
+// creates kubernetes pvcs from the given TestPodDescriptor, restoring from a snapshot
+func makeKubernetesPVCsFromSnapshot(t *testing.T, pod TestPodDescriptor, snapshotName string) []*v1.PersistentVolumeClaim {
+	pvcs := make([]*v1.PersistentVolumeClaim, 0)
+
+	for _, volume := range pod.Volumes {
+		volMode := v1.PersistentVolumeFilesystem
+		if volume.Block {
+			volMode = v1.PersistentVolumeBlock
+		}
+
+		apiGroup := "snapshot.storage.k8s.io"
+		pvcs = append(pvcs, &v1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: volume.ClaimName,
+			},
+			Spec: v1.PersistentVolumeClaimSpec{
+				VolumeMode: &volMode,
+				AccessModes: []v1.PersistentVolumeAccessMode{
+					v1.ReadWriteOnce,
+				},
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceStorage: resource.MustParse(fmt.Sprintf("%vGi", volume.SizeGB)),
+					},
+				},
+				StorageClassName: strPtr(volume.StorageClass),
+				DataSource: &v1.TypedLocalObjectReference{
+					APIGroup: &apiGroup,
+					Kind:     "VolumeSnapshot",
+					Name:     snapshotName,
+				},
+			},
+		})
+	}
+
+	t.Log("Creating pvc from snapshot")
+	for _, pvc := range pvcs {
+		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), pvc, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return pvcs
 }
 
 // getDynamicSnapshotClient returns a dynamic client for working with VolumeSnapshots
