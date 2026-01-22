@@ -228,7 +228,8 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 				return nil, status.Errorf(codes.NotFound, "source snapshot %s not found", sourceSnapshotID)
 			}
 		}
-		return nil, status.Errorf(codes.Internal, "failed to get source snapshot: %w", err)
+		wrapped := fmt.Errorf("failed to get source snapshot: %w", err)
+		return nil, status.Error(codes.Internal, wrapped.Error())
 	}
 
 	ll = ll.WithFields(logrus.Fields{
