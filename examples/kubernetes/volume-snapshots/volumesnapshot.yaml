@@ -1,0 +1,10 @@
+# VolumeSnapshot creates a snapshot of the original volume
+# Make sure the VolumeSnapshotClass is created first (volumesnapshotclass.yaml)
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: my-snapshot
+spec:
+  volumeSnapshotClassName: cloudscale-snapshots
+  source:
+    persistentVolumeClaimName: my-volume

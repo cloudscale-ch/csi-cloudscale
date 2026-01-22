@@ -1,0 +1,9 @@
+# VolumeSnapshotClass defines how snapshots should be created for the cloudscale.ch CSI driver.
+# This is a cluster-level resource that needs to be created once before using snapshots.
+# Note: This may be deployed automatically with the driver in future releases.
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: cloudscale-snapshots
+driver: csi.cloudscale.ch
+deletionPolicy: Delete

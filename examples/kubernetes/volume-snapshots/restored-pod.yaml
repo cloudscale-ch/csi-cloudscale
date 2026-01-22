@@ -1,0 +1,17 @@
+# Pod using the restored volume (optional, for testing)
+kind: Pod
+apiVersion: v1
+metadata:
+  name: my-restored-app
+spec:
+  containers:
+    - name: my-frontend
+      image: busybox
+      volumeMounts:
+        - mountPath: "/data"
+          name: my-cloudscale-volume
+      command: [ "sleep", "1000000" ]
+  volumes:
+    - name: my-cloudscale-volume
+      persistentVolumeClaim:
+        claimName: my-restored-volume

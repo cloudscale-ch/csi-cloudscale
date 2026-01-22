@@ -1,0 +1,17 @@
+# PersistentVolumeClaim restored from the snapshot
+# Note: The restored volume must have the same size as the snapshot (5Gi in this example)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-restored-volume
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cloudscale-volume-ssd
+  resources:
+    requests:
+      storage: 5Gi
+  dataSource:
+    name: my-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
