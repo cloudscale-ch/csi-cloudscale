@@ -678,7 +678,14 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	ll.Info("find existing volume snapshots with same name")
 	snapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok {
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Warn("cloudscale API returned error during snapshot list")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to list snapshots: %v", err)
 	}
 
 	for _, snapshot := range snapshots {
@@ -710,13 +717,24 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	volumeSnapshotCreateRequest := &cloudscale.VolumeSnapshotCreateRequest{
 		Name:         req.Name,
 		SourceVolume: req.SourceVolumeId,
-		// todo: tags?
+		// todo: Tags are not currently supported in snapshot creation
 	}
 
 	ll.WithField("volume_snapshot_create_request", volumeSnapshotCreateRequest).Info("creating volume snapshot")
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Create(ctx, volumeSnapshotCreateRequest)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		errorResponse, ok := err.(*cloudscale.ErrorResponse)
+		if ok {
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Warn("cloudscale API returned error during snapshot creation")
+
+			if errorResponse.StatusCode == http.StatusNotFound {
+				return nil, status.Errorf(codes.NotFound, "source volume %s not found: %v", req.SourceVolumeId, err)
+			}
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
 	}
 
 	creationTime := timestamppb.Now()
@@ -752,7 +770,9 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 	})
 	ll.Info("delete snapshot called")
 
-	// todo: think through long running delete jobs
+	// Note: Snapshot deletion is asynchronous via the cloudscale API.
+	// The HTTP request returns success immediately, but the snapshot enters "deleting" state.
+	// Cloudscale handles the deletion asynchronously. The operation is idempotent.
 	err := d.cloudscaleClient.VolumeSnapshots.Delete(ctx, req.SnapshotId)
 	if err != nil {
 		errorResponse, ok := err.(*cloudscale.ErrorResponse)
