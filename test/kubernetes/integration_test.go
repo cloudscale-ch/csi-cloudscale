@@ -2134,7 +2134,12 @@ func makeKubernetesPVCsFromSnapshot(t *testing.T, pod TestPodDescriptor, snapsho
 	return pvcs
 }
 
-// getDynamicSnapshotClient returns a dynamic client for working with VolumeSnapshots
+// getDynamicSnapshotClient returns a dynamic client for working with VolumeSnapshots.
+// VolumeSnapshot is a Custom Resource Definition (CRD), not a built-in Kubernetes resource.
+// Unlike built-in resources (Pods, PVCs, etc.) which have typed clientsets, CRDs require
+// a dynamic client that works with unstructured objects. The external-snapshotter client
+// package provides the types (snapshotv1.VolumeSnapshot) but not a full typed clientset,
+// so we use the dynamic client with GroupVersionResource to interact with the API.
 func getDynamicSnapshotClient(t *testing.T) dynamic.Interface {
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
