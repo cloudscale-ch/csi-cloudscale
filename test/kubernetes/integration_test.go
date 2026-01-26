@@ -22,20 +22,17 @@ import (
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v6/clientset/versioned"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
@@ -81,6 +78,7 @@ type DiskInfo struct {
 
 var (
 	client           kubernetes.Interface
+	snapshotClient   snapshotclientset.Interface
 	config           *rest.Config
 	cloudscaleClient *cloudscale.Client
 )
@@ -463,7 +461,6 @@ func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
-
 func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	// Test that snapshot size validation works correctly
 	podDescriptor := TestPodDescriptor{
@@ -500,7 +497,6 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 
 	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, snapshotHandle)
 	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
-
 
 	// Attempt to restore with smaller size (should fail)
 	// Create PVC directly without pod (since it won't bind)
@@ -1166,6 +1162,12 @@ func setup() error {
 
 	// create the clientset
 	client, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
+	// create the snapshot clientset for working with VolumeSnapshot CRDs
+	snapshotClient, err = snapshotclientset.NewForConfig(config)
 	if err != nil {
 		return err
 	}
@@ -1922,51 +1924,22 @@ func makeKubernetesVolumeSnapshot(t *testing.T, snapshotName string, pvcName str
 	}
 
 	t.Logf("Creating volume snapshot %v", snapshotName)
-	snapshotClient := getDynamicSnapshotClient(t)
-
-	obj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	unstructuredSnapshot := &unstructured.Unstructured{Object: obj}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "snapshot.storage.k8s.io",
-		Version:  "v1",
-		Resource: "volumesnapshots",
-	}
-
-	created, err := snapshotClient.Resource(gvr).Namespace(namespace).Create(
+	created, err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Create(
 		context.Background(),
-		unstructuredSnapshot,
+		snapshot,
 		metav1.CreateOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var result snapshotv1.VolumeSnapshot
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(created.Object, &result)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return &result
+	return created
 }
 
 // deleteKubernetesVolumeSnapshot deletes the VolumeSnapshot with the given name
 func deleteKubernetesVolumeSnapshot(t *testing.T, snapshotName string) {
 	t.Logf("Deleting volume snapshot %v", snapshotName)
-	snapshotClient := getDynamicSnapshotClient(t)
-
-	gvr := schema.GroupVersionResource{
-		Group:    "snapshot.storage.k8s.io",
-		Version:  "v1",
-		Resource: "volumesnapshots",
-	}
-
-	err := snapshotClient.Resource(gvr).Namespace(namespace).Delete(
+	err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Delete(
 		context.Background(),
 		snapshotName,
 		metav1.DeleteOptions{},
@@ -2000,26 +1973,13 @@ func waitForVolumeSnapshot(t *testing.T, client kubernetes.Interface, name strin
 
 // getVolumeSnapshot retrieves the VolumeSnapshot with the given name
 func getVolumeSnapshot(t *testing.T, client kubernetes.Interface, name string) *snapshotv1.VolumeSnapshot {
-	snapshotClient := getDynamicSnapshotClient(t)
-
-	gvr := schema.GroupVersionResource{
-		Group:    "snapshot.storage.k8s.io",
-		Version:  "v1",
-		Resource: "volumesnapshots",
-	}
-
-	unstructuredSnapshot, err := snapshotClient.Resource(gvr).Namespace(namespace).Get(
+	snapshot, err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Get(
 		context.Background(),
 		name,
 		metav1.GetOptions{},
 	)
 	assert.NoError(t, err)
-
-	var snapshot snapshotv1.VolumeSnapshot
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredSnapshot.Object, &snapshot)
-	assert.NoError(t, err)
-
-	return &snapshot
+	return snapshot
 }
 
 func getCloudscaleVolumeSnapshot(t *testing.T, snapshotHandle string) *cloudscale.VolumeSnapshot {
@@ -2066,26 +2026,13 @@ func waitCloudscaleVolumeSnapshotDeleted(t *testing.T, snapshotHandle string) {
 
 // getVolumeSnapshotContent retrieves the VolumeSnapshotContent for a VolumeSnapshot
 func getVolumeSnapshotContent(t *testing.T, contentName string) *snapshotv1.VolumeSnapshotContent {
-	snapshotClient := getDynamicSnapshotClient(t)
-
-	gvr := schema.GroupVersionResource{
-		Group:    "snapshot.storage.k8s.io",
-		Version:  "v1",
-		Resource: "volumesnapshotcontents",
-	}
-
-	unstructuredContent, err := snapshotClient.Resource(gvr).Get(
+	content, err := snapshotClient.SnapshotV1().VolumeSnapshotContents().Get(
 		context.Background(),
 		contentName,
 		metav1.GetOptions{},
 	)
 	assert.NoError(t, err)
-
-	var content snapshotv1.VolumeSnapshotContent
-	err = runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredContent.Object, &content)
-	assert.NoError(t, err)
-
-	return &content
+	return content
 }
 
 // creates kubernetes pvcs from the given TestPodDescriptor, restoring from a snapshot
@@ -2132,18 +2079,4 @@ func makeKubernetesPVCsFromSnapshot(t *testing.T, pod TestPodDescriptor, snapsho
 	}
 
 	return pvcs
-}
-
-// getDynamicSnapshotClient returns a dynamic client for working with VolumeSnapshots.
-// VolumeSnapshot is a Custom Resource Definition (CRD), not a built-in Kubernetes resource.
-// Unlike built-in resources (Pods, PVCs, etc.) which have typed clientsets, CRDs require
-// a dynamic client that works with unstructured objects. The external-snapshotter client
-// package provides the types (snapshotv1.VolumeSnapshot) but not a full typed clientset,
-// so we use the dynamic client with GroupVersionResource to interact with the API.
-func getDynamicSnapshotClient(t *testing.T) dynamic.Interface {
-	dynamicClient, err := dynamic.NewForConfig(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dynamicClient
 }
