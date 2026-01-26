@@ -19,6 +19,7 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -222,8 +223,8 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	// Verify snapshot exists and get its properties, must return NotFound when snapshot does not exist.
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, sourceSnapshotID)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				return nil, status.Errorf(codes.NotFound, "source snapshot %s not found", sourceSnapshotID)
 			}
@@ -382,8 +383,8 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -486,8 +487,8 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	// check if volume exist before trying to detach it
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				ll.Info("assuming volume is detached because it does not exist")
 				return &csi.ControllerUnpublishVolumeResponse{}, nil
@@ -679,8 +680,8 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	ll.Info("find existing volume snapshots with same name")
 	snapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -724,8 +725,8 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	ll.WithField("volume_snapshot_create_request", volumeSnapshotCreateRequest).Info("creating volume snapshot")
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Create(ctx, volumeSnapshotCreateRequest)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -776,8 +777,8 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 	// Cloudscale handles the deletion asynchronously. The operation is idempotent.
 	err := d.cloudscaleClient.VolumeSnapshots.Delete(ctx, req.SnapshotId)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
@@ -981,8 +982,8 @@ func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
 }
 
 func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
-	errorResponse, ok := err.(*cloudscale.ErrorResponse)
-	if ok {
+	var errorResponse *cloudscale.ErrorResponse
+	if errors.As(err, &errorResponse) {
 		lt := log.WithFields(logrus.Fields{
 			"error":         err,
 			"errorResponse": errorResponse,

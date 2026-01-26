@@ -1645,7 +1645,8 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 			return
 		}
 		if err != nil {
-			if cloudscaleErr, ok := err.(*cloudscale.ErrorResponse); ok {
+			var cloudscaleErr *cloudscale.ErrorResponse
+			if errors.As(err, &cloudscaleErr) {
 				if cloudscaleErr.StatusCode == http.StatusNotFound {
 					t.Logf("volume %v is deleted on cloudscale", volumeName)
 					return
@@ -2004,7 +2005,8 @@ func waitCloudscaleVolumeSnapshotDeleted(t *testing.T, snapshotHandle string) {
 		cancel()
 
 		if err != nil {
-			if cloudscaleErr, ok := err.(*cloudscale.ErrorResponse); ok {
+			var cloudscaleErr *cloudscale.ErrorResponse
+			if errors.As(err, &cloudscaleErr) {
 				if cloudscaleErr.StatusCode == http.StatusNotFound {
 					t.Logf("snapshot %v is deleted on cloudscale", snapshotHandle)
 					return
