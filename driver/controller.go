@@ -402,8 +402,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 			}).Debug("cloudscale API returned error during volume deletion")
 
 			// Check if the error indicates snapshots exist (HTTP 400 with error message "Snapshots exist for this volume")
-			if errorResponse.StatusCode == http.StatusBadRequest &&
-				strings.Contains(err.Error(), "Snapshots exist for this volume. The snapshot must be deleted before the volume can be deleted.") {
+			if errorResponse.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(err.Error()), strings.ToLower("Snapshots exist for this volume")) {
 				ll.WithFields(logrus.Fields{
 					"error": err,
 					"resp":  errorResponse,
