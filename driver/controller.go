@@ -401,8 +401,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 				"error":       err,
 			}).Debug("cloudscale API returned error during volume deletion")
 
-			// Check if the error indicates snapshots exist (HTTP 400 with specific error message)
-			// The API returns HTTP 400 with: {"detail": "Snapshots exist for this volume. The snapshot must be deleted before the volume can be deleted."}
+			// Check if the error indicates snapshots exist (HTTP 400 with error message "Snapshots exist for this volume")
 			if errorResponse.StatusCode == http.StatusBadRequest &&
 				strings.Contains(err.Error(), "Snapshots exist for this volume. The snapshot must be deleted before the volume can be deleted.") {
 				ll.WithFields(logrus.Fields{
@@ -696,12 +695,11 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 
 	for _, snapshot := range snapshots {
 		if snapshot.Volume.UUID == req.SourceVolumeId {
-			creationTime := timestamppb.Now()
-			if snapshot.CreatedAt != "" {
-				if t, err := time.Parse(time.RFC3339, snapshot.CreatedAt); err == nil {
-					creationTime = timestamppb.New(t)
-				}
+			t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
 			}
+			creationTime := timestamppb.New(t)
 
 			return &csi.CreateSnapshotResponse{
 				Snapshot: &csi.Snapshot{
@@ -743,12 +741,11 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 		return nil, status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
 	}
 
-	creationTime := timestamppb.Now()
-	if snapshot.CreatedAt != "" {
-		if t, err := time.Parse(time.RFC3339, snapshot.CreatedAt); err == nil {
-			creationTime = timestamppb.New(t)
-		}
+	t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
 	}
+	creationTime := timestamppb.New(t)
 
 	resp := &csi.CreateSnapshotResponse{
 		Snapshot: &csi.Snapshot{
