@@ -283,7 +283,7 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	}
 
 	// cloudscale does not support changing storage type when restoring from snapshot.
-	// The restored volume must have the same storage type as the snapshot.
+	// The restored volume must have the same storage type as the source volume of the snapshot.
 	if storageType := req.Parameters[StorageTypeAttribute]; storageType != "" && storageType != snapshot.Volume.Type {
 		return nil, status.Errorf(codes.InvalidArgument,
 			"requested storage type %s does not match snapshot storage type %s. "+
@@ -386,27 +386,30 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 	if err != nil {
 		var errorResponse *cloudscale.ErrorResponse
 		if errors.As(err, &errorResponse) {
-			ll.WithFields(logrus.Fields{
-				"status_code": errorResponse.StatusCode,
-				"error":       err,
-			}).Warn("cloudscale API returned error during volume deletion")
-
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
 				ll.WithFields(logrus.Fields{
 					"error": err,
 					"resp":  errorResponse,
-				}).Warn("assuming volume is already deleted")
+				}).Debug("assuming volume is already deleted")
 				return &csi.DeleteVolumeResponse{}, nil
 			}
 
-			// Check if the error message indicates snapshots exist
-			if strings.Contains(err.Error(), "Snapshots exist") ||
-				strings.Contains(err.Error(), "snapshot") {
-				ll.Warn("volume has snapshots, cannot delete yet")
-				return nil, status.Error(codes.FailedPrecondition,
-					"volume has existing snapshots that must be deleted first")
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Debug("cloudscale API returned error during volume deletion")
+
+			// Check if the error indicates snapshots exist (HTTP 400 with specific error message)
+			// The API returns HTTP 400 with: {"detail": "Snapshots exist for this volume. The snapshot must be deleted before the volume can be deleted."}
+			if errorResponse.StatusCode == http.StatusBadRequest &&
+				strings.Contains(err.Error(), "Snapshots exist for this volume. The snapshot must be deleted before the volume can be deleted.") {
+				ll.WithFields(logrus.Fields{
+					"error": err,
+					"resp":  errorResponse,
+				}).Warn("volume has snapshots, cannot delete yet")
+				return nil, status.Error(codes.FailedPrecondition, "volume has existing snapshots that must be deleted first")
 			}
 		}
 		return nil, err
@@ -781,12 +784,12 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 		var errorResponse *cloudscale.ErrorResponse
 		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
-				// To make it idempotent, the volume might already have been
+				// To make it idempotent, the snapshot might already have been
 				// deleted, so a 404 is ok.
 				ll.WithFields(logrus.Fields{
 					"error": err,
 					"resp":  errorResponse,
-				}).Warn("assuming snapshot is already deleted")
+				}).Debug("assuming snapshot is already deleted")
 				return &csi.DeleteSnapshotResponse{}, nil
 			}
 		}
