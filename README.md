@@ -77,16 +77,10 @@ To use CSI snapshots with this driver, your cluster must have the VolumeSnapshot
 
 Note: Some Kubernetes distributions already include these CRDs and controllers. You only need to apply them manually if your cluster does not provide them.
 
-Install the snapshot resources:
+Install the snapshot resources using kustomize (recommended):
 ```
-# Create the necessary CRDs
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotclasses.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshotcontents.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/client/config/crd/snapshot.storage.k8s.io_volumesnapshots.yaml
-
-# Install snapshot controller with RBAC
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/deploy/kubernetes/snapshot-controller/rbac-snapshot-controller.yaml
-kubectl apply -f https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/v8.4.0/deploy/kubernetes/snapshot-controller/setup-snapshot-controller.yaml
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
 ```
 
 ### Kubernetes Compatibility
