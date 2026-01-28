@@ -1,0 +1,21 @@
+# PersistentVolumeClaim restored from a LUKS snapshot
+# IMPORTANT: When restoring from a LUKS snapshot, you MUST:
+# 1. Use a LUKS storage class (cloudscale-volume-ssd-luks or cloudscale-volume-bulk-luks)
+# 2. Provide a LUKS secret with the pattern: ${pvc-name}-luks-key
+# 3. Use the SAME LUKS key as the original volume
+# 4. Match the snapshot size exactly (1Gi in this example)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-restored-luks-volume
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cloudscale-volume-ssd-luks
+  resources:
+    requests:
+      storage: 1Gi
+  dataSource:
+    name: my-luks-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io

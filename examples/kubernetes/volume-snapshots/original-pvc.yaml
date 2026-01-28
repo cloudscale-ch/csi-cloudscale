@@ -1,0 +1,12 @@
+# Original PersistentVolumeClaim that will be snapshotted
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-volume
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: cloudscale-volume-ssd

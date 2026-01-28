@@ -79,6 +79,18 @@ resizer:
 #      cpu: 100m
 #      memory: 128Mi
 
+
+
+snapshotter:
+  image:
+    registry: registry.k8s.io
+    repository: sig-storage/csi-snapshotter
+    tag: v8.4.0
+    pullPolicy: IfNotPresent
+  logLevelVerbosity: "5"
+  resources: {}
+
+
 controller:
   replicas: 1
   image:

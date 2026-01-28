@@ -19,18 +19,20 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -83,6 +85,15 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 
 	if violations := validateCapabilities(req.VolumeCapabilities); len(violations) > 0 {
 		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("volume capabilities cannot be satisified: %s", strings.Join(violations, "; ")))
+	}
+
+	if req.GetVolumeContentSource() != nil {
+		if sourceSnapshot := req.GetVolumeContentSource().GetSnapshot(); sourceSnapshot != nil {
+			return d.createVolumeFromSnapshot(ctx, req, sourceSnapshot)
+		}
+		if sourceVolume := req.GetVolumeContentSource().GetVolume(); sourceVolume != nil {
+			return nil, status.Error(codes.Unimplemented, "volume cloning is not yet supported")
+		}
 	}
 
 	if req.AccessibilityRequirements != nil {
@@ -173,7 +184,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
 	}
 
-	volumeReq := &cloudscale.VolumeRequest{
+	volumeReq := &cloudscale.VolumeCreateRequest{
 		Name:   volumeName,
 		SizeGB: sizeGB,
 		Type:   storageType,
@@ -193,6 +204,172 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	return resp, nil
 }
 
+// createVolumeFromSnapshot handles volume creation from an existing snapshot
+func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVolumeRequest, sourceSnapshot *csi.VolumeContentSource_SnapshotSource) (*csi.CreateVolumeResponse, error) {
+	sourceSnapshotID := sourceSnapshot.GetSnapshotId()
+	if sourceSnapshotID == "" {
+		return nil, status.Error(codes.InvalidArgument, "snapshotID must be provided in volume content source")
+	}
+
+	volumeName := req.Name
+
+	ll := d.log.WithFields(logrus.Fields{
+		"volume_name":        volumeName,
+		"source_snapshot_id": sourceSnapshotID,
+		"method":             "create_volume_from_snapshot",
+	})
+	ll.Info("create volume from snapshot called")
+
+	// Verify snapshot exists and get its properties, must return NotFound when snapshot does not exist.
+	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, sourceSnapshotID)
+	if err != nil {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
+			if errorResponse.StatusCode == http.StatusNotFound {
+				return nil, status.Errorf(codes.NotFound, "source snapshot %s not found", sourceSnapshotID)
+			}
+		}
+		wrapped := fmt.Errorf("failed to get source snapshot: %w", err)
+		return nil, status.Error(codes.Internal, wrapped.Error())
+	}
+
+	ll = ll.WithFields(logrus.Fields{
+		"snapshot_size_gb":     snapshot.SizeGB,
+		"snapshot_volume_type": snapshot.Volume.Type,
+		"snapshot_zone":        snapshot.Zone,
+	})
+
+	// Validate capacity requirements
+	// CSI spec: restored volume must be at least as large as the snapshot
+	// Cloudscale only supports the same size as the snapshot
+	if req.CapacityRange != nil {
+		requiredBytes := req.CapacityRange.GetRequiredBytes()
+		if requiredBytes > 0 {
+			requiredGB := int(requiredBytes / GB)
+			if requiredGB < snapshot.SizeGB {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"requested volume size (%d GB) is smaller than snapshot size (%d GB)",
+					requiredGB, snapshot.SizeGB)
+			}
+			if requiredGB > snapshot.SizeGB {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"cloudscale.ch API does not support creating volumes larger than snapshot size during restore. "+
+						"Create volume from snapshot first, then expand it using ControllerExpandVolume. "+
+						"Requested: %d GB, Snapshot: %d GB", requiredGB, snapshot.SizeGB)
+			}
+		}
+
+		// Validate limit if specified
+		limitBytes := req.CapacityRange.GetLimitBytes()
+		if limitBytes > 0 && int64(snapshot.SizeGB)*GB > limitBytes {
+			return nil, status.Errorf(codes.OutOfRange,
+				"snapshot size (%d GB) exceeds capacity limit (%d bytes)",
+				snapshot.SizeGB, limitBytes)
+		}
+	}
+
+	// cloudscale does create the volume in the same zone as the snapshot.
+	if req.AccessibilityRequirements != nil {
+		for _, t := range req.AccessibilityRequirements.Requisite {
+			zone, ok := t.Segments[topologyZonePrefix]
+			if !ok {
+				continue
+			}
+			if zone != snapshot.Zone.Slug {
+				return nil, status.Errorf(codes.InvalidArgument,
+					"requested zone %s does not match snapshot zone %s", zone, snapshot.Zone)
+			}
+		}
+	}
+
+	// cloudscale does not support changing storage type when restoring from snapshot.
+	// The restored volume must have the same storage type as the source volume of the snapshot.
+	if storageType := req.Parameters[StorageTypeAttribute]; storageType != "" && storageType != snapshot.Volume.Type {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"requested storage type %s does not match snapshot storage type %s. "+
+				"Storage type cannot be changed when creating a volume from a snapshot",
+			storageType, snapshot.Volume.Type)
+	}
+
+	luksEncrypted := "false"
+	if req.Parameters[LuksEncryptedAttribute] == "true" {
+		if violations := validateLuksCapabilities(req.VolumeCapabilities); len(violations) > 0 {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("volume capabilities cannot be satisified: %s", strings.Join(violations, "; ")))
+		}
+		luksEncrypted = "true"
+	}
+
+	// Check if volume already exists
+	volumes, err := d.cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	csiVolume := csi.Volume{
+		CapacityBytes: int64(snapshot.SizeGB) * GB,
+		AccessibleTopology: []*csi.Topology{
+			{
+				Segments: map[string]string{
+					topologyZonePrefix: d.zone,
+				},
+			},
+		},
+		VolumeContext: map[string]string{
+			PublishInfoVolumeName:  volumeName,
+			LuksEncryptedAttribute: luksEncrypted,
+		},
+		ContentSource: req.GetVolumeContentSource(),
+	}
+
+	if luksEncrypted == "true" {
+		csiVolume.VolumeContext[LuksCipherAttribute] = req.Parameters[LuksCipherAttribute]
+		csiVolume.VolumeContext[LuksKeySizeAttribute] = req.Parameters[LuksKeySizeAttribute]
+	}
+
+	// Volume already exists - validate it matches request
+	if len(volumes) != 0 {
+		if len(volumes) > 1 {
+			return nil, fmt.Errorf("fatal issue: duplicate volume %q exists", volumeName)
+		}
+		vol := volumes[0]
+
+		if vol.SizeGB != snapshot.SizeGB {
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already exists with size %d GB, but snapshot requires %d GB",
+				volumeName, vol.SizeGB, snapshot.SizeGB)
+		}
+
+		if vol.Zone != snapshot.Zone {
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already exists in zone %s, but snapshot is in zone %s",
+				volumeName, vol.Zone, snapshot.Zone)
+		}
+
+		ll.Info("volume from snapshot already exists")
+		csiVolume.VolumeId = vol.UUID
+		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
+	}
+
+	// Create volume from snapshot
+	volumeReq := &cloudscale.VolumeCreateRequest{
+		Name:               volumeName,
+		VolumeSnapshotUUID: sourceSnapshotID,
+		// Size, Type, Zone are inherited from snapshot - do NOT set them
+	}
+
+	ll.WithField("volume_req", volumeReq).Info("creating volume from snapshot")
+	vol, err := d.cloudscaleClient.Volumes.Create(ctx, volumeReq)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to create volume from snapshot: %v", err)
+	}
+
+	csiVolume.VolumeId = vol.UUID
+	resp := &csi.CreateVolumeResponse{Volume: &csiVolume}
+
+	ll.WithField("response", resp).Info("volume created from snapshot")
+	return resp, nil
+}
+
 // DeleteVolume deletes the given volume. The function is idempotent.
 func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	if req.VolumeId == "" {
@@ -207,16 +384,30 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
 				ll.WithFields(logrus.Fields{
 					"error": err,
 					"resp":  errorResponse,
-				}).Warn("assuming volume is already deleted")
+				}).Debug("assuming volume is already deleted")
 				return &csi.DeleteVolumeResponse{}, nil
+			}
+
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Debug("cloudscale API returned error during volume deletion")
+
+			// Check if the error indicates snapshots exist (HTTP 400 with error message "Snapshots exist for this volume")
+			if errorResponse.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(err.Error()), strings.ToLower("Snapshots exist for this volume")) {
+				ll.WithFields(logrus.Fields{
+					"error": err,
+					"resp":  errorResponse,
+				}).Warn("volume has snapshots, cannot delete yet")
+				return nil, status.Error(codes.FailedPrecondition, "volume has existing snapshots that must be deleted first")
 			}
 		}
 		return nil, err
@@ -255,7 +446,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
-	attachRequest := &cloudscale.VolumeRequest{
+	attachRequest := &cloudscale.VolumeUpdateRequest{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
 	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
@@ -298,8 +489,8 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	// check if volume exist before trying to detach it
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		errorResponse, ok := err.(*cloudscale.ErrorResponse)
-		if ok {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				ll.Info("assuming volume is detached because it does not exist")
 				return &csi.ControllerUnpublishVolumeResponse{}, nil
@@ -329,7 +520,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 
 	ll.Info("Volume is attached to node given in request or NodeID in request is not set.")
 
-	detachRequest := &cloudscale.VolumeRequest{
+	detachRequest := &cloudscale.VolumeUpdateRequest{
 		ServerUUIDs: &[]string{},
 	}
 	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
@@ -451,9 +642,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME,
 		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
 		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
-
-		// TODO(arslan): enable once snapshotting is supported
-		// csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+		csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		// csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 
 		// TODO: check if this can be implemented
@@ -476,20 +665,135 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 // CreateSnapshot will be called by the CO to create a new snapshot from a
 // source volume on behalf of a user.
 func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	d.log.WithFields(logrus.Fields{
-		"req":    req,
-		"method": "create_snapshot",
-	}).Warn("create snapshot is not implemented")
-	return nil, status.Error(codes.Unimplemented, "")
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshotRequest Name must be provided")
+	}
+
+	if req.SourceVolumeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshotRequest Source Volume Id must be provided")
+	}
+
+	ll := d.log.WithFields(logrus.Fields{
+		"source_volume_id": req.SourceVolumeId,
+		"name":             req.Name,
+		"method":           "create_snapshot",
+	})
+
+	ll.Info("find existing volume snapshots with same name")
+	snapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
+	if err != nil {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Warn("cloudscale API returned error during snapshot list")
+		}
+		return nil, status.Errorf(codes.Internal, "failed to list snapshots: %v", err)
+	}
+
+	for _, snapshot := range snapshots {
+		if snapshot.Volume.UUID == req.SourceVolumeId {
+			t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
+			}
+			creationTime := timestamppb.New(t)
+
+			return &csi.CreateSnapshotResponse{
+				Snapshot: &csi.Snapshot{
+					SnapshotId:     snapshot.UUID,
+					SourceVolumeId: snapshot.Volume.UUID,
+					ReadyToUse:     snapshot.Status == "available",
+					SizeBytes:      int64(snapshot.SizeGB * GB),
+					CreationTime:   creationTime,
+				},
+			}, nil
+		}
+
+		// Snapshot name exists but for a different volume
+		if snapshot.Volume.UUID != req.SourceVolumeId {
+			return nil, status.Error(codes.AlreadyExists, "snapshot with this name already exists for another volume")
+		}
+	}
+
+	volumeSnapshotCreateRequest := &cloudscale.VolumeSnapshotCreateRequest{
+		Name:         req.Name,
+		SourceVolume: req.SourceVolumeId,
+		// todo: Tags are not currently supported in snapshot creation
+	}
+
+	ll.WithField("volume_snapshot_create_request", volumeSnapshotCreateRequest).Info("creating volume snapshot")
+	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Create(ctx, volumeSnapshotCreateRequest)
+	if err != nil {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
+			ll.WithFields(logrus.Fields{
+				"status_code": errorResponse.StatusCode,
+				"error":       err,
+			}).Warn("cloudscale API returned error during snapshot creation")
+
+			if errorResponse.StatusCode == http.StatusNotFound {
+				return nil, status.Errorf(codes.NotFound, "source volume %s not found: %v", req.SourceVolumeId, err)
+			}
+		}
+		return nil, status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
+	}
+
+	t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
+	}
+	creationTime := timestamppb.New(t)
+
+	resp := &csi.CreateSnapshotResponse{
+		Snapshot: &csi.Snapshot{
+			SnapshotId:     snapshot.UUID,
+			SourceVolumeId: snapshot.Volume.UUID,
+			ReadyToUse:     snapshot.Status == "available", //  check status
+			SizeBytes:      int64(snapshot.SizeGB * GB),
+			CreationTime:   creationTime,
+		},
+	}
+
+	ll.WithField("response", resp).Info("volume snapshot created")
+	return resp, nil
 }
 
-// DeleteSnapshost will be called by the CO to delete a snapshot.
+// DeleteSnapshot will be called by the CO to delete a snapshot.
 func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	d.log.WithFields(logrus.Fields{
-		"req":    req,
-		"method": "delete_snapshot",
-	}).Warn("delete snapshot is not implemented")
-	return nil, status.Error(codes.Unimplemented, "")
+	if req.SnapshotId == "" {
+		return nil, status.Error(codes.InvalidArgument, "DeleteSnapshot Snapshot ID must be provided")
+	}
+
+	ll := d.log.WithFields(logrus.Fields{
+		"snapshot_id": req.SnapshotId,
+		"method":      "delete_snapshot",
+	})
+	ll.Info("delete snapshot called")
+
+	// Note: Snapshot deletion is asynchronous via the cloudscale API.
+	// The HTTP request returns success immediately, but the snapshot enters "deleting" state.
+	// Cloudscale handles the deletion asynchronously. The operation is idempotent.
+	err := d.cloudscaleClient.VolumeSnapshots.Delete(ctx, req.SnapshotId)
+	if err != nil {
+		var errorResponse *cloudscale.ErrorResponse
+		if errors.As(err, &errorResponse) {
+			if errorResponse.StatusCode == http.StatusNotFound {
+				// To make it idempotent, the snapshot might already have been
+				// deleted, so a 404 is ok.
+				ll.WithFields(logrus.Fields{
+					"error": err,
+					"resp":  errorResponse,
+				}).Debug("assuming snapshot is already deleted")
+				return &csi.DeleteSnapshotResponse{}, nil
+			}
+		}
+		return nil, err
+	}
+
+	ll.Info("snapshot is deleted")
+	return &csi.DeleteSnapshotResponse{}, nil
 }
 
 // ListSnapshots returns the information about all snapshots on the storage
@@ -538,7 +842,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 		return &csi.ControllerExpandVolumeResponse{CapacityBytes: int64(volume.SizeGB) * GB, NodeExpansionRequired: true}, nil
 	}
 
-	volumeReq := &cloudscale.VolumeRequest{
+	volumeReq := &cloudscale.VolumeUpdateRequest{
 		SizeGB: resizeGigaBytes,
 	}
 	err = d.cloudscaleClient.Volumes.Update(ctx, volume.UUID, volumeReq)
@@ -678,8 +982,8 @@ func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
 }
 
 func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
-	errorResponse, ok := err.(*cloudscale.ErrorResponse)
-	if ok {
+	var errorResponse *cloudscale.ErrorResponse
+	if errors.As(err, &errorResponse) {
 		lt := log.WithFields(logrus.Fields{
 			"error":         err,
 			"errorResponse": errorResponse,
