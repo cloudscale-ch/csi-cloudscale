@@ -81,6 +81,8 @@ Install the snapshot resources using kustomize (recommended):
 ```
 kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
 kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
+# setup volumesnapshotclass in your cluster
+kubectl apply -f examples/kubernetes/volume-snapshots/volumesnapshotclass.yaml
 ```
 
 ### Kubernetes Compatibility
