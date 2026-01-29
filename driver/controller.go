@@ -283,12 +283,10 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	}
 
 	// cloudscale does not support changing storage type when restoring from snapshot.
-	// The restored volume must have the same storage type as the source volume of the snapshot.
-	if storageType := req.Parameters[StorageTypeAttribute]; storageType != "" && storageType != snapshot.Volume.Type {
-		return nil, status.Errorf(codes.InvalidArgument,
-			"requested storage type %s does not match snapshot storage type %s. "+
-				"Storage type cannot be changed when creating a volume from a snapshot",
-			storageType, snapshot.Volume.Type)
+	// The restored volume type is inherited from the source volume of the snapshot.
+	if storageType := req.Parameters[StorageTypeAttribute]; storageType != "" {
+		ll.WithField("requested_type", storageType).
+			Debug("ignoring storage type parameter when restoring from snapshot")
 	}
 
 	luksEncrypted := "false"
