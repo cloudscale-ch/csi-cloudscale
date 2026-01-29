@@ -27,7 +27,7 @@ import (
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v6/clientset/versioned"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1906,6 +1906,22 @@ func generateMetricEntry(line string) MetricEntry {
 // makeKubernetesVolumeSnapshot creates a VolumeSnapshot for the given PVC
 func makeKubernetesVolumeSnapshot(t *testing.T, snapshotName string, pvcName string) *snapshotv1.VolumeSnapshot {
 	className := "cloudscale-snapshots"
+
+	// Verify that the VolumeSnapshotClass exists before creating the VolumeSnapshot
+	// This helps catch configuration issues early (e.g., CRDs not installed)
+	_, err := snapshotClient.SnapshotV1().VolumeSnapshotClasses().Get(
+		context.Background(),
+		className,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		if kubeerrors.IsNotFound(err) {
+			t.Fatalf("VolumeSnapshotClass %q not found. "+
+				"This usually means the snapshot CRDs are not installed. "+
+				"See the readme for setup installation instrucitons and and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
+		}
+		t.Fatalf("Failed to get VolumeSnapshotClass %q: %v", className, err)
+	}
 
 	snapshot := &snapshotv1.VolumeSnapshot{
 		TypeMeta: metav1.TypeMeta{
