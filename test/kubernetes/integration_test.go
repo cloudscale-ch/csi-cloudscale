@@ -334,9 +334,17 @@ func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
 	// verify that the filesystem UUID is preserved (data was restored, not recreated)
 	assert.Equal(t, originalFilesystemUUID, restoredDisk.FilesystemUUID)
 
-	// finally cleanup the restored pod and pvc
+	// delete the snapshot before deleting the volumes (cloudscale requires snapshots deleted before source volume)
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, *snapshotContent.Status.SnapshotHandle)
+
+	// cleanup restored pod and pvc
 	cleanup(t, restoredPodDescriptor)
 	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
+	// cleanup original pod and pvc
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
 func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
