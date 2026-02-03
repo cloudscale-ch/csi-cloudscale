@@ -20,8 +20,8 @@ Demonstrates creating and restoring LUKS-encrypted volumes from snapshots.
 2. Create snapshot:
    ```bash
    kubectl apply -f luks-volumesnapshot.yaml
-   kubectl get volumesnapshot luks-snapshot  # wait for READYTOUSE=true
-   ```co
+   kubectl get volumesnapshot luks-volume-snapshot  # wait for READYTOUSE=true
+   ```
 
 3. Restore from snapshot:
    ```bash

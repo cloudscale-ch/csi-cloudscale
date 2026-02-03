@@ -10,6 +10,6 @@ spec:
     requests:
       storage: 1Gi
   dataSource:
-    name: luks-snapshot
+    name: luks-volume-snapshot
     kind: VolumeSnapshot
     apiGroup: snapshot.storage.k8s.io
