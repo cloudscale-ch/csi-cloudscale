@@ -1,11 +1,8 @@
-# VolumeSnapshot creates a snapshot of a LUKS-encrypted volume
-# Make sure the VolumeSnapshotClass is created first (see ../volume-snapshots/volumesnapshotclass.yaml)
-# The snapshot preserves the LUKS encryption state
 apiVersion: snapshot.storage.k8s.io/v1
 kind: VolumeSnapshot
 metadata:
-  name: my-luks-snapshot
+  name: luks-snapshot
 spec:
   volumeSnapshotClassName: cloudscale-snapshots
   source:
-    persistentVolumeClaimName: csi-pod-pvc-luks
+    persistentVolumeClaimName: luks-volume

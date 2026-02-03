@@ -1,8 +1,7 @@
-# Pod using the restored LUKS volume (optional, for testing)
 kind: Pod
 apiVersion: v1
 metadata:
-  name: my-restored-luks-app
+  name: luks-app-restored
 spec:
   containers:
     - name: my-frontend
@@ -14,4 +13,4 @@ spec:
   volumes:
     - name: my-cloudscale-volume
       persistentVolumeClaim:
-        claimName: my-restored-luks-volume
+        claimName: luks-volume-restored
