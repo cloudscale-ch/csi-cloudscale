@@ -692,6 +692,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 
 	for _, snapshot := range snapshots {
 		if snapshot.Volume.UUID == req.SourceVolumeId {
+			// Idempotent: snapshot with this name already exists for this volume
 			t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
 			if err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
@@ -708,7 +709,10 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 				},
 			}, nil
 		}
+	}
 
+	// If snapshots exist with this name but none match the source volume, reject
+	if len(snapshots) > 0 {
 		return nil, status.Error(codes.AlreadyExists, "snapshot with this name already exists for another volume")
 	}
 
