@@ -76,7 +76,7 @@ spec:
           image: "{{ .Values.snapshotter.image.registry }}/{{ .Values.snapshotter.image.repository }}:{{ .Values.snapshotter.image.tag }}"
           args:
             - "--csi-address=$(CSI_ENDPOINT)"
-            - "--v=5"
+            - "--v={{ .Values.snapshotter.logLevelVerbosity }}"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
