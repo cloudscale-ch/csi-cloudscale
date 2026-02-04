@@ -1926,7 +1926,7 @@ func makeKubernetesVolumeSnapshot(t *testing.T, snapshotName string, pvcName str
 		if kubeerrors.IsNotFound(err) {
 			t.Fatalf("VolumeSnapshotClass %q not found. "+
 				"This usually means the snapshot CRDs are not installed. "+
-				"See the readme for setup installation instrucitons and and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
+				"See the readme for setup installation instructions and and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
 		}
 		t.Fatalf("Failed to get VolumeSnapshotClass %q: %v", className, err)
 	}
