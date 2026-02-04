@@ -709,10 +709,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 			}, nil
 		}
 
-		// Snapshot name exists but for a different volume
-		if snapshot.Volume.UUID != req.SourceVolumeId {
-			return nil, status.Error(codes.AlreadyExists, "snapshot with this name already exists for another volume")
-		}
+		return nil, status.Error(codes.AlreadyExists, "snapshot with this name already exists for another volume")
 	}
 
 	volumeSnapshotCreateRequest := &cloudscale.VolumeSnapshotCreateRequest{
