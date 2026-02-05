@@ -161,76 +161,6 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
-func TestPod_Single_SSD_Volume_Snapshot(t *testing.T) {
-	podDescriptor := TestPodDescriptor{
-		Kind: "Pod",
-		Name: pseudoUuid(),
-		Volumes: []TestPodVolume{
-			{
-				ClaimName:    "csi-pod-ssd-pvc",
-				SizeGB:       5,
-				StorageClass: "cloudscale-volume-ssd",
-			},
-		},
-	}
-
-	// submit the pod and the pvc
-	pod := makeKubernetesPod(t, podDescriptor)
-	pvcs := makeKubernetesPVCs(t, podDescriptor)
-	assert.Equal(t, 1, len(pvcs))
-
-	// wait for the pod to be running and verify that the pvc is bound
-	waitForPod(t, client, pod.Name)
-	pvc := getPVC(t, client, pvcs[0].Name)
-	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
-
-	// load the volume from the cloudscale.ch api and verify that it
-	// has the requested size and volume type
-	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
-	assert.Equal(t, 5, volume.SizeGB)
-	assert.Equal(t, "ssd", volume.Type)
-
-	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
-	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
-	assert.NoError(t, err)
-	assert.Equal(t, "", disk.Luks)
-	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
-	assert.Equal(t, "ext4", disk.Filesystem)
-	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
-	assert.Equal(t, 5*driver.GB, disk.FilesystemSize)
-
-	// create a snapshot of the volume
-	snapshotName := pseudoUuid()
-	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
-
-	// wait for the snapshot to be ready
-	waitForVolumeSnapshot(t, client, snapshot.Name)
-	snapshot = getVolumeSnapshot(t, client, snapshot.Name)
-	assert.NotNil(t, snapshot.Status)
-	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
-	assert.True(t, *snapshot.Status.ReadyToUse)
-
-	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
-	assert.NotNil(t, snapshotContent.Status)
-	assert.NotNil(t, snapshotContent.Status.SnapshotHandle)
-
-	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, *snapshotContent.Status.SnapshotHandle)
-	assert.NotNil(t, cloudscaleSnapshot)
-	assert.Equal(t, *snapshotContent.Status.SnapshotHandle, cloudscaleSnapshot.UUID)
-	assert.Equal(t, "available", cloudscaleSnapshot.Status)
-	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
-
-	// delete the snapshot before deleting the volume
-	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
-	waitCloudscaleVolumeSnapshotDeleted(t, *snapshotContent.Status.SnapshotHandle)
-
-	// delete the pod and the pvcs and wait until the volume was deleted from
-	// the cloudscale.ch account; this check is necessary to test that the
-	// csi-plugin properly deletes the volume from cloudscale.ch
-	cleanup(t, podDescriptor)
-	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
-}
-
 func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
@@ -277,8 +207,8 @@ func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
 	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
 
 	// wait for the snapshot to be ready
-	waitForVolumeSnapshot(t, client, snapshot.Name)
-	snapshot = getVolumeSnapshot(t, client, snapshot.Name)
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
 	assert.NotNil(t, snapshot.Status)
 	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
 	assert.True(t, *snapshot.Status.ReadyToUse)
@@ -396,8 +326,8 @@ func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
 	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
 
 	// wait for the snapshot to be ready
-	waitForVolumeSnapshot(t, client, snapshot.Name)
-	snapshot = getVolumeSnapshot(t, client, snapshot.Name)
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
 	assert.NotNil(t, snapshot.Status)
 	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
 	assert.True(t, *snapshot.Status.ReadyToUse)
@@ -496,8 +426,8 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	// Create snapshot
 	snapshotName := pseudoUuid()
 	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
-	waitForVolumeSnapshot(t, client, snapshot.Name)
-	snapshot = getVolumeSnapshot(t, client, snapshot.Name)
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
 	assert.True(t, *snapshot.Status.ReadyToUse)
 
 	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
@@ -1973,13 +1903,13 @@ func deleteKubernetesVolumeSnapshot(t *testing.T, snapshotName string) {
 }
 
 // waitForVolumeSnapshot waits for the VolumeSnapshot to be ready
-func waitForVolumeSnapshot(t *testing.T, client kubernetes.Interface, name string) {
+func waitForVolumeSnapshot(t *testing.T, name string) {
 	start := time.Now()
 
 	t.Logf("Waiting for volume snapshot %q to be ready ...\n", name)
 
 	for {
-		snapshot := getVolumeSnapshot(t, client, name)
+		snapshot := getVolumeSnapshot(t, name)
 
 		if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse {
 			t.Logf("Volume snapshot %q is ready\n", name)
@@ -1997,7 +1927,7 @@ func waitForVolumeSnapshot(t *testing.T, client kubernetes.Interface, name strin
 }
 
 // getVolumeSnapshot retrieves the VolumeSnapshot with the given name
-func getVolumeSnapshot(t *testing.T, client kubernetes.Interface, name string) *snapshotv1.VolumeSnapshot {
+func getVolumeSnapshot(t *testing.T, name string) *snapshotv1.VolumeSnapshot {
 	snapshot, err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Get(
 		context.Background(),
 		name,
