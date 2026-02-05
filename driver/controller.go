@@ -303,12 +303,53 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	var createdVolume *cloudscale.Volume
+
+	if len(volumes) != 0 {
+		// Volume already exists - validate it matches request
+		if len(volumes) > 1 {
+			return nil, fmt.Errorf("fatal issue: duplicate volume %q exists", volumeName)
+		}
+		createdVolume = &volumes[0]
+
+		if createdVolume.SizeGB != snapshot.SizeGB {
+			// todo: volume could already be resized, I'm not sure we need to enforce this
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already exists with size %d GB, but snapshot requires %d GB",
+				volumeName, createdVolume.SizeGB, snapshot.SizeGB)
+		}
+
+		if createdVolume.Zone.Slug != snapshot.Zone.Slug {
+			// todo: if the zone does not match the one requested, something went wrong. possibly a manually created volume with the same name.
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already exists in zone %s, but snapshot is in zone %s",
+				volumeName, createdVolume.Zone.Slug, snapshot.Zone.Slug)
+		}
+
+		ll.Info("volume from snapshot already exists")
+
+	} else {
+		// Volume does not exist, create volume from snapshot
+		volumeReq := &cloudscale.VolumeCreateRequest{
+			Name:               volumeName,
+			VolumeSnapshotUUID: sourceSnapshotID,
+			// Size, Type, Zone are inherited from snapshot - do NOT set them
+		}
+
+		ll.WithField("volume_req", volumeReq).Info("creating volume from snapshot")
+		createdVolume, err = d.cloudscaleClient.Volumes.Create(ctx, volumeReq)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to create volume from snapshot: %v", err)
+		}
+	}
+
 	csiVolume := csi.Volume{
-		CapacityBytes: int64(snapshot.SizeGB) * GB,
+		VolumeId:      createdVolume.UUID,
+		CapacityBytes: int64(createdVolume.SizeGB) * GB,
 		AccessibleTopology: []*csi.Topology{
 			{
 				Segments: map[string]string{
-					topologyZonePrefix: d.zone,
+					topologyZonePrefix: createdVolume.Zone.Slug,
 				},
 			},
 		},
@@ -324,46 +365,7 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		csiVolume.VolumeContext[LuksKeySizeAttribute] = req.Parameters[LuksKeySizeAttribute]
 	}
 
-	// Volume already exists - validate it matches request
-	if len(volumes) != 0 {
-		if len(volumes) > 1 {
-			return nil, fmt.Errorf("fatal issue: duplicate volume %q exists", volumeName)
-		}
-		vol := volumes[0]
-
-		if vol.SizeGB != snapshot.SizeGB {
-			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already exists with size %d GB, but snapshot requires %d GB",
-				volumeName, vol.SizeGB, snapshot.SizeGB)
-		}
-
-		if vol.Zone != snapshot.Zone {
-			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already exists in zone %s, but snapshot is in zone %s",
-				volumeName, vol.Zone, snapshot.Zone)
-		}
-
-		ll.Info("volume from snapshot already exists")
-		csiVolume.VolumeId = vol.UUID
-		return &csi.CreateVolumeResponse{Volume: &csiVolume}, nil
-	}
-
-	// Create volume from snapshot
-	volumeReq := &cloudscale.VolumeCreateRequest{
-		Name:               volumeName,
-		VolumeSnapshotUUID: sourceSnapshotID,
-		// Size, Type, Zone are inherited from snapshot - do NOT set them
-	}
-
-	ll.WithField("volume_req", volumeReq).Info("creating volume from snapshot")
-	vol, err := d.cloudscaleClient.Volumes.Create(ctx, volumeReq)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create volume from snapshot: %v", err)
-	}
-
-	csiVolume.VolumeId = vol.UUID
 	resp := &csi.CreateVolumeResponse{Volume: &csiVolume}
-
 	ll.WithField("response", resp).Info("volume created from snapshot")
 	return resp, nil
 }
