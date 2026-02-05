@@ -77,6 +77,10 @@ spec:
           args:
             - "--csi-address=$(CSI_ENDPOINT)"
             - "--v={{ .Values.snapshotter.logLevelVerbosity }}"
+          {{- with .Values.controller.resources }}
+          resources:
+{{ toYaml . | indent 12 }}
+          {{- end }}
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
