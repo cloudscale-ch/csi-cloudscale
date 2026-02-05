@@ -142,7 +142,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	})
 	ll.Info("create volume called")
 
-	// get volume first, if it's created do no thing
+	// get volume first, if it's created do nothing
 	volumes, err := d.cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -171,7 +171,7 @@ func (d *Driver) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest)
 	// volume already exist, do nothing
 	if len(volumes) != 0 {
 		if len(volumes) > 1 {
-			return nil, fmt.Errorf("fatal issue: duplicate volume %q exists", volumeName)
+			return nil, status.Errorf(codes.Internal, "fatal issue: duplicate volume %q exists", volumeName)
 		}
 		vol := volumes[0]
 
@@ -247,12 +247,13 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		if requiredBytes > 0 {
 			requiredGB := int(requiredBytes / GB)
 			if requiredGB < snapshot.SizeGB {
-				return nil, status.Errorf(codes.InvalidArgument,
+				return nil, status.Errorf(codes.OutOfRange,
 					"requested volume size (%d GB) is smaller than snapshot size (%d GB)",
 					requiredGB, snapshot.SizeGB)
 			}
 			if requiredGB > snapshot.SizeGB {
-				return nil, status.Errorf(codes.InvalidArgument,
+				// todo: we could just do this after creation of the volume...
+				return nil, status.Errorf(codes.OutOfRange,
 					"cloudscale.ch API does not support creating volumes larger than snapshot size during restore. "+
 						"Create volume from snapshot first, then expand it using ControllerExpandVolume. "+
 						"Requested: %d GB, Snapshot: %d GB", requiredGB, snapshot.SizeGB)
@@ -312,22 +313,22 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		}
 		createdVolume = &volumes[0]
 
+		// cloudscale API does not provide the source snapshot of a volume,
+		// if this would be provided, the idempotency check could be improved.
+
 		if createdVolume.SizeGB != snapshot.SizeGB {
-			// todo: volume could already be resized, I'm not sure we need to enforce this
 			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already exists with size %d GB, but snapshot requires %d GB",
+				"volume %q already exists with size %d GB (incompatible with snapshot size %d GB)",
 				volumeName, createdVolume.SizeGB, snapshot.SizeGB)
 		}
 
 		if createdVolume.Zone.Slug != snapshot.Zone.Slug {
-			// todo: if the zone does not match the one requested, something went wrong. possibly a manually created volume with the same name.
 			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already exists in zone %s, but snapshot is in zone %s",
+				"volume %q already exists in zone %s (incompatible with snapshot zone %s)",
 				volumeName, createdVolume.Zone.Slug, snapshot.Zone.Slug)
 		}
 
-		ll.Info("volume from snapshot already exists")
-
+		ll.WithField("volume_id", createdVolume.UUID).Info("volume from snapshot already exists")
 	} else {
 		// Volume does not exist, create volume from snapshot
 		volumeReq := &cloudscale.VolumeCreateRequest{
@@ -721,7 +722,6 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	volumeSnapshotCreateRequest := &cloudscale.VolumeSnapshotCreateRequest{
 		Name:         req.Name,
 		SourceVolume: req.SourceVolumeId,
-		// todo: Tags are not currently supported in snapshot creation
 	}
 
 	ll.WithField("volume_snapshot_create_request", volumeSnapshotCreateRequest).Info("creating volume snapshot")
