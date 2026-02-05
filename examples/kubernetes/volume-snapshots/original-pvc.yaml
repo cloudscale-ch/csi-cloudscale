@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: luks-volume
+  name: my-volume
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
-  storageClassName: cloudscale-volume-ssd-luks
+      storage: 5Gi
+  storageClassName: cloudscale-volume-ssd

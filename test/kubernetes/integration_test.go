@@ -24,8 +24,10 @@ import (
 	"golang.org/x/oauth2"
 	"k8s.io/client-go/rest"
 
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v6/clientset/versioned"
 	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -76,6 +78,7 @@ type DiskInfo struct {
 
 var (
 	client           kubernetes.Interface
+	snapshotClient   snapshotclientset.Interface
 	config           *rest.Config
 	cloudscaleClient *cloudscale.Client
 )
@@ -154,6 +157,384 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 	// delete the pod and the pvcs and wait until the volume was deleted from
 	// the cloudscale.ch account; this check is necessary to test that the
 	// csi-plugin properly deletes the volume from cloudscale.ch
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc-original",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	originalVolume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, originalVolume.SizeGB)
+	assert.Equal(t, "ssd", originalVolume.Type)
+
+	// verify that our disk is not luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, 5*driver.GB, disk.FilesystemSize)
+
+	// store the original filesystem UUID to verify it's preserved after restore
+	originalFilesystemUUID := disk.FilesystemUUID
+
+	// create a snapshot of the volume
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+
+	// wait for the snapshot to be ready
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
+	assert.NotNil(t, snapshot.Status)
+	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	// verify the snapshot exists in cloudscale.ch API
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.NotNil(t, snapshotContent.Status)
+	assert.NotNil(t, snapshotContent.Status.SnapshotHandle)
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, *snapshotContent.Status.SnapshotHandle)
+	assert.NotNil(t, cloudscaleSnapshot)
+	assert.Equal(t, *snapshotContent.Status.SnapshotHandle, cloudscaleSnapshot.UUID)
+	assert.Equal(t, "available", cloudscaleSnapshot.Status)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// create a new pod with a pvc restored from the snapshot
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-pvc-restored",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	// wait for the restored pod to be running and verify that the pvc is bound
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	// load the restored volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 5, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	// verify that the restored disk has the same properties as the original
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", restoredDisk.Luks)
+	assert.Equal(t, "Filesystem", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", restoredDisk.Filesystem)
+	assert.Equal(t, 5*driver.GB, restoredDisk.DeviceSize)
+	assert.Equal(t, 5*driver.GB, restoredDisk.FilesystemSize)
+
+	// verify that the filesystem UUID is preserved (data was restored, not recreated)
+	assert.Equal(t, originalFilesystemUUID, restoredDisk.FilesystemUUID)
+
+	// delete the snapshot before deleting the volumes (cloudscale requires snapshots deleted before source volume)
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, *snapshotContent.Status.SnapshotHandle)
+
+	// cleanup restored pod and pvc
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
+	// cleanup original pod and pvc
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-luks-pvc-original",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	originalVolume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, originalVolume.SizeGB)
+	assert.Equal(t, "ssd", originalVolume.Type)
+
+	// verify that our disk is luks-encrypted, formatted with ext4 and 5 GB big
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "ext4", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, "LUKS1", disk.Luks)
+	assert.Equal(t, "Filesystem", disk.PVCVolumeMode)
+	assert.Equal(t, "aes-xts-plain64", disk.Cipher)
+	assert.Equal(t, 512, disk.Keysize)
+	assert.Equal(t, 5*driver.GB-luksOverhead, disk.FilesystemSize)
+
+	// store the original filesystem UUID to verify it's preserved after restore
+	originalFilesystemUUID := disk.FilesystemUUID
+
+	// create a snapshot of the LUKS volume
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+
+	// wait for the snapshot to be ready
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
+	assert.NotNil(t, snapshot.Status)
+	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	// verify the snapshot exists in cloudscale.ch API
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.NotNil(t, snapshotContent.Status)
+	assert.NotNil(t, snapshotContent.Status.SnapshotHandle)
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, *snapshotContent.Status.SnapshotHandle)
+	assert.NotNil(t, cloudscaleSnapshot)
+	assert.Equal(t, *snapshotContent.Status.SnapshotHandle, cloudscaleSnapshot.UUID)
+	assert.Equal(t, "available", cloudscaleSnapshot.Status)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// create a new pod with a pvc restored from the snapshot with LUKS parameters
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-luks-pvc-restored",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	// wait for the restored pod to be running and verify that the pvc is bound
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	// load the restored volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 5, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	// verify that the restored disk has LUKS encryption preserved
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "LUKS1", restoredDisk.Luks)
+	assert.Equal(t, "Filesystem", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", restoredDisk.Filesystem)
+	assert.Equal(t, 5*driver.GB, restoredDisk.DeviceSize)
+	assert.Equal(t, 5*driver.GB-luksOverhead, restoredDisk.FilesystemSize)
+	assert.Equal(t, "aes-xts-plain64", restoredDisk.Cipher)
+	assert.Equal(t, 512, restoredDisk.Keysize)
+
+	// verify that the filesystem UUID is preserved (data was restored, not recreated)
+	assert.Equal(t, originalFilesystemUUID, restoredDisk.FilesystemUUID)
+
+	// delete the snapshot before deleting the volumes
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, *snapshotContent.Status.SnapshotHandle)
+
+	// finally cleanup the restored pod and pvc
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
+	// cleanup the original pod and pvc
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
+func TestPod_Snapshot_Size_Validation(t *testing.T) {
+	// Test that snapshot size validation works correctly
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-snapshot-size-pvc",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// Create volume
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, volume.SizeGB)
+
+	// Create snapshot
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	snapshotHandle := *snapshotContent.Status.SnapshotHandle
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, snapshotHandle)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// Attempt to restore with smaller size (should fail)
+	// Create PVC directly without pod (since it won't bind)
+	smallerPVCName := "csi-pod-snapshot-size-pvc-smaller"
+	volMode := v1.PersistentVolumeFilesystem
+	apiGroup := "snapshot.storage.k8s.io"
+	smallerPVC := &v1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: smallerPVCName,
+		},
+		Spec: v1.PersistentVolumeClaimSpec{
+			VolumeMode: &volMode,
+			AccessModes: []v1.PersistentVolumeAccessMode{
+				v1.ReadWriteOnce,
+			},
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceStorage: resource.MustParse("3Gi"), // Smaller than snapshot size (5GB)
+				},
+			},
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
+			DataSource: &v1.TypedLocalObjectReference{
+				APIGroup: &apiGroup,
+				Kind:     "VolumeSnapshot",
+				Name:     snapshot.Name,
+			},
+		},
+	}
+
+	t.Log("Creating PVC from snapshot with smaller size (should fail)")
+	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), smallerPVC, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	// Wait a bit for the PVC to be processed
+	time.Sleep(10 * time.Second)
+
+	// Check that PVC is not bound (should fail)
+	smallerPVC = getPVC(t, client, smallerPVCName)
+	assert.NotEqual(t, v1.ClaimBound, smallerPVC.Status.Phase, "PVC with smaller size should not be bound")
+	assert.Equal(t, v1.ClaimPending, smallerPVC.Status.Phase, "PVC should be in Pending state due to size validation failure")
+
+	// Verify no volume was created
+	if smallerPVC.Spec.VolumeName != "" {
+		t.Logf("Warning: Volume was created despite size validation failure: %s", smallerPVC.Spec.VolumeName)
+	}
+
+	// Cleanup failed PVC
+	err = client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), smallerPVCName, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	// Attempt to restore with larger size (should fail)
+	// Create PVC directly without pod (since it won't bind)
+	largerPVCName := "csi-pod-snapshot-size-pvc-larger"
+	largerPVC := &v1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: largerPVCName,
+		},
+		Spec: v1.PersistentVolumeClaimSpec{
+			VolumeMode: &volMode,
+			AccessModes: []v1.PersistentVolumeAccessMode{
+				v1.ReadWriteOnce,
+			},
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceStorage: resource.MustParse("10Gi"), // Larger than snapshot size (5GB)
+				},
+			},
+			StorageClassName: strPtr("cloudscale-volume-ssd"),
+			DataSource: &v1.TypedLocalObjectReference{
+				APIGroup: &apiGroup,
+				Kind:     "VolumeSnapshot",
+				Name:     snapshot.Name,
+			},
+		},
+	}
+
+	t.Log("Creating PVC from snapshot with larger size (should fail)")
+	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), largerPVC, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	// Wait a bit for the PVC to be processed
+	time.Sleep(10 * time.Second)
+
+	// Check that PVC is not bound (should fail)
+	largerPVC = getPVC(t, client, largerPVCName)
+	assert.NotEqual(t, v1.ClaimBound, largerPVC.Status.Phase, "PVC with larger size should not be bound")
+	assert.Equal(t, v1.ClaimPending, largerPVC.Status.Phase, "PVC should be in Pending state due to size validation failure")
+
+	// Verify no volume was created
+	if largerPVC.Spec.VolumeName != "" {
+		t.Logf("Warning: Volume was created despite size validation failure: %s", largerPVC.Spec.VolumeName)
+	}
+
+	// Cleanup failed PVC
+	err = client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), largerPVCName, metav1.DeleteOptions{})
+	assert.NoError(t, err)
+
+	// Cleanup original resources
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, snapshotHandle)
 	cleanup(t, podDescriptor)
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
@@ -723,6 +1104,12 @@ func setup() error {
 		return err
 	}
 
+	// create the snapshot clientset for working with VolumeSnapshot CRDs
+	snapshotClient, err = snapshotclientset.NewForConfig(config)
+	if err != nil {
+		return err
+	}
+
 	// create test namespace
 	_, err = client.CoreV1().Namespaces().Create(
 		context.Background(),
@@ -1196,7 +1583,8 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 			return
 		}
 		if err != nil {
-			if cloudscaleErr, ok := err.(*cloudscale.ErrorResponse); ok {
+			var cloudscaleErr *cloudscale.ErrorResponse
+			if errors.As(err, &cloudscaleErr) {
 				if cloudscaleErr.StatusCode == http.StatusNotFound {
 					t.Logf("volume %v is deleted on cloudscale", volumeName)
 					return
@@ -1451,4 +1839,200 @@ func generateMetricEntry(line string) MetricEntry {
 		return MetricEntry{name, metricLabels, split[1]}
 	}
 	return MetricEntry{split[0], "", split[1]}
+}
+
+// makeKubernetesVolumeSnapshot creates a VolumeSnapshot for the given PVC
+func makeKubernetesVolumeSnapshot(t *testing.T, snapshotName string, pvcName string) *snapshotv1.VolumeSnapshot {
+	className := "cloudscale-snapshots"
+
+	// Verify that the VolumeSnapshotClass exists before creating the VolumeSnapshot
+	// This helps catch configuration issues early (e.g., CRDs not installed)
+	_, err := snapshotClient.SnapshotV1().VolumeSnapshotClasses().Get(
+		context.Background(),
+		className,
+		metav1.GetOptions{},
+	)
+	if err != nil {
+		if kubeerrors.IsNotFound(err) {
+			t.Fatalf("VolumeSnapshotClass %q not found. "+
+				"This usually means the snapshot CRDs are not installed. "+
+				"See the readme for setup installation instructions and and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
+		}
+		t.Fatalf("Failed to get VolumeSnapshotClass %q: %v", className, err)
+	}
+
+	snapshot := &snapshotv1.VolumeSnapshot{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "VolumeSnapshot",
+			APIVersion: "snapshot.storage.k8s.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      snapshotName,
+			Namespace: namespace,
+		},
+		Spec: snapshotv1.VolumeSnapshotSpec{
+			VolumeSnapshotClassName: &className,
+			Source: snapshotv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: &pvcName,
+			},
+		},
+	}
+
+	t.Logf("Creating volume snapshot %v", snapshotName)
+	created, err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Create(
+		context.Background(),
+		snapshot,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return created
+}
+
+// deleteKubernetesVolumeSnapshot deletes the VolumeSnapshot with the given name
+func deleteKubernetesVolumeSnapshot(t *testing.T, snapshotName string) {
+	t.Logf("Deleting volume snapshot %v", snapshotName)
+	err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Delete(
+		context.Background(),
+		snapshotName,
+		metav1.DeleteOptions{},
+	)
+	assert.NoError(t, err)
+}
+
+// waitForVolumeSnapshot waits for the VolumeSnapshot to be ready
+func waitForVolumeSnapshot(t *testing.T, name string) {
+	start := time.Now()
+
+	t.Logf("Waiting for volume snapshot %q to be ready ...\n", name)
+
+	for {
+		snapshot := getVolumeSnapshot(t, name)
+
+		if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse {
+			t.Logf("Volume snapshot %q is ready\n", name)
+			return
+		}
+
+		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+			t.Fatalf("timeout exceeded while waiting for volume snapshot %v to be ready", name)
+			return
+		}
+
+		t.Logf("Volume snapshot %q not ready yet; waiting...", name)
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// getVolumeSnapshot retrieves the VolumeSnapshot with the given name
+func getVolumeSnapshot(t *testing.T, name string) *snapshotv1.VolumeSnapshot {
+	snapshot, err := snapshotClient.SnapshotV1().VolumeSnapshots(namespace).Get(
+		context.Background(),
+		name,
+		metav1.GetOptions{},
+	)
+	assert.NoError(t, err)
+	return snapshot
+}
+
+func getCloudscaleVolumeSnapshot(t *testing.T, snapshotHandle string) *cloudscale.VolumeSnapshot {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	snapshot, err := cloudscaleClient.VolumeSnapshots.Get(ctx, snapshotHandle)
+	if err != nil {
+		t.Fatalf("Could not find snapshot with handle %v: %v", snapshotHandle, err)
+	}
+
+	return snapshot
+}
+
+// waitCloudscaleVolumeSnapshotDeleted waits until the snapshot with the given handle was deleted
+func waitCloudscaleVolumeSnapshotDeleted(t *testing.T, snapshotHandle string) {
+	start := time.Now()
+
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_, err := cloudscaleClient.VolumeSnapshots.Get(ctx, snapshotHandle)
+		cancel()
+
+		if err != nil {
+			var cloudscaleErr *cloudscale.ErrorResponse
+			if errors.As(err, &cloudscaleErr) {
+				if cloudscaleErr.StatusCode == http.StatusNotFound {
+					t.Logf("snapshot %v is deleted on cloudscale", snapshotHandle)
+					return
+				}
+			}
+			// Some other error - log but continue waiting
+			t.Logf("error checking snapshot %v: %v", snapshotHandle, err)
+		}
+
+		if time.Since(start) > 5*time.Minute {
+			t.Errorf("timeout exceeded while waiting for snapshot %v to be deleted from cloudscale", snapshotHandle)
+			return
+		}
+
+		t.Logf("snapshot %v not deleted on cloudscale yet; awaiting deletion", snapshotHandle)
+		time.Sleep(5 * time.Second)
+	}
+}
+
+// getVolumeSnapshotContent retrieves the VolumeSnapshotContent for a VolumeSnapshot
+func getVolumeSnapshotContent(t *testing.T, contentName string) *snapshotv1.VolumeSnapshotContent {
+	content, err := snapshotClient.SnapshotV1().VolumeSnapshotContents().Get(
+		context.Background(),
+		contentName,
+		metav1.GetOptions{},
+	)
+	assert.NoError(t, err)
+	return content
+}
+
+// creates kubernetes pvcs from the given TestPodDescriptor, restoring from a snapshot
+func makeKubernetesPVCsFromSnapshot(t *testing.T, pod TestPodDescriptor, snapshotName string) []*v1.PersistentVolumeClaim {
+	pvcs := make([]*v1.PersistentVolumeClaim, 0)
+
+	for _, volume := range pod.Volumes {
+		volMode := v1.PersistentVolumeFilesystem
+		if volume.Block {
+			volMode = v1.PersistentVolumeBlock
+		}
+
+		apiGroup := "snapshot.storage.k8s.io"
+		pvcs = append(pvcs, &v1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: volume.ClaimName,
+			},
+			Spec: v1.PersistentVolumeClaimSpec{
+				VolumeMode: &volMode,
+				AccessModes: []v1.PersistentVolumeAccessMode{
+					v1.ReadWriteOnce,
+				},
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceStorage: resource.MustParse(fmt.Sprintf("%vGi", volume.SizeGB)),
+					},
+				},
+				StorageClassName: strPtr(volume.StorageClass),
+				DataSource: &v1.TypedLocalObjectReference{
+					APIGroup: &apiGroup,
+					Kind:     "VolumeSnapshot",
+					Name:     snapshotName,
+				},
+			},
+		})
+	}
+
+	t.Log("Creating pvc from snapshot")
+	for _, pvc := range pvcs {
+		_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), pvc, metav1.CreateOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return pvcs
 }

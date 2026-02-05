@@ -1,0 +1,8 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: luks-volume-snapshot
+spec:
+  volumeSnapshotClassName: cloudscale-snapshots
+  source:
+    persistentVolumeClaimName: luks-volume
