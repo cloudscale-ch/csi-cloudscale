@@ -436,58 +436,23 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, snapshotHandle)
 	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
 
-	// Attempt to restore with smaller size (should fail)
-	// Create PVC directly without pod (since it won't bind)
-	smallerPVCName := "csi-pod-snapshot-size-pvc-smaller"
+	// Note: restoring with a smaller size is not tested here because the
+	// Kubernetes external-provisioner enforces that the requested PVC size
+	// is at least the snapshot's restore size. If a smaller size is requested,
+	// the provisioner automatically adjusts it before invoking the CSI driver.
+	// As a result, CreateVolume is never called with a smaller size in practice.
+	// The driver's own smaller-size validation in createVolumeFromSnapshot is
+	// therefore defense-in-depth only.
+
+	// Attempt to restore with a larger size (expected to fail for this driver).
+	// The Kubernetes external-provisioner forwards the requested size unchanged
+	// when it is larger than the snapshot restore size and calls the CSI driver's
+	// CreateVolume. Our driver rejects such requests with codes.OutOfRange.
+	// The external-provisioner surfaces any CreateVolume failure as a
+	// ProvisioningFailed event on the PVC, which we use to verify this.
+	largerPVCName := "csi-pod-snapshot-size-pvc-larger"
 	volMode := v1.PersistentVolumeFilesystem
 	apiGroup := "snapshot.storage.k8s.io"
-	smallerPVC := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: smallerPVCName,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			VolumeMode: &volMode,
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("3Gi"), // Smaller than snapshot size (5GB)
-				},
-			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
-			DataSource: &v1.TypedLocalObjectReference{
-				APIGroup: &apiGroup,
-				Kind:     "VolumeSnapshot",
-				Name:     snapshot.Name,
-			},
-		},
-	}
-
-	t.Log("Creating PVC from snapshot with smaller size (should fail)")
-	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), smallerPVC, metav1.CreateOptions{})
-	assert.NoError(t, err)
-
-	// Wait a bit for the PVC to be processed
-	time.Sleep(10 * time.Second)
-
-	// Check that PVC is not bound (should fail)
-	smallerPVC = getPVC(t, client, smallerPVCName)
-	assert.NotEqual(t, v1.ClaimBound, smallerPVC.Status.Phase, "PVC with smaller size should not be bound")
-	assert.Equal(t, v1.ClaimPending, smallerPVC.Status.Phase, "PVC should be in Pending state due to size validation failure")
-
-	// Verify no volume was created
-	if smallerPVC.Spec.VolumeName != "" {
-		t.Logf("Warning: Volume was created despite size validation failure: %s", smallerPVC.Spec.VolumeName)
-	}
-
-	// Cleanup failed PVC
-	err = client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), smallerPVCName, metav1.DeleteOptions{})
-	assert.NoError(t, err)
-
-	// Attempt to restore with larger size (should fail)
-	// Create PVC directly without pod (since it won't bind)
-	largerPVCName := "csi-pod-snapshot-size-pvc-larger"
 	largerPVC := &v1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: largerPVCName,
@@ -512,21 +477,11 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	}
 
 	t.Log("Creating PVC from snapshot with larger size (should fail)")
-	_, err = client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), largerPVC, metav1.CreateOptions{})
+	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), largerPVC, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
-	// Wait a bit for the PVC to be processed
-	time.Sleep(10 * time.Second)
-
-	// Check that PVC is not bound (should fail)
-	largerPVC = getPVC(t, client, largerPVCName)
-	assert.NotEqual(t, v1.ClaimBound, largerPVC.Status.Phase, "PVC with larger size should not be bound")
-	assert.Equal(t, v1.ClaimPending, largerPVC.Status.Phase, "PVC should be in Pending state due to size validation failure")
-
-	// Verify no volume was created
-	if largerPVC.Spec.VolumeName != "" {
-		t.Logf("Warning: Volume was created despite size validation failure: %s", largerPVC.Spec.VolumeName)
-	}
+	// Wait for the provisioner to reject the PVC with an OutOfRange error
+	waitForPVCEvent(t, client, largerPVCName, "ProvisioningFailed", "does not support creating volumes larger", 60*time.Second)
 
 	// Cleanup failed PVC
 	err = client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), largerPVCName, metav1.DeleteOptions{})
@@ -1554,6 +1509,38 @@ func getPVC(t *testing.T, client kubernetes.Interface, name string) *v1.Persiste
 	return claim
 }
 
+// waitForPVCEvent polls Kubernetes events for the given PVC until an event
+// with the specified reason and a message containing expectedSubstring appears.
+func waitForPVCEvent(t *testing.T, client kubernetes.Interface, pvcName string, reason string, expectedSubstring string, timeout time.Duration) {
+	t.Helper()
+	start := time.Now()
+	t.Logf("Waiting for event (reason=%q, substring=%q) on PVC %q ...", reason, expectedSubstring, pvcName)
+
+	for {
+		events, err := client.CoreV1().Events(namespace).List(context.Background(), metav1.ListOptions{
+			FieldSelector: fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=PersistentVolumeClaim,reason=%s", pvcName, reason),
+		})
+		if err != nil {
+			t.Errorf("Failed to list events for PVC %q: %v", pvcName, err)
+			return
+		}
+
+		for _, event := range events.Items {
+			if strings.Contains(event.Message, expectedSubstring) {
+				t.Logf("Found expected event on PVC %q: %s", pvcName, event.Message)
+				return
+			}
+		}
+
+		if time.Since(start) > timeout {
+			t.Errorf("Timeout waiting for event (reason=%q, substring=%q) on PVC %q", reason, expectedSubstring, pvcName)
+			return
+		}
+
+		time.Sleep(2 * time.Second)
+	}
+}
+
 // loads the pod with the given name from kubernetes
 func getPod(t *testing.T, client kubernetes.Interface, name string) *v1.Pod {
 	pod, err := client.CoreV1().Pods(namespace).Get(context.Background(), name, metav1.GetOptions{})
@@ -1854,11 +1841,13 @@ func makeKubernetesVolumeSnapshot(t *testing.T, snapshotName string, pvcName str
 	)
 	if err != nil {
 		if kubeerrors.IsNotFound(err) {
-			t.Fatalf("VolumeSnapshotClass %q not found. "+
+			t.Errorf("VolumeSnapshotClass %q not found. "+
 				"This usually means the snapshot CRDs are not installed. "+
-				"See the readme for setup installation instructions and and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
+				"See the readme for setup installation instructions and ensure the VolumeSnapshotClass resource exists. Error: %v", className, err)
+			return nil
 		}
-		t.Fatalf("Failed to get VolumeSnapshotClass %q: %v", className, err)
+		t.Errorf("Failed to get VolumeSnapshotClass %q: %v", className, err)
+		return nil
 	}
 
 	snapshot := &snapshotv1.VolumeSnapshot{
@@ -1917,7 +1906,7 @@ func waitForVolumeSnapshot(t *testing.T, name string) {
 		}
 
 		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
-			t.Fatalf("timeout exceeded while waiting for volume snapshot %v to be ready", name)
+			t.Errorf("timeout exceeded while waiting for volume snapshot %v to be ready", name)
 			return
 		}
 
