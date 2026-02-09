@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
@@ -1893,25 +1894,22 @@ func deleteKubernetesVolumeSnapshot(t *testing.T, snapshotName string) {
 
 // waitForVolumeSnapshot waits for the VolumeSnapshot to be ready
 func waitForVolumeSnapshot(t *testing.T, name string) {
-	start := time.Now()
+	t.Logf("Waiting for volume snapshot %q to be ready...", name)
 
-	t.Logf("Waiting for volume snapshot %q to be ready ...\n", name)
-
-	for {
+	err := wait.PollUntilContextTimeout(t.Context(), 5*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		snapshot := getVolumeSnapshot(t, name)
 
 		if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse {
-			t.Logf("Volume snapshot %q is ready\n", name)
-			return
-		}
-
-		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
-			t.Errorf("timeout exceeded while waiting for volume snapshot %v to be ready", name)
-			return
+			t.Logf("Volume snapshot %q is ready", name)
+			return true, nil
 		}
 
 		t.Logf("Volume snapshot %q not ready yet; waiting...", name)
-		time.Sleep(5 * time.Second)
+		return false, nil
+	})
+
+	if err != nil {
+		t.Errorf("failed waiting for volume snapshot %q: %v", name, err)
 	}
 }
 
