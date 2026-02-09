@@ -329,6 +329,10 @@ func getVolumesPerServer(f *FakeVolumeServiceOperations, serverUUID string) int 
 }
 
 func (f *FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
+	_, ok := f.volumes[volumeID]
+	if ok != true {
+		return generateNotFoundError()
+	}
 
 	// prevent deletion if snapshots exist
 	snapshots, err := f.fakeClient.VolumeSnapshots.List(context.Background())
@@ -340,8 +344,8 @@ func (f *FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID strin
 	for _, snapshot := range snapshots {
 		if snapshot.Volume.UUID == volumeID {
 			return &cloudscale.ErrorResponse{
-				StatusCode: 409,
-				Message:    map[string]string{"detail": "volume has snapshots"},
+				StatusCode: 400,
+				Message:    map[string]string{"detail": "Snapshots exist for this volume"},
 			}
 		}
 	}
@@ -818,4 +822,72 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	// Clean up: allow stage operation to complete
 	execStage <- struct{}{}
 	<-respStage
+}
+
+// TestDeleteVolume_FailsWhenSnapshotsExist verifies that DeleteVolume returns
+// codes.FailedPrecondition when the volume has existing snapshots, matching
+// the CSI spec requirement for volumes that cannot be deleted independently
+// of their snapshots.
+func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	// Create a volume
+	vol, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-volume-with-snapshot",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange: &csi.CapacityRange{
+			RequiredBytes: 1 * GB,
+		},
+		Parameters: map[string]string{
+			StorageTypeAttribute: "ssd",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume: %v", err)
+	}
+	volumeID := vol.Volume.VolumeId
+
+	// Create a snapshot on the volume
+	snap, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+		Name:           "test-snapshot",
+		SourceVolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create snapshot: %v", err)
+	}
+	if snap.Snapshot.SnapshotId == "" {
+		t.Fatalf("Expected non-empty snapshot ID")
+	}
+
+	// Attempt to delete the volume — should fail with FailedPrecondition
+	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+	})
+	if err == nil {
+		t.Fatalf("Expected error when deleting volume with snapshots, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.FailedPrecondition {
+		t.Errorf("Expected error code FailedPrecondition, got: %v", st.Code())
+	}
+
+	// Delete the snapshot, then delete the volume, should succeed now
+	_, err = driver.DeleteSnapshot(ctx, &csi.DeleteSnapshotRequest{
+		SnapshotId: snap.Snapshot.SnapshotId,
+	})
+	if err != nil {
+		t.Fatalf("Failed to delete snapshot: %v", err)
+	}
+
+	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Expected volume deletion to succeed after snapshot removal, got: %v", err)
+	}
 }
