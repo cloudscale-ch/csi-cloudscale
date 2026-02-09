@@ -9,7 +9,7 @@ require (
 	github.com/kubernetes-csi/csi-test/v5 v5.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.39.0
 	google.golang.org/grpc v1.77.0
 	k8s.io/api v0.28.15
