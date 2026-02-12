@@ -495,6 +495,98 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+func TestListSnapshots_MultipleSnapshots(t *testing.T) {
+	// Create two independent volumes, each with one snapshot, to verify that
+	// the CSI driver correctly advertises LIST_SNAPSHOTS and the snapshot
+	// controller can reconcile multiple snapshots concurrently.
+
+	podDescriptor1 := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-list-snap-pvc-1",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+	podDescriptor2 := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-list-snap-pvc-2",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+			},
+		},
+	}
+
+	// Create both pods and PVCs
+	pod1 := makeKubernetesPod(t, podDescriptor1)
+	pvcs1 := makeKubernetesPVCs(t, podDescriptor1)
+	pod2 := makeKubernetesPod(t, podDescriptor2)
+	pvcs2 := makeKubernetesPVCs(t, podDescriptor2)
+
+	// Wait for both pods to be running
+	waitForPod(t, client, pod1.Name)
+	waitForPod(t, client, pod2.Name)
+	pvc1 := getPVC(t, client, pvcs1[0].Name)
+	pvc2 := getPVC(t, client, pvcs2[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc1.Status.Phase)
+	assert.Equal(t, v1.ClaimBound, pvc2.Status.Phase)
+
+	// Create a snapshot for each volume
+	snap1Name := pseudoUuid()
+	snap2Name := pseudoUuid()
+	snapshot1 := makeKubernetesVolumeSnapshot(t, snap1Name, pvc1.Name)
+	snapshot2 := makeKubernetesVolumeSnapshot(t, snap2Name, pvc2.Name)
+
+	// Wait for both snapshots to be ready
+	waitForVolumeSnapshot(t, snapshot1.Name)
+	waitForVolumeSnapshot(t, snapshot2.Name)
+
+	snapshot1 = getVolumeSnapshot(t, snapshot1.Name)
+	snapshot2 = getVolumeSnapshot(t, snapshot2.Name)
+	assert.True(t, *snapshot1.Status.ReadyToUse)
+	assert.True(t, *snapshot2.Status.ReadyToUse)
+
+	// Retrieve the cloudscale snapshot handles
+	content1 := getVolumeSnapshotContent(t, *snapshot1.Status.BoundVolumeSnapshotContentName)
+	content2 := getVolumeSnapshotContent(t, *snapshot2.Status.BoundVolumeSnapshotContentName)
+	handle1 := *content1.Status.SnapshotHandle
+	handle2 := *content2.Status.SnapshotHandle
+
+	// Verify both snapshots exist in the cloudscale API
+	csSnap1 := getCloudscaleVolumeSnapshot(t, handle1)
+	csSnap2 := getCloudscaleVolumeSnapshot(t, handle2)
+	assert.Equal(t, "available", csSnap1.Status)
+	assert.Equal(t, "available", csSnap2.Status)
+
+	// Verify both snapshots appear in a full listing from the cloudscale API
+	allSnapshots, err := cloudscaleClient.VolumeSnapshots.List(context.Background())
+	assert.NoError(t, err)
+
+	foundHandles := map[string]bool{}
+	for _, s := range allSnapshots {
+		foundHandles[s.UUID] = true
+	}
+	assert.True(t, foundHandles[handle1], "snapshot 1 not found in cloudscale VolumeSnapshots.List()")
+	assert.True(t, foundHandles[handle2], "snapshot 2 not found in cloudscale VolumeSnapshots.List()")
+
+	// Cleanup: delete snapshots before volumes (cloudscale requirement)
+	deleteKubernetesVolumeSnapshot(t, snapshot1.Name)
+	deleteKubernetesVolumeSnapshot(t, snapshot2.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, handle1)
+	waitCloudscaleVolumeSnapshotDeleted(t, handle2)
+
+	cleanup(t, podDescriptor1)
+	cleanup(t, podDescriptor2)
+	waitCloudscaleVolumeDeleted(t, pvc1.Spec.VolumeName)
+	waitCloudscaleVolumeDeleted(t, pvc2.Spec.VolumeName)
+}
+
 func TestPod_Single_SSD_Raw_Volume(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
