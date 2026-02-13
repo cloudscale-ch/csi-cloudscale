@@ -71,6 +71,10 @@ var (
 	// maxVolumesPerServerErrorMessage is the error message returned by the cloudscale.ch
 	// API when the per-server volume limit would be exceeded.
 	maxVolumesPerServerErrorMessageRe = regexp.MustCompile(`Due to internal limitations, it is currently not possible to attach more than \d+ volumes`)
+
+	// maxSnapshotsPerVolumeErrorMessageRe is the error message returned by the cloudscale.ch
+	// API when the per-volume snapshot limit would be exceeded.
+	maxSnapshotsPerVolumeErrorMessageRe = regexp.MustCompile(`It is not possible to create more than \d+ snapshots per volume`)
 )
 
 // CreateVolume creates a new volume from the given request. The function is
@@ -752,6 +756,9 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 
 			if errorResponse.StatusCode == http.StatusNotFound {
 				return nil, status.Errorf(codes.NotFound, "source volume %s not found: %v", req.SourceVolumeId, err)
+			}
+			if errorResponse.StatusCode == http.StatusBadRequest && maxSnapshotsPerVolumeErrorMessageRe.MatchString(err.Error()) {
+				return nil, status.Errorf(codes.ResourceExhausted, "snapshot limit reached for volume %s: %v", req.SourceVolumeId, err)
 			}
 		}
 		return nil, status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
