@@ -38,7 +38,7 @@ provisioner:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-provisioner
-    tag: v5.3.0
+    tag: v6.1.1
     pullPolicy: IfNotPresent
   logLevelVerbosity: 5
   resources: {}
