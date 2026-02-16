@@ -795,8 +795,8 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 
 // ListSnapshots returns the information about all snapshots on the storage
 // system within the given parameters regardless of how they were created.
-// ListSnapshots should not list a snapshot that is being created but has not
-// been cut successfully yet.
+// Per the CSI spec, snapshots that are still in progress (not yet available)
+// are excluded from the results.
 func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 	ll := d.log.WithFields(logrus.Fields{
 		"req":    req,
