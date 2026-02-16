@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -643,7 +644,7 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		csi.ControllerServiceCapability_RPC_LIST_VOLUMES,
 		csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 		csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
-		// csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
+		csi.ControllerServiceCapability_RPC_LIST_SNAPSHOTS,
 
 		// TODO: check if this can be implemented
 		// csi.ControllerServiceCapability_RPC_GET_CAPACITY,
@@ -660,6 +661,21 @@ func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.Control
 		"method":   "controller_get_capabilities",
 	}).Info("controller get capabilities called")
 	return resp, nil
+}
+
+// toCSISnapshot converts a cloudscale VolumeSnapshot to a CSI Snapshot.
+func toCSISnapshot(snap cloudscale.VolumeSnapshot) (*csi.Snapshot, error) {
+	t, err := time.Parse(time.RFC3339, snap.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse snapshot CreatedAt timestamp %q: %w", snap.CreatedAt, err)
+	}
+	return &csi.Snapshot{
+		SnapshotId:     snap.UUID,
+		SourceVolumeId: snap.Volume.UUID,
+		ReadyToUse:     snap.Status == "available",
+		SizeBytes:      int64(snap.SizeGB * GB),
+		CreationTime:   timestamppb.New(t),
+	}, nil
 }
 
 // CreateSnapshot will be called by the CO to create a new snapshot from a
@@ -695,21 +711,11 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	for _, snapshot := range snapshots {
 		if snapshot.Volume.UUID == req.SourceVolumeId {
 			// Idempotent: snapshot with this name already exists for this volume
-			t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+			csiSnap, err := toCSISnapshot(snapshot)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
+				return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 			}
-			creationTime := timestamppb.New(t)
-
-			return &csi.CreateSnapshotResponse{
-				Snapshot: &csi.Snapshot{
-					SnapshotId:     snapshot.UUID,
-					SourceVolumeId: snapshot.Volume.UUID,
-					ReadyToUse:     snapshot.Status == "available",
-					SizeBytes:      int64(snapshot.SizeGB * GB),
-					CreationTime:   creationTime,
-				},
-			}, nil
+			return &csi.CreateSnapshotResponse{Snapshot: csiSnap}, nil
 		}
 	}
 
@@ -740,21 +746,12 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 		return nil, status.Errorf(codes.Internal, "failed to create snapshot: %v", err)
 	}
 
-	t, err := time.Parse(time.RFC3339, snapshot.CreatedAt)
+	csiSnap, err := toCSISnapshot(*snapshot)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse snapshot CreatedAt timestamp %q: %v", snapshot.CreatedAt, err)
+		return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 	}
-	creationTime := timestamppb.New(t)
 
-	resp := &csi.CreateSnapshotResponse{
-		Snapshot: &csi.Snapshot{
-			SnapshotId:     snapshot.UUID,
-			SourceVolumeId: snapshot.Volume.UUID,
-			ReadyToUse:     snapshot.Status == "available", //  check status
-			SizeBytes:      int64(snapshot.SizeGB * GB),
-			CreationTime:   creationTime,
-		},
-	}
+	resp := &csi.CreateSnapshotResponse{Snapshot: csiSnap}
 
 	ll.WithField("response", resp).Info("volume snapshot created")
 	return resp, nil
@@ -798,14 +795,108 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 
 // ListSnapshots returns the information about all snapshots on the storage
 // system within the given parameters regardless of how they were created.
-// ListSnapshots shold not list a snapshot that is being created but has not
-// been cut successfully yet.
+// Per the CSI spec, snapshots that are still in progress (not yet available)
+// are excluded from the results.
 func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
-	d.log.WithFields(logrus.Fields{
+	ll := d.log.WithFields(logrus.Fields{
 		"req":    req,
 		"method": "list_snapshots",
-	}).Warn("list snapshots is not implemented")
-	return nil, status.Error(codes.Unimplemented, "")
+	})
+	ll.Info("list snapshots called")
+
+	// If snapshot_id is specified, use Get() for a direct lookup.
+	if req.SnapshotId != "" {
+		snap, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, req.SnapshotId)
+		if err != nil {
+			var errResp *cloudscale.ErrorResponse
+			if errors.As(err, &errResp) && errResp.StatusCode == http.StatusNotFound {
+				// Per CSI spec: if snapshot_id is specified and not found, return empty.
+				return &csi.ListSnapshotsResponse{}, nil
+			}
+			return nil, status.Errorf(codes.Internal, "failed to get snapshot %s: %v", req.SnapshotId, err)
+		}
+
+		// Apply source_volume_id filter if both specified.
+		if req.SourceVolumeId != "" && snap.Volume.UUID != req.SourceVolumeId {
+			return &csi.ListSnapshotsResponse{}, nil
+		}
+
+		// Exclude non-available snapshots.
+		if snap.Status != "available" {
+			return &csi.ListSnapshotsResponse{}, nil
+		}
+
+		csiSnap, err := toCSISnapshot(*snap)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
+		}
+		return &csi.ListSnapshotsResponse{
+			Entries: []*csi.ListSnapshotsResponse_Entry{{Snapshot: csiSnap}},
+		}, nil
+	}
+
+	// List all snapshots from the cloudscale API.
+	allSnapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list snapshots: %v", err)
+	}
+
+	// Filter by source_volume_id and status.
+	var filtered []cloudscale.VolumeSnapshot
+	for _, snap := range allSnapshots {
+		if snap.Status != "available" {
+			continue
+		}
+		if req.SourceVolumeId != "" && snap.Volume.UUID != req.SourceVolumeId {
+			continue
+		}
+		filtered = append(filtered, snap)
+	}
+
+	// Sort by UUID for deterministic pagination order.
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].UUID < filtered[j].UUID
+	})
+
+	// Parse starting_token as an integer index.
+	startIndex := 0
+	if req.StartingToken != "" {
+		startIndex, err = strconv.Atoi(req.StartingToken)
+		if err != nil || startIndex < 0 || startIndex > len(filtered) {
+			return nil, status.Errorf(codes.Aborted,
+				"invalid starting_token %q, start ListSnapshots with an empty starting_token",
+				req.StartingToken)
+		}
+	}
+
+	// Apply pagination.
+	remaining := filtered[startIndex:]
+	endCount := len(remaining)
+	if req.MaxEntries > 0 && int(req.MaxEntries) < endCount {
+		endCount = int(req.MaxEntries)
+	}
+
+	var entries []*csi.ListSnapshotsResponse_Entry
+	for _, snap := range remaining[:endCount] {
+		csiSnap, err := toCSISnapshot(snap)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
+		}
+		entries = append(entries, &csi.ListSnapshotsResponse_Entry{Snapshot: csiSnap})
+	}
+
+	var nextToken string
+	if startIndex+endCount < len(filtered) {
+		nextToken = strconv.Itoa(startIndex + endCount)
+	}
+
+	resp := &csi.ListSnapshotsResponse{
+		Entries:   entries,
+		NextToken: nextToken,
+	}
+
+	ll.WithField("response_entries", len(entries)).Info("snapshots listed")
+	return resp, nil
 }
 
 // ControllerExpandVolume is called from the resizer to increase the volume size.

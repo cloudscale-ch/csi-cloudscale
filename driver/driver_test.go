@@ -824,6 +824,206 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	<-respStage
 }
 
+// createVolumeForTest is a helper that creates a CSI volume and returns the volume ID.
+func createVolumeForTest(t *testing.T, driver *Driver, name string) string {
+	t.Helper()
+	vol, err := driver.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
+		Name:               name,
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		Parameters:         map[string]string{StorageTypeAttribute: "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume %s: %v", name, err)
+	}
+	return vol.Volume.VolumeId
+}
+
+// createSnapshotForTest is a helper that creates a CSI snapshot and returns the snapshot response.
+func createSnapshotForTest(t *testing.T, driver *Driver, name, volumeID string) *csi.CreateSnapshotResponse {
+	t.Helper()
+	snap, err := driver.CreateSnapshot(context.Background(), &csi.CreateSnapshotRequest{
+		Name:           name,
+		SourceVolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create snapshot %s: %v", name, err)
+	}
+	return snap
+}
+
+func TestListSnapshots_All(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-list-all")
+	createSnapshotForTest(t, driver, "snap-1", volID)
+	createSnapshotForTest(t, driver, "snap-2", volID)
+	createSnapshotForTest(t, driver, "snap-3", volID)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 3 {
+		t.Errorf("Expected 3 snapshots, got %d", len(resp.Entries))
+	}
+	for _, entry := range resp.Entries {
+		if entry.Snapshot.SnapshotId == "" {
+			t.Error("Expected non-empty SnapshotId")
+		}
+		if entry.Snapshot.SourceVolumeId == "" {
+			t.Error("Expected non-empty SourceVolumeId")
+		}
+		if entry.Snapshot.CreationTime == nil {
+			t.Error("Expected non-nil CreationTime")
+		}
+	}
+}
+
+func TestListSnapshots_BySnapshotId(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-by-id")
+	snap1 := createSnapshotForTest(t, driver, "snap-target", volID)
+	createSnapshotForTest(t, driver, "snap-other", volID)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SnapshotId: snap1.Snapshot.SnapshotId,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("Expected 1 snapshot, got %d", len(resp.Entries))
+	}
+	if resp.Entries[0].Snapshot.SnapshotId != snap1.Snapshot.SnapshotId {
+		t.Errorf("Expected snapshot ID %s, got %s", snap1.Snapshot.SnapshotId, resp.Entries[0].Snapshot.SnapshotId)
+	}
+}
+
+func TestListSnapshots_BySnapshotId_NotFound(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SnapshotId: "non-existent-id",
+	})
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent snapshot ID, got: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("Expected empty entries for non-existent snapshot ID, got %d", len(resp.Entries))
+	}
+}
+
+func TestListSnapshots_BySourceVolumeId(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID1 := createVolumeForTest(t, driver, "vol-source-1")
+	volID2 := createVolumeForTest(t, driver, "vol-source-2")
+	createSnapshotForTest(t, driver, "snap-vol1", volID1)
+	createSnapshotForTest(t, driver, "snap-vol2", volID2)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SourceVolumeId: volID1,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("Expected 1 snapshot for volume %s, got %d", volID1, len(resp.Entries))
+	}
+	if resp.Entries[0].Snapshot.SourceVolumeId != volID1 {
+		t.Errorf("Expected source volume ID %s, got %s", volID1, resp.Entries[0].Snapshot.SourceVolumeId)
+	}
+}
+
+func TestListSnapshots_BySourceVolumeId_NotFound(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SourceVolumeId: "non-existent-volume",
+	})
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent source volume, got: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("Expected empty entries for non-existent source volume, got %d", len(resp.Entries))
+	}
+}
+
+func TestListSnapshots_Pagination(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-pagination")
+	for i := 0; i < 5; i++ {
+		createSnapshotForTest(t, driver, "snap-page-"+strconv.Itoa(i), volID)
+	}
+
+	// Request first page with max_entries=2
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		MaxEntries: 2,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 2 {
+		t.Fatalf("Expected 2 entries on first page, got %d", len(resp.Entries))
+	}
+	if resp.NextToken == "" {
+		t.Fatal("Expected non-empty NextToken for first page")
+	}
+
+	// Request second page with starting_token
+	resp2, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		StartingToken: resp.NextToken,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots with starting_token returned error: %v", err)
+	}
+	if len(resp2.Entries) != 3 {
+		t.Fatalf("Expected 3 remaining entries, got %d", len(resp2.Entries))
+	}
+	if resp2.NextToken != "" {
+		t.Errorf("Expected empty NextToken for last page, got %q", resp2.NextToken)
+	}
+
+	// Verify no duplicate snapshot IDs between pages
+	seen := make(map[string]bool)
+	for _, e := range resp.Entries {
+		seen[e.Snapshot.SnapshotId] = true
+	}
+	for _, e := range resp2.Entries {
+		if seen[e.Snapshot.SnapshotId] {
+			t.Errorf("Duplicate snapshot ID %s across pages", e.Snapshot.SnapshotId)
+		}
+	}
+}
+
+func TestListSnapshots_InvalidStartingToken(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	_, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		StartingToken: "not-a-number",
+	})
+	if err == nil {
+		t.Fatal("Expected error for invalid starting_token, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.Aborted {
+		t.Errorf("Expected codes.Aborted, got %v", st.Code())
+	}
+}
+
 // TestDeleteVolume_FailsWhenSnapshotsExist verifies that DeleteVolume returns
 // codes.FailedPrecondition when the volume has existing snapshots, matching
 // the CSI spec requirement for volumes that cannot be deleted independently
