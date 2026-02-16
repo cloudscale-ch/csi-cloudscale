@@ -1,6 +1,6 @@
 dependencies:
 - name: common
   repository: https://charts.bitnami.com/bitnami
-  version: 1.17.1
-digest: sha256:c9dc9bde4c38cea08319ae9f4583b58ae3494d9d5ccedfa53fcd8661df127d1f
-generated: "2022-08-18T13:40:45.580796+02:00"
+  version: 2.36.0
+digest: sha256:e630fb2ef09fe7314904df5f38b0a86367e3fff11baec74650fe189e5e546efd
+generated: "2026-02-16T17:34:30.227613186Z"
