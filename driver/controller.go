@@ -713,7 +713,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 			// Idempotent: snapshot with this name already exists for this volume
 			csiSnap, err := toCSISnapshot(snapshot)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "%v", err)
+				return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 			}
 			return &csi.CreateSnapshotResponse{Snapshot: csiSnap}, nil
 		}
@@ -748,7 +748,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 
 	csiSnap, err := toCSISnapshot(*snapshot)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%v", err)
+		return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 	}
 
 	resp := &csi.CreateSnapshotResponse{Snapshot: csiSnap}
@@ -828,7 +828,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 
 		csiSnap, err := toCSISnapshot(*snap)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "%v", err)
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 		}
 		return &csi.ListSnapshotsResponse{
 			Entries: []*csi.ListSnapshotsResponse_Entry{{Snapshot: csiSnap}},
@@ -880,7 +880,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 	for _, snap := range remaining[:endCount] {
 		csiSnap, err := toCSISnapshot(snap)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "%v", err)
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 		}
 		entries = append(entries, &csi.ListSnapshotsResponse_Entry{Snapshot: csiSnap})
 	}
