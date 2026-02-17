@@ -696,7 +696,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	})
 
 	ll.Info("find existing volume snapshots with same name")
-	snapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
+	allSnapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
 	if err != nil {
 		var errorResponse *cloudscale.ErrorResponse
 		if errors.As(err, &errorResponse) {
@@ -706,6 +706,17 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 			}).Warn("cloudscale API returned error during snapshot list")
 		}
 		return nil, status.Errorf(codes.Internal, "failed to list snapshots: %v", err)
+	}
+
+	// The cloudscale API may ignore the ?name= query parameter for volume
+	// snapshots (it is undocumented). Filter client-side to guarantee an
+	// exact name match. If the API adds support later, WithNameFilter above
+	// reduces the result set as an optimisation and this loop is a no-op.
+	var snapshots []cloudscale.VolumeSnapshot
+	for _, s := range allSnapshots {
+		if s.Name == req.Name {
+			snapshots = append(snapshots, s)
+		}
 	}
 
 	for _, snapshot := range snapshots {
