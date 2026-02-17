@@ -235,7 +235,7 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 
 	ll = ll.WithFields(logrus.Fields{
 		"snapshot_size_gb":     snapshot.SizeGB,
-		"snapshot_volume_type": snapshot.Volume.Type,
+		"snapshot_volume_type": snapshot.SourceVolume.Type,
 		"snapshot_zone":        snapshot.Zone,
 	})
 
@@ -671,7 +671,7 @@ func toCSISnapshot(snap cloudscale.VolumeSnapshot) (*csi.Snapshot, error) {
 	}
 	return &csi.Snapshot{
 		SnapshotId:     snap.UUID,
-		SourceVolumeId: snap.Volume.UUID,
+		SourceVolumeId: snap.SourceVolume.UUID,
 		ReadyToUse:     snap.Status == "available",
 		SizeBytes:      int64(snap.SizeGB * GB),
 		CreationTime:   timestamppb.New(t),
@@ -709,7 +709,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	}
 
 	for _, snapshot := range snapshots {
-		if snapshot.Volume.UUID == req.SourceVolumeId {
+		if snapshot.SourceVolume.UUID == req.SourceVolumeId {
 			// Idempotent: snapshot with this name already exists for this volume
 			csiSnap, err := toCSISnapshot(snapshot)
 			if err != nil {
@@ -817,7 +817,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 		}
 
 		// Apply source_volume_id filter if both specified.
-		if req.SourceVolumeId != "" && snap.Volume.UUID != req.SourceVolumeId {
+		if req.SourceVolumeId != "" && snap.SourceVolume.UUID != req.SourceVolumeId {
 			return &csi.ListSnapshotsResponse{}, nil
 		}
 
@@ -847,7 +847,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 		if snap.Status != "available" {
 			continue
 		}
-		if req.SourceVolumeId != "" && snap.Volume.UUID != req.SourceVolumeId {
+		if req.SourceVolumeId != "" && snap.SourceVolume.UUID != req.SourceVolumeId {
 			continue
 		}
 		filtered = append(filtered, snap)

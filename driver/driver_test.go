@@ -342,7 +342,7 @@ func (f *FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID strin
 	}
 
 	for _, snapshot := range snapshots {
-		if snapshot.Volume.UUID == volumeID {
+		if snapshot.SourceVolume.UUID == volumeID {
 			return &cloudscale.ErrorResponse{
 				StatusCode: 400,
 				Message:    map[string]string{"detail": "Snapshots exist for this volume"},
@@ -425,7 +425,7 @@ func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createR
 		SizeGB:    vol.SizeGB,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Status:    "available",
-		Volume: cloudscale.VolumeStub{
+		SourceVolume: cloudscale.VolumeStub{
 			UUID: createRequest.SourceVolume,
 		},
 	}

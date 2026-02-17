@@ -2,8 +2,8 @@ github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPd
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5/go.mod h1:wHh0iHkYZB8zMSxRWpUBQtwG5a7fFgvEO+odwuTv2gs=
 github.com/cenkalti/backoff/v5 v5.0.3 h1:ZN+IMa753KfX5hd8vVaMixjnqRZ3y8CuJKRKj1xcsSM=
 github.com/cenkalti/backoff/v5 v5.0.3/go.mod h1:rkhZdG3JZukswDf7f0cwqPNk4K0sa+F97BxZthm/crw=
-github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.2-0.20260113130452-d14a0cbe6a32 h1:XUwopev0HXEmCVUrmuXHmDadux857+WSPWSDzj1zrhs=
-github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.2-0.20260113130452-d14a0cbe6a32/go.mod h1:NLC7XW7HqG0HggDaOBCvmf7WplTDaAqTF9u08yh6k0E=
+github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.2-0.20260213173932-ae95a6ffee99 h1:0Mf7/BVgEfOUCLBvnJChUWGTkwDCGJZrN5KA/EPR7q0=
+github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.2-0.20260213173932-ae95a6ffee99/go.mod h1:NLC7XW7HqG0HggDaOBCvmf7WplTDaAqTF9u08yh6k0E=
 github.com/container-storage-interface/spec v1.12.0 h1:zrFOEqpR5AghNaaDG4qyedwPBqU2fU0dWjLQMP/azK0=
 github.com/container-storage-interface/spec v1.12.0/go.mod h1:txsm+MA2B2WDa5kW69jNbqPnvTtfvZma7T/zsAZ9qX8=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
