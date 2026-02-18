@@ -717,7 +717,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 			// Idempotent: snapshot with this name already exists for this volume
 			csiSnap, err := toCSISnapshot(snapshot)
 			if err != nil {
-				return nil, status.Errorf(codes.Internal, "%v", err)
+				return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 			}
 			return &csi.CreateSnapshotResponse{Snapshot: csiSnap}, nil
 		}
@@ -755,7 +755,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 
 	csiSnap, err := toCSISnapshot(*snapshot)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "%v", err)
+		return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 	}
 
 	resp := &csi.CreateSnapshotResponse{Snapshot: csiSnap}
@@ -802,8 +802,8 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 
 // ListSnapshots returns the information about all snapshots on the storage
 // system within the given parameters regardless of how they were created.
-// ListSnapshots should not list a snapshot that is being created but has not
-// been cut successfully yet.
+// Per the CSI spec, snapshots that are still in progress (not yet available)
+// are excluded from the results.
 func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 	ll := d.log.WithFields(logrus.Fields{
 		"req":    req,
@@ -835,7 +835,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 
 		csiSnap, err := toCSISnapshot(*snap)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "%v", err)
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 		}
 		return &csi.ListSnapshotsResponse{
 			Entries: []*csi.ListSnapshotsResponse_Entry{{Snapshot: csiSnap}},
@@ -887,7 +887,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 	for _, snap := range remaining[:endCount] {
 		csiSnap, err := toCSISnapshot(snap)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "%v", err)
+			return nil, status.Errorf(codes.Internal, "toCSISnapshot: %v", err)
 		}
 		entries = append(entries, &csi.ListSnapshotsResponse_Entry{Snapshot: csiSnap})
 	}
