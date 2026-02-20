@@ -408,9 +408,9 @@ func (f *FakeVolumeServiceOperations) WaitFor(ctx context.Context, id string, co
 }
 
 type FakeVolumeSnapshotServiceOperations struct {
-	fakeClient             *cloudscale.Client
-	snapshots              map[string]*cloudscale.VolumeSnapshot
-	maxSnapshotsPerVolume  int // 0 means no limit
+	fakeClient            *cloudscale.Client
+	snapshots             map[string]*cloudscale.VolumeSnapshot
+	maxSnapshotsPerVolume int // 0 means no limit
 }
 
 func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeSnapshotCreateRequest) (*cloudscale.VolumeSnapshot, error) {
@@ -424,7 +424,7 @@ func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createR
 	if f.maxSnapshotsPerVolume > 0 {
 		count := 0
 		for _, snap := range f.snapshots {
-			if snap.Volume.UUID == createRequest.SourceVolume {
+			if snap.SourceVolume.UUID == createRequest.SourceVolume {
 				count++
 			}
 		}
