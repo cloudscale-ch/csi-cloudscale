@@ -1,6 +1,19 @@
 ## unreleased
 
 ## v3.6.0 - 2026.01.15
+
+⚠️ **Update 2026.02.04: Breaking Change**  
+We regret to inform you that this release includes a refactoring that drops support for 
+cluster nodes using `virtio-blk`. Unfortunately, this effect was missed during our review
+and only discovered post-release.
+
+If your cluster contains nodes provisioned before October 1st, 2020, or in some
+customer-specific setups before mid-2021, we recommend checking the output of
+`lsblk` to ensure that your nodes are not affected. If the output of `lsblk`
+contains volume names in the form `vdX`, you are still using `virtio-blk` and
+**should not update to this release**. In this case, we recommend to either
+provision new nodes (that will automatically use `virtio-scsi`) or pin to v3.5.6.
+
 * The minimum supported Kubernetes version is now 1.28.
 * Upgrade all sidecars to latest version
   * Please note the RBAC changes as a result of this upgrade
