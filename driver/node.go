@@ -153,6 +153,22 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		ll.Info("source device is already mounted to the stagingTargetPath path")
 	}
 
+	// Resize the filesystem if the block device is larger (e.g. snapshot
+	// restored to a larger volume). Kubernetes only calls NodeExpandVolume
+	// for PVC resizes, not for freshly created volumes, so we must handle
+	// it here. See https://github.com/kubernetes/kubernetes/issues/94929.
+	r := mount.NewResizeFs(utilexec.New())
+	needResize, err := r.NeedResize(source, stagingTargetPath)
+	if err != nil {
+		ll.WithError(err).Warn("unable to check if filesystem needs resize")
+	} else if needResize {
+		ll.Info("resizing filesystem to match block device size")
+		if _, err := r.Resize(source, stagingTargetPath); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to resize filesystem on %s: %v", source, err)
+		}
+		ll.Info("filesystem resized successfully")
+	}
+
 	ll.Info("formatting and mounting stage volume is finished")
 	return &csi.NodeStageVolumeResponse{}, nil
 }

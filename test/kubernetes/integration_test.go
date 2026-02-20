@@ -400,8 +400,7 @@ func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
-func TestPod_Snapshot_Size_Validation(t *testing.T) {
-	// Test that snapshot size validation works correctly
+func TestPod_Snapshot_Restore_Larger_Size(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -414,7 +413,6 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 		},
 	}
 
-	// Create volume
 	pod := makeKubernetesPod(t, podDescriptor)
 	pvcs := makeKubernetesPVCs(t, podDescriptor)
 	waitForPod(t, client, pod.Name)
@@ -424,7 +422,6 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	volume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
 	assert.Equal(t, 5, volume.SizeGB)
 
-	// Create snapshot
 	snapshotName := pseudoUuid()
 	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
 	waitForVolumeSnapshot(t, snapshot.Name)
@@ -437,60 +434,51 @@ func TestPod_Snapshot_Size_Validation(t *testing.T) {
 	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, snapshotHandle)
 	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
 
-	// Note: restoring with a smaller size is not tested here because the
-	// Kubernetes external-provisioner enforces that the requested PVC size
-	// is at least the snapshot's restore size. If a smaller size is requested,
-	// the provisioner automatically adjusts it before invoking the CSI driver.
-	// As a result, CreateVolume is never called with a smaller size in practice.
-	// The driver's own smaller-size validation in createVolumeFromSnapshot is
-	// therefore defense-in-depth only.
-
-	// Attempt to restore with a larger size (expected to fail for this driver).
-	// The Kubernetes external-provisioner forwards the requested size unchanged
-	// when it is larger than the snapshot restore size and calls the CSI driver's
-	// CreateVolume. Our driver rejects such requests with codes.OutOfRange.
-	// The external-provisioner surfaces any CreateVolume failure as a
-	// ProvisioningFailed event on the PVC, which we use to verify this.
-	largerPVCName := "csi-pod-snapshot-size-pvc-larger"
-	volMode := v1.PersistentVolumeFilesystem
-	apiGroup := "snapshot.storage.k8s.io"
-	largerPVC := &v1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: largerPVCName,
-		},
-		Spec: v1.PersistentVolumeClaimSpec{
-			VolumeMode: &volMode,
-			AccessModes: []v1.PersistentVolumeAccessMode{
-				v1.ReadWriteOnce,
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("10Gi"), // Larger than snapshot size (5GB)
-				},
-			},
-			StorageClassName: strPtr("cloudscale-volume-ssd"),
-			DataSource: &v1.TypedLocalObjectReference{
-				APIGroup: &apiGroup,
-				Kind:     "VolumeSnapshot",
-				Name:     snapshot.Name,
+	// Restore from snapshot with a larger size (10 GB > 5 GB snapshot).
+	// The driver creates the volume at the snapshot's native size, then
+	// expands it to the requested capacity within CreateVolume.
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-snapshot-larger-pvc",
+				SizeGB:       10,
+				StorageClass: "cloudscale-volume-ssd",
 			},
 		},
 	}
 
-	t.Log("Creating PVC from snapshot with larger size (should fail)")
-	_, err := client.CoreV1().PersistentVolumeClaims(namespace).Create(context.Background(), largerPVC, metav1.CreateOptions{})
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 10, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
 	assert.NoError(t, err)
+	assert.Equal(t, "Filesystem", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", restoredDisk.Filesystem)
+	assert.Equal(t, 10*driver.GB, restoredDisk.DeviceSize)
 
-	// Wait for the provisioner to reject the PVC with an OutOfRange error
-	waitForPVCEvent(t, client, largerPVCName, "ProvisioningFailed", "does not support creating volumes larger", 60*time.Second)
+	// The filesystem may report slightly less than the full device size due to
+	// filesystem overhead; verify it is at least the original snapshot size and
+	// that it has grown beyond the snapshot's filesystem footprint.
+	assert.True(t, restoredDisk.FilesystemSize > 5*driver.GB,
+		"filesystem should be larger than snapshot size (5 GB), got %d", restoredDisk.FilesystemSize)
 
-	// Cleanup failed PVC
-	err = client.CoreV1().PersistentVolumeClaims(namespace).Delete(context.Background(), largerPVCName, metav1.DeleteOptions{})
-	assert.NoError(t, err)
-
-	// Cleanup original resources
 	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
 	waitCloudscaleVolumeSnapshotDeleted(t, snapshotHandle)
+
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
 	cleanup(t, podDescriptor)
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
