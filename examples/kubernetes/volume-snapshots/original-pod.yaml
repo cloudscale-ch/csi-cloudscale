@@ -1,7 +1,7 @@
 kind: Pod
 apiVersion: v1
 metadata:
-  name: luks-app
+  name: my-app
 spec:
   containers:
     - name: my-frontend
@@ -13,4 +13,4 @@ spec:
   volumes:
     - name: my-cloudscale-volume
       persistentVolumeClaim:
-        claimName: luks-volume
+        claimName: my-volume

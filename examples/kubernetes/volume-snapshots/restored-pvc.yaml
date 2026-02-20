@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-restored-volume
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cloudscale-volume-ssd
+  resources:
+    requests:
+      storage: 5Gi
+  dataSource:
+    name: my-volume-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io

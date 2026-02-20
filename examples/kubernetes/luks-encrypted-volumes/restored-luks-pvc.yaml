@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: luks-volume-restored
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: cloudscale-volume-ssd-luks
+  resources:
+    requests:
+      storage: 1Gi
+  dataSource:
+    name: luks-volume-snapshot
+    kind: VolumeSnapshot
+    apiGroup: snapshot.storage.k8s.io
