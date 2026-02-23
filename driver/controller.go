@@ -243,11 +243,12 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		"snapshot_zone":        snapshot.Zone,
 	})
 
-	// Determine target volume size.
 	// cloudscale creates volumes from snapshots at the snapshot's native size.
 	// If the requested capacity is larger, we expand the volume after creation.
-	storageType := snapshot.SourceVolume.Type
+	// targetSizeGB is used to track whether we must expand to meet the requested capacity.
 	targetSizeGB := snapshot.SizeGB
+
+	storageType := snapshot.SourceVolume.Type
 
 	if req.CapacityRange != nil {
 		calculatedSize, err := calculateStorageGB(req.CapacityRange, storageType)
@@ -331,12 +332,8 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 				volumeName, createdVolume.SizeGB, snapshot.SizeGB)
 		}
 
-		// createdVolume.SizeGB >= snapshot.SizeGB: volume was created from snapshot.
-		// If createdVolume.SizeGB >= targetSizeGB, it's fully done.
-		// If createdVolume.SizeGB < targetSizeGB, expansion is needed (handled below).
-
 		ll.WithFields(logrus.Fields{
-			"volume_id":       createdVolume.UUID,
+			"volume_id":        createdVolume.UUID,
 			"existing_size_gb": createdVolume.SizeGB,
 		}).Info("volume from snapshot already exists")
 	} else {
