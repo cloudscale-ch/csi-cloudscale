@@ -1188,15 +1188,22 @@ func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, 
 	return vol.Volume.VolumeId, snap.Snapshot.SnapshotId
 }
 
+const (
+	snapshotSizeGiB         = 5  // source volume and snapshot size (GiB)
+	expandedSizeGiB         = 10 // requested size larger than snapshot (triggers expansion)
+	belowSnapshotSizeGiB    = 3  // requested size smaller than snapshot (invalid)
+)
+
+
 func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
 	driver := createDriverForTest(t)
 	ctx := context.Background()
-	_, snapshotID := createVolumeAndSnapshot(t, driver, 5)
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
 		Name:               "restored-equal",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 5 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1204,18 +1211,18 @@ func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(5*GB), resp.Volume.CapacityBytes)
+	assert.Equal(t, int64(snapshotSizeGiB*GB), resp.Volume.CapacityBytes)
 }
 
 func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
 	driver := createDriverForTest(t)
 	ctx := context.Background()
-	_, snapshotID := createVolumeAndSnapshot(t, driver, 5)
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
 		Name:               "restored-larger",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 10 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1223,22 +1230,22 @@ func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(10*GB), resp.Volume.CapacityBytes)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp.Volume.CapacityBytes)
 
 	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp.Volume.VolumeId)
 	assert.NoError(t, err)
-	assert.Equal(t, 10, vol.SizeGB)
+	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
 }
 
 func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
 	driver := createDriverForTest(t)
 	ctx := context.Background()
-	_, snapshotID := createVolumeAndSnapshot(t, driver, 5)
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	_, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
 		Name:               "restored-smaller",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 3 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(belowSnapshotSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1254,12 +1261,12 @@ func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
 func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
 	driver := createDriverForTest(t)
 	ctx := context.Background()
-	_, snapshotID := createVolumeAndSnapshot(t, driver, 5)
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	req := &csi.CreateVolumeRequest{
 		Name:               "restored-idempotent",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 10 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1269,24 +1276,24 @@ func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
 
 	resp1, err := driver.CreateVolume(ctx, req)
 	assert.NoError(t, err)
-	assert.Equal(t, int64(10*GB), resp1.Volume.CapacityBytes)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp1.Volume.CapacityBytes)
 
 	resp2, err := driver.CreateVolume(ctx, req)
 	assert.NoError(t, err)
 	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
-	assert.Equal(t, int64(10*GB), resp2.Volume.CapacityBytes)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
 }
 
 func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 	driver := createDriverForTest(t)
 	ctx := context.Background()
-	_, snapshotID := createVolumeAndSnapshot(t, driver, 5)
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	// First create at snapshot size (equal)
 	resp1, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
 		Name:               "restored-needs-expand",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 5 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1294,13 +1301,13 @@ func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 		},
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, int64(5*GB), resp1.Volume.CapacityBytes)
+	assert.Equal(t, int64(snapshotSizeGiB*GB), resp1.Volume.CapacityBytes)
 
 	// Now call again with a larger size -- simulates retry after expand failure
 	resp2, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
 		Name:               "restored-needs-expand",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
-		CapacityRange:      &csi.CapacityRange{RequiredBytes: 10 * GB},
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
 		VolumeContentSource: &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
@@ -1309,9 +1316,9 @@ func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
-	assert.Equal(t, int64(10*GB), resp2.Volume.CapacityBytes)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
 
 	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp2.Volume.VolumeId)
 	assert.NoError(t, err)
-	assert.Equal(t, 10, vol.SizeGB)
+	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
 }
