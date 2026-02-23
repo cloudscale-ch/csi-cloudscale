@@ -1189,11 +1189,10 @@ func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, 
 }
 
 const (
-	snapshotSizeGiB         = 5  // source volume and snapshot size (GiB)
-	expandedSizeGiB         = 10 // requested size larger than snapshot (triggers expansion)
-	belowSnapshotSizeGiB    = 3  // requested size smaller than snapshot (invalid)
+	snapshotSizeGiB      = 5  // source volume and snapshot size (GiB)
+	expandedSizeGiB      = 10 // requested size larger than snapshot (triggers expansion)
+	belowSnapshotSizeGiB = 3  // requested size smaller than snapshot (invalid)
 )
-
 
 func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
 	driver := createDriverForTest(t)
