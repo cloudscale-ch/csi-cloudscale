@@ -20,6 +20,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -407,8 +408,9 @@ func (f *FakeVolumeServiceOperations) WaitFor(ctx context.Context, id string, co
 }
 
 type FakeVolumeSnapshotServiceOperations struct {
-	fakeClient *cloudscale.Client
-	snapshots  map[string]*cloudscale.VolumeSnapshot
+	fakeClient            *cloudscale.Client
+	snapshots             map[string]*cloudscale.VolumeSnapshot
+	maxSnapshotsPerVolume int // 0 means no limit
 }
 
 func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeSnapshotCreateRequest) (*cloudscale.VolumeSnapshot, error) {
@@ -416,6 +418,22 @@ func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createR
 	vol, err := f.fakeClient.Volumes.Get(ctx, createRequest.SourceVolume)
 	if err != nil {
 		return nil, err
+	}
+
+	// Simulate per-volume snapshot limit
+	if f.maxSnapshotsPerVolume > 0 {
+		count := 0
+		for _, snap := range f.snapshots {
+			if snap.SourceVolume.UUID == createRequest.SourceVolume {
+				count++
+			}
+		}
+		if count >= f.maxSnapshotsPerVolume {
+			return nil, &cloudscale.ErrorResponse{
+				StatusCode: 400,
+				Message:    map[string]string{"detail": fmt.Sprintf("It is not possible to create more than %d snapshots per volume.", f.maxSnapshotsPerVolume)},
+			}
+		}
 	}
 
 	id := randString(32)
@@ -1021,6 +1039,48 @@ func TestListSnapshots_InvalidStartingToken(t *testing.T) {
 	}
 	if st.Code() != codes.Aborted {
 		t.Errorf("Expected codes.Aborted, got %v", st.Code())
+	}
+}
+
+// TestCreateSnapshot_SnapshotLimitExhausted verifies that CreateSnapshot returns
+// codes.ResourceExhausted when the cloudscale API rejects snapshot creation
+// because the per-volume snapshot limit has been reached.
+func TestCreateSnapshot_SnapshotLimitExhausted(t *testing.T) {
+	// Create a driver with a fake client that enforces a snapshot limit of 2
+	initialServers := map[string]*cloudscale.Server{}
+	cloudscaleClient := NewFakeClient(initialServers)
+	fakeSnapService := cloudscaleClient.VolumeSnapshots.(*FakeVolumeSnapshotServiceOperations)
+	fakeSnapService.maxSnapshotsPerVolume = 2
+
+	driver := &Driver{
+		mounter:          &fakeMounter{},
+		log:              logrus.New().WithField("test_enabled", true),
+		cloudscaleClient: cloudscaleClient,
+		volumeLocks:      NewVolumeLocks(),
+	}
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-snap-limit")
+
+	// Create snapshots up to the limit
+	createSnapshotForTest(t, driver, "snap-limit-1", volID)
+	createSnapshotForTest(t, driver, "snap-limit-2", volID)
+
+	// Third snapshot should fail with ResourceExhausted
+	_, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+		Name:           "snap-limit-3",
+		SourceVolumeId: volID,
+	})
+	if err == nil {
+		t.Fatal("Expected error when snapshot limit is reached, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Errorf("Expected codes.ResourceExhausted, got %v: %v", st.Code(), err)
 	}
 }
 
