@@ -483,6 +483,107 @@ func TestPod_Snapshot_Restore_Larger_Size(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+// Test that restoring a LUKS-encrypted snapshot into a larger volume results in
+// the block device and filesystem both being expanded.
+func TestPod_Luks_Snapshot_Restore_Larger_Size(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-luks-pvc-original-larger",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	// create original LUKS volume and pod
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	originalVolume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, originalVolume.SizeGB)
+	assert.Equal(t, "ssd", originalVolume.Type)
+
+	// verify original disk properties
+	originalDisk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "LUKS1", originalDisk.Luks)
+	assert.Equal(t, "Filesystem", originalDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", originalDisk.Filesystem)
+	assert.Equal(t, 5*driver.GB, originalDisk.DeviceSize)
+	assert.Equal(t, 5*driver.GB-luksOverhead, originalDisk.FilesystemSize)
+
+	// create snapshot of the LUKS volume
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
+	assert.NotNil(t, snapshot.Status)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	snapshotHandle := *snapshotContent.Status.SnapshotHandle
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, snapshotHandle)
+	assert.NotNil(t, cloudscaleSnapshot)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// restore snapshot into a larger (10 GB) LUKS volume
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-luks-pvc-restored-larger",
+				SizeGB:       10,
+				StorageClass: "cloudscale-volume-ssd-luks",
+				LuksKey:      "secret",
+			},
+		},
+	}
+
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	// cloudscale volume should be 10 GB
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 10, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	// verify that LUKS and filesystem have been expanded as well
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "LUKS1", restoredDisk.Luks)
+	assert.Equal(t, "Filesystem", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "ext4", restoredDisk.Filesystem)
+	assert.Equal(t, 10*driver.GB, restoredDisk.DeviceSize)
+	assert.True(t, restoredDisk.FilesystemSize > 5*driver.GB-luksOverhead,
+		"filesystem should be larger than original snapshot size (5 GiB minus LUKS overhead), got %d", restoredDisk.FilesystemSize)
+
+	// cleanup
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, snapshotHandle)
+
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
 func TestCreateMultipleSnapshots_DifferentVolumes(t *testing.T) {
 	// Create two independent volumes, each with one snapshot, to verify that
 	// the CSI driver correctly handles creating snapshots from different
