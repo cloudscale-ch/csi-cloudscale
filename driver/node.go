@@ -161,35 +161,33 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// device, not on the raw block device. Resolve the actual device backing
 	// the staging path so that both LUKS and non-LUKS volumes are handled
 	// correctly.
-	resizeSource := source
 	mounter := mount.New("")
 	devicePath, err := d.mounter.GetDeviceName(mounter, stagingTargetPath)
 	if err != nil {
-		ll.WithError(err).Warn("unable to determine device path for filesystem resize, falling back to original source")
-	} else {
-		resizeSource = devicePath
+		return nil, status.Errorf(codes.Internal, "NodeStageVolume unable to get device path for %q: %v", stagingTargetPath, err)
+	}
 
-		// If the staged device is a LUKS mapping, grow the LUKS container
-		// first so the filesystem can see the larger size.
-		isLuks, _, err := isLuksMapping(devicePath)
-		if err != nil {
-			ll.WithError(err).Warn("unable to determine if device is LUKS-encrypted, skipping LUKS container resize")
-		} else if isLuks {
-			ll.WithField("device_path", devicePath).Info("resizing LUKS container before filesystem resize")
-			if err := luksResize(devicePath); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to resize LUKS container on %s: %v", devicePath, err)
-			}
+	// If the staged device is a LUKS mapping, grow the LUKS container first so
+	// the filesystem can see the larger size.
+	isLuks, _, err := isLuksMapping(devicePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "NodeStageVolume unable to test if volume at %q is encrypted with LUKS: %v", devicePath, err)
+	}
+	if isLuks {
+		ll.WithField("device_path", devicePath).Info("resizing LUKS container before filesystem resize")
+		if err := luksResize(devicePath); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to resize LUKS container on %s: %v", devicePath, err)
 		}
 	}
 
 	r := mount.NewResizeFs(utilexec.New())
-	needResize, err := r.NeedResize(resizeSource, stagingTargetPath)
+	needResize, err := r.NeedResize(devicePath, stagingTargetPath)
 	if err != nil {
 		ll.WithError(err).Warn("unable to check if filesystem needs resize")
 	} else if needResize {
 		ll.Info("resizing filesystem to match block device size")
-		if _, err := r.Resize(resizeSource, stagingTargetPath); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to resize filesystem on %s: %v", resizeSource, err)
+		if _, err := r.Resize(devicePath, stagingTargetPath); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to resize filesystem on %s: %v", devicePath, err)
 		}
 		ll.Info("filesystem resized successfully")
 	}
