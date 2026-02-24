@@ -1188,13 +1188,9 @@ func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, 
 	return vol.Volume.VolumeId, snap.Snapshot.SnapshotId
 }
 
-const (
-	snapshotSizeGiB      = 5  // source volume and snapshot size (GiB)
-	expandedSizeGiB      = 10 // requested size larger than snapshot (triggers expansion)
-	belowSnapshotSizeGiB = 3  // requested size smaller than snapshot (invalid)
-)
-
 func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
+	const snapshotSizeGiB = 5 // source volume and snapshot size (GiB)
+
 	driver := createDriverForTest(t)
 	ctx := context.Background()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
@@ -1214,6 +1210,11 @@ func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
 }
 
 func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
 	driver := createDriverForTest(t)
 	ctx := context.Background()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
@@ -1237,6 +1238,11 @@ func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
 }
 
 func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
+	const (
+		snapshotSizeGiB      = 5 // source volume and snapshot size (GiB)
+		belowSnapshotSizeGiB = 3 // requested size smaller than snapshot (invalid)
+	)
+
 	driver := createDriverForTest(t)
 	ctx := context.Background()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
@@ -1258,6 +1264,11 @@ func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
 }
 
 func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
 	driver := createDriverForTest(t)
 	ctx := context.Background()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
@@ -1284,6 +1295,11 @@ func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
 }
 
 func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
 	driver := createDriverForTest(t)
 	ctx := context.Background()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
