@@ -243,35 +243,36 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		"snapshot_zone":        snapshot.Zone,
 	})
 
-	// Validate capacity requirements
-	// CSI spec: restored volume must be at least as large as the snapshot
-	// Cloudscale only supports the same size as the snapshot
+	// cloudscale creates volumes from snapshots at the snapshot's native size.
+	// If the requested capacity is larger, we expand the volume after creation.
+	// targetSizeGB is used to track whether we must expand to meet the requested capacity.
+	targetSizeGB := snapshot.SizeGB
+
+	storageType := snapshot.SourceVolume.Type
+
 	if req.CapacityRange != nil {
-		requiredBytes := req.CapacityRange.GetRequiredBytes()
-		if requiredBytes > 0 {
-			requiredGB := int(requiredBytes / GB)
-			if requiredGB < snapshot.SizeGB {
-				return nil, status.Errorf(codes.OutOfRange,
-					"requested volume size (%d GB) is smaller than snapshot size (%d GB)",
-					requiredGB, snapshot.SizeGB)
-			}
-			if requiredGB > snapshot.SizeGB {
-				// todo: we could just do this after creation of the volume...
-				return nil, status.Errorf(codes.OutOfRange,
-					"cloudscale.ch API does not support creating volumes larger than snapshot size during restore. "+
-						"Create volume from snapshot first, then expand it using ControllerExpandVolume. "+
-						"Requested: %d GB, Snapshot: %d GB", requiredGB, snapshot.SizeGB)
-			}
+		calculatedSize, err := calculateStorageGB(req.CapacityRange, storageType)
+		if err != nil {
+			return nil, status.Error(codes.OutOfRange, err.Error())
+		}
+		if calculatedSize < snapshot.SizeGB {
+			return nil, status.Errorf(codes.OutOfRange,
+				"requested volume size (%d GB) is smaller than snapshot size (%d GB)",
+				calculatedSize, snapshot.SizeGB)
+		}
+		if calculatedSize > snapshot.SizeGB {
+			targetSizeGB = calculatedSize
 		}
 
-		// Validate limit if specified
 		limitBytes := req.CapacityRange.GetLimitBytes()
-		if limitBytes > 0 && int64(snapshot.SizeGB)*GB > limitBytes {
+		if limitBytes > 0 && int64(targetSizeGB)*GB > limitBytes {
 			return nil, status.Errorf(codes.OutOfRange,
-				"snapshot size (%d GB) exceeds capacity limit (%d bytes)",
-				snapshot.SizeGB, limitBytes)
+				"volume size (%d GB) exceeds capacity limit (%d bytes)",
+				targetSizeGB, limitBytes)
 		}
 	}
+
+	ll = ll.WithField("target_size_gb", targetSizeGB)
 
 	// cloudscale does create the volume in the same zone as the snapshot.
 	if req.AccessibilityRequirements != nil {
@@ -311,7 +312,6 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	var createdVolume *cloudscale.Volume
 
 	if len(volumes) != 0 {
-		// Volume already exists - validate it matches request
 		if len(volumes) > 1 {
 			return nil, fmt.Errorf("fatal issue: duplicate volume %q exists", volumeName)
 		}
@@ -320,19 +320,22 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		// cloudscale API does not provide the source snapshot of a volume,
 		// if this would be provided, the idempotency check could be improved.
 
-		if createdVolume.SizeGB != snapshot.SizeGB {
-			return nil, status.Errorf(codes.AlreadyExists,
-				"volume %q already exists with size %d GB (incompatible with snapshot size %d GB)",
-				volumeName, createdVolume.SizeGB, snapshot.SizeGB)
-		}
-
 		if createdVolume.Zone.Slug != snapshot.Zone.Slug {
 			return nil, status.Errorf(codes.AlreadyExists,
 				"volume %q already exists in zone %s (incompatible with snapshot zone %s)",
 				volumeName, createdVolume.Zone.Slug, snapshot.Zone.Slug)
 		}
 
-		ll.WithField("volume_id", createdVolume.UUID).Info("volume from snapshot already exists")
+		if createdVolume.SizeGB < snapshot.SizeGB {
+			return nil, status.Errorf(codes.AlreadyExists,
+				"volume %q already exists with size %d GB (incompatible with snapshot size %d GB)",
+				volumeName, createdVolume.SizeGB, snapshot.SizeGB)
+		}
+
+		ll.WithFields(logrus.Fields{
+			"volume_id":        createdVolume.UUID,
+			"existing_size_gb": createdVolume.SizeGB,
+		}).Info("volume from snapshot already exists")
 	} else {
 		// Volume does not exist, create volume from snapshot
 		volumeReq := &cloudscale.VolumeCreateRequest{
@@ -346,6 +349,20 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to create volume from snapshot: %v", err)
 		}
+	}
+
+	if createdVolume.SizeGB < targetSizeGB {
+		ll.WithFields(logrus.Fields{
+			"current_size_gb": createdVolume.SizeGB,
+			"target_size_gb":  targetSizeGB,
+		}).Info("expanding volume to requested size")
+
+		updateReq := &cloudscale.VolumeUpdateRequest{SizeGB: targetSizeGB}
+		if err := d.cloudscaleClient.Volumes.Update(ctx, createdVolume.UUID, updateReq); err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"volume created from snapshot but expansion failed: %v", err)
+		}
+		createdVolume.SizeGB = targetSizeGB
 	}
 
 	csiVolume := csi.Volume{
