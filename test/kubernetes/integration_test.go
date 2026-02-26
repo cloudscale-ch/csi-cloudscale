@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/oauth2"

@@ -2,7 +2,7 @@ module github.com/cloudscale-ch/csi-cloudscale
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.2-0.20260213173932-ae95a6ffee99
+	github.com/cloudscale-ch/cloudscale-go-sdk/v7 v7.0.0
 	github.com/container-storage-interface/spec v1.12.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
@@ -10,7 +10,7 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.39.0
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.10
