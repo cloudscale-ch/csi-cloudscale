@@ -4,8 +4,10 @@ Demonstrates creating and restoring LUKS-encrypted volumes from snapshots.
 
 ## Prerequisites
 
-- Snapshot CRDs installed (see [main README](../../README.md#prerequisites-for-snapshot-support))
-- VolumeSnapshotClass created (see [volume-snapshots example](../volume-snapshots/))
+- Snapshot CRDs and snapshot controller installed (see [main README](../../../README.md#prerequisites))
+- A suitable `VolumeSnapshotClass` available. When installing the driver via the Helm chart,
+  this is created automatically based on the `csi.snapshotClasses` configuration. For other
+  installation methods, you must create a `VolumeSnapshotClass` manually.
 - LUKS storage classes available: `cloudscale-volume-ssd-luks` or `cloudscale-volume-bulk-luks`
 
 ## Workflow
