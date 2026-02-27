@@ -116,12 +116,11 @@ on `quay.io` and `k8s.gcr.io` container registries. Use `registry.k8s.io` instea
 * If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
   `device mapper` infrastructure with the `crypt target` and the appropriate cryptographic APIs
 
-### Required Kubernetes Snapshot Components
+#### 1. Required Kubernetes Snapshot Components
 
-Clusters running this driver version must have the
-VolumeSnapshot CRDs and snapshot controller installed.
-Some Kubernetes distributions already include these CRDs and controllers. You only need to apply them manually if your cluster does not provide them.
-
+Clusters running this driver version must have the VolumeSnapshot CRDs and snapshot controller installed.
+Some Kubernetes distributions already include these CRDs and controllers. 
+You only need to apply them manually if your cluster does not provide them.
 
 Install the snapshot resources using kustomize (recommended):
 ```
@@ -132,7 +131,7 @@ kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/k
 When installing using the Helm chart, the `VolumeSnapshotClass` resources are created by the chart based on the `csi.snapshotClasses`
 configuration in `values.yaml`.
 
-#### 1. Create a secret with your cloudscale.ch API Access Token:
+#### 2. Create a secret with your cloudscale.ch API Access Token:
 
 Replace the placeholder string starting with `a05...` with your own secret and
 save it as `secret.yml`: 
@@ -163,14 +162,14 @@ default-token-jskxx   kubernetes.io/service-account-token   3         18h
 cloudscale            Opaque                                1         18h
 ```
 
-#### 2. Deploy the CSI plugin and sidecars:
+#### 3. Deploy the CSI plugin and sidecars:
 
 You can install the CSI plugin and sidecars using one of the following methods:
  * Helm (requires a Helm installation)
  * YAML Manifests (only kubectl required)
 
 
-#### 2a. Using Helm:
+#### 3a. Using Helm:
 
 Before you can install the csi-cloudscale chart, you need to add the helm repository:
 
@@ -211,7 +210,7 @@ Note: if you want to test a debug/dev release, you can use the following command
 $ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
 ```
 
-#### 2b. Using YAML Manifests:
+#### 3b. Using YAML Manifests:
 
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
@@ -227,7 +226,7 @@ storage class `cloudscale-volume-ssd` is set to **"default"** for dynamic provis
 using multiple storage classes you might want to remove the annotation and re-deploy it. This is
 based on the [recommended mechanism](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md#recommended-mechanism-for-deploying-csi-drivers-on-kubernetes) of deploying CSI drivers on Kubernetes
 
-#### 3. Test and verify:
+#### 4. Test and verify:
 
 Create a PersistentVolumeClaim. This makes sure a volume is created and provisioned on your behalf:
 
@@ -329,7 +328,7 @@ When updating from csi-cloudscale v2.x to v3.x please note the following:
 
 Before upgrading, ensure that the Kubernetes VolumeSnapshot
 CRDs and snapshot controller are installed in the cluster.
-See [Required Kubernetes Snapshot Components](#required-kubernetes-snapshot-components).
+See [Required Kubernetes Snapshot Components](#1-required-kubernetes-snapshot-components).
 
 ## Advanced Configuration
 

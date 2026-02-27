@@ -4,7 +4,7 @@ Demonstrates creating and restoring volumes from snapshots.
 
 ## Prerequisites
 
-- Snapshot CRDs and snapshot controller installed (see [main README](../../../README.md#prerequisites))
+- Snapshot CRDs and snapshot controller installed (see [main README](../../../README.md#1-required-kubernetes-snapshot-components))
 - A suitable `VolumeSnapshotClass` available. When installing the driver via the Helm chart,
   this is created automatically based on the `csi.snapshotClasses` configuration. For other
   installation methods, you must create a `VolumeSnapshotClass` manually.
