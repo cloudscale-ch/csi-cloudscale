@@ -33,6 +33,12 @@ csi:
         cipher: aes-xts-plain64
         keySize: 512
 
+  snapshotClasses:
+    - name: cloudscale-snapshots
+      deletionPolicy: Delete
+      isDefault: false
+      parameters: {}
+
 provisioner:
   name: csi.cloudscale.ch
   image:

@@ -69,22 +69,6 @@ The current version is: **`v3.6.0`**.
 
 ## Installing to Kubernetes
 
-Follow these steps to deploy the cloudscale.ch CSI driver to your Kubernetes cluster.
-
-### Prerequisites for Snapshot Support
-
-To use CSI snapshots with this driver, your cluster must have the VolumeSnapshot CRDs and the snapshot controller installed.
-
-Note: Some Kubernetes distributions already include these CRDs and controllers. You only need to apply them manually if your cluster does not provide them.
-
-Install the snapshot resources using kustomize (recommended):
-```
-kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
-kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
-# setup volumesnapshotclass in your cluster
-kubectl apply -f examples/kubernetes/volume-snapshots/volumesnapshotclass.yaml
-```
-
 ### Kubernetes Compatibility
 
 The following table describes the required cloudscale.ch driver version per
@@ -129,6 +113,22 @@ on `quay.io` and `k8s.gcr.io` container registries. Use `registry.k8s.io` instea
 * If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
   `device mapper` infrastructure with the `crypt target` and the appropriate cryptographic APIs
 
+### Required Kubernetes Snapshot Components
+
+Clusters running this driver version must have the
+VolumeSnapshot CRDs and snapshot controller installed.
+Some Kubernetes distributions already include these CRDs and controllers. You only need to apply them manually if your cluster does not provide them.
+
+
+Install the snapshot resources using kustomize (recommended):
+```
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
+```
+
+When installing using the Helm chart, the `VolumeSnapshotClass` resources are created by the chart based on the `csi.snapshotClasses`
+configuration in `values.yaml`. If you install the driver using static YAML manifests instead
+of the Helm chart, you must create an appropriate `VolumeSnapshotClass` manually.
 
 #### 1. Create a secret with your cloudscale.ch API Access Token:
 
@@ -322,6 +322,12 @@ When updating from csi-cloudscale v2.x to v3.x please note the following:
    added after the upgrade)
  * The `region` label will stay in place for existing nodes and not be added to new nodes. It
    can be safely removed from all nodes from a `csi-cloudscale` driver perspective.
+
+### From csi-cloudscale v3.x to v4.x
+
+Before upgrading, ensure that the Kubernetes VolumeSnapshot
+CRDs and snapshot controller are installed in the cluster.
+See [Required Kubernetes Snapshot Components](#required-kubernetes-snapshot-components).
 
 ## Advanced Configuration
 
