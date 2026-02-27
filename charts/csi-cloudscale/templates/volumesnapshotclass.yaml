@@ -1,0 +1,20 @@
+{{- $csi := .Values.csi }}
+{{- $provisioner := .Values.provisioner }}
+{{- range $snapshotClass := $csi.snapshotClasses }}
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: {{ $snapshotClass.name }}
+{{- if $snapshotClass.isDefault }}
+  annotations:
+    snapshot.storage.kubernetes.io/is-default-class: "true"
+{{- end }}
+driver: {{ $provisioner.name }}
+deletionPolicy: {{ $snapshotClass.deletionPolicy | default "Delete" }}
+{{- if $snapshotClass.parameters }}
+parameters:
+{{- toYaml $snapshotClass.parameters | nindent 2 }}
+{{- end }}
+{{- end }}
+
