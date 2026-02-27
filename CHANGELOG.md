@@ -1,5 +1,7 @@
 ## unreleased
 
+## v4.0.0-beta1 - 2026.02.27
+
 ## v3.6.0 - 2026.01.15
 
 ⚠️ **Update 2026.02.04: Breaking Change**  
