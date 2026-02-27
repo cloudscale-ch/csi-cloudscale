@@ -1,5 +1,18 @@
 ## unreleased
 
+## v4.0.0-beta1 - 2026.02.27
+⚠️ See the [update instructions](https://github.com/cloudscale-ch/csi-cloudscale#from-csi-cloudscale-v3x-to-v4x).
+
+**Breaking change:** This release **requires** Kubernetes VolumeSnapshot CRDs and the external snapshot controller to be installed **before** installing or upgrading this driver. Clusters without these components must install them first. Otherwise, snapshot-related operations and the snapshot resource in the Helm chart will fail to work.
+
+* Add CSI snapshot support, including create, delete, list, and creating volumes from snapshots.
+* Add `VolumeSnapshotClass` and other snapshot-related resources to the Helm chart and examples. When using Helm, snapshot classes are now created from the `csi.snapshotClasses` configuration.
+* Cleaned up RBAC rules in Helm chart.
+* Update `github.com/cloudscale-ch/cloudscale-go-sdk` fron `v6.0.1` to `v7.0.0`.
+* Bump `google.golang.org/grpc` from `v1.77.0` to `v1.79.1`.
+* Bump `github.com/sirupsen/logrus` from `v1.9.3` to `v1.9.4`.
+* Bump `golang.org/x/sys` from `v0.39.0` to `v0.41.0`.
+
 ## v3.6.0 - 2026.01.15
 
 ⚠️ **Update 2026.02.04: Breaking Change**  

@@ -2,16 +2,18 @@ module github.com/cloudscale-ch/csi-cloudscale
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/cloudscale-ch/cloudscale-go-sdk/v6 v6.0.1
+	github.com/cloudscale-ch/cloudscale-go-sdk/v7 v7.0.0
 	github.com/container-storage-interface/spec v1.12.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
 	github.com/kubernetes-csi/csi-test/v5 v5.4.0
-	github.com/sirupsen/logrus v1.9.3
+	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
+	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/oauth2 v0.34.0
-	golang.org/x/sys v0.39.0
-	google.golang.org/grpc v1.77.0
+	golang.org/x/oauth2 v0.35.0
+	golang.org/x/sys v0.41.0
+	google.golang.org/grpc v1.79.1
+	google.golang.org/protobuf v1.36.10
 	k8s.io/api v0.28.15
 	k8s.io/apimachinery v0.28.15
 	k8s.io/client-go v0.28.15
@@ -21,7 +23,7 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
+	github.com/emicklei/go-restful/v3 v3.10.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-openapi/jsonpointer v0.19.6 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
@@ -46,13 +48,12 @@ require (
 	github.com/onsi/gomega v1.36.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	golang.org/x/net v0.46.1-0.20251013234738-63d1a5100f82 // indirect
-	golang.org/x/term v0.36.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/term v0.38.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	golang.org/x/tools v0.37.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1 // indirect
-	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

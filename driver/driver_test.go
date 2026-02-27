@@ -20,6 +20,7 @@ package driver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -30,11 +31,12 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v6"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
@@ -108,6 +110,11 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 	fakeClient.Volumes = &FakeVolumeServiceOperations{
 		fakeClient: fakeClient,
 		volumes:    make(map[string]*cloudscale.Volume),
+	}
+
+	fakeClient.VolumeSnapshots = &FakeVolumeSnapshotServiceOperations{
+		fakeClient: fakeClient,
+		snapshots:  make(map[string]*cloudscale.VolumeSnapshot),
 	}
 
 	return fakeClient
@@ -197,8 +204,9 @@ type FakeVolumeServiceOperations struct {
 	volumes    map[string]*cloudscale.Volume
 }
 
-func (f *FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeRequest) (*cloudscale.Volume, error) {
+func (f *FakeVolumeServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeCreateRequest) (*cloudscale.Volume, error) {
 	id := randString(32)
+
 	vol := &cloudscale.Volume{
 		UUID:        id,
 		Name:        createRequest.Name,
@@ -206,7 +214,19 @@ func (f *FakeVolumeServiceOperations) Create(ctx context.Context, createRequest 
 		Type:        createRequest.Type,
 		ServerUUIDs: createRequest.ServerUUIDs,
 	}
-	vol.Zone = DefaultZone
+
+	if createRequest.VolumeSnapshotUUID != "" {
+		snap, err := f.fakeClient.VolumeSnapshots.Get(ctx, createRequest.VolumeSnapshotUUID)
+		if err != nil {
+			return nil, err
+		}
+		vol.SizeGB = snap.SizeGB
+		vol.Type = snap.SourceVolume.Type
+		vol.Zone = snap.Zone
+	} else {
+		vol.Zone = DefaultZone
+	}
+
 	if vol.ServerUUIDs == nil {
 		noservers := make([]string, 0, 1)
 		vol.ServerUUIDs = &noservers
@@ -267,7 +287,7 @@ func extractParams(modifiers []cloudscale.ListRequestModifier) url.Values {
 	return params
 }
 
-func (f *FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeRequest) error {
+func (f *FakeVolumeServiceOperations) Update(ctx context.Context, volumeID string, updateRequest *cloudscale.VolumeUpdateRequest) error {
 	vol, ok := f.volumes[volumeID]
 	if ok != true {
 		return generateNotFoundError()
@@ -319,6 +339,26 @@ func getVolumesPerServer(f *FakeVolumeServiceOperations, serverUUID string) int 
 }
 
 func (f *FakeVolumeServiceOperations) Delete(ctx context.Context, volumeID string) error {
+	_, ok := f.volumes[volumeID]
+	if ok != true {
+		return generateNotFoundError()
+	}
+
+	// prevent deletion if snapshots exist
+	snapshots, err := f.fakeClient.VolumeSnapshots.List(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	for _, snapshot := range snapshots {
+		if snapshot.SourceVolume.UUID == volumeID {
+			return &cloudscale.ErrorResponse{
+				StatusCode: 400,
+				Message:    map[string]string{"detail": "Snapshots exist for this volume"},
+			}
+		}
+	}
 	delete(f.volumes, volumeID)
 	return nil
 }
@@ -373,6 +413,112 @@ func (f *FakeServerServiceOperations) WaitFor(ctx context.Context, id string, co
 }
 
 func (f *FakeVolumeServiceOperations) WaitFor(ctx context.Context, id string, condition func(*cloudscale.Volume) (bool, error), opts ...backoff.RetryOption) (*cloudscale.Volume, error) {
+	panic("implement me")
+}
+
+type FakeVolumeSnapshotServiceOperations struct {
+	fakeClient            *cloudscale.Client
+	snapshots             map[string]*cloudscale.VolumeSnapshot
+	maxSnapshotsPerVolume int // 0 means no limit
+}
+
+func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeSnapshotCreateRequest) (*cloudscale.VolumeSnapshot, error) {
+
+	vol, err := f.fakeClient.Volumes.Get(ctx, createRequest.SourceVolume)
+	if err != nil {
+		return nil, err
+	}
+
+	// Simulate per-volume snapshot limit
+	if f.maxSnapshotsPerVolume > 0 {
+		count := 0
+		for _, snap := range f.snapshots {
+			if snap.SourceVolume.UUID == createRequest.SourceVolume {
+				count++
+			}
+		}
+		if count >= f.maxSnapshotsPerVolume {
+			return nil, &cloudscale.ErrorResponse{
+				StatusCode: 400,
+				Message:    map[string]string{"detail": fmt.Sprintf("It is not possible to create more than %d snapshots per volume.", f.maxSnapshotsPerVolume)},
+			}
+		}
+	}
+
+	id := randString(32)
+	snap := &cloudscale.VolumeSnapshot{
+		UUID:      id,
+		Name:      createRequest.Name,
+		SizeGB:    vol.SizeGB,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Status:    "available",
+		SourceVolume: cloudscale.VolumeStub{
+			UUID: createRequest.SourceVolume,
+			Type: vol.Type,
+		},
+	}
+	snap.Zone = vol.Zone
+
+	f.snapshots[id] = snap
+	return snap, nil
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) Get(
+	ctx context.Context,
+	snapshotID string,
+) (*cloudscale.VolumeSnapshot, error) {
+
+	snap, ok := f.snapshots[snapshotID]
+	if !ok {
+		return nil, generateNotFoundError()
+	}
+	return snap, nil
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) List(
+	ctx context.Context,
+	modifiers ...cloudscale.ListRequestModifier,
+) ([]cloudscale.VolumeSnapshot, error) {
+	var snapshots []cloudscale.VolumeSnapshot
+
+	for _, snapshot := range f.snapshots {
+		snapshots = append(snapshots, *snapshot)
+	}
+
+	if len(modifiers) == 0 {
+		return snapshots, nil
+	}
+	if len(modifiers) > 1 {
+		panic("implement me (support for more than one modifier)")
+	}
+
+	params := extractParams(modifiers)
+
+	if filterName := params.Get("name"); filterName != "" {
+		filtered := make([]cloudscale.VolumeSnapshot, 0, 1)
+		for _, snapshot := range snapshots {
+			if snapshot.Name == filterName {
+				filtered = append(filtered, snapshot)
+			}
+		}
+		return filtered, nil
+	}
+
+	panic("implement me (support for unknown param)")
+}
+
+func (f FakeVolumeSnapshotServiceOperations) Update(ctx context.Context, resourceID string, updateRequest *cloudscale.VolumeSnapshotUpdateRequest) error {
+	panic("implement me")
+}
+
+func (f *FakeVolumeSnapshotServiceOperations) Delete(
+	ctx context.Context,
+	snapshotID string,
+) error {
+	delete(f.snapshots, snapshotID)
+	return nil
+}
+func (f FakeVolumeSnapshotServiceOperations) WaitFor(ctx context.Context, resourceID string, condition func(resource *cloudscale.VolumeSnapshot) (bool, error), opts ...backoff.RetryOption) (*cloudscale.VolumeSnapshot, error) {
 	panic("implement me")
 }
 
@@ -463,7 +609,7 @@ func TestNodeStageVolume_ConcurrentSameVolume(t *testing.T) {
 
 	// Create the volume in the fake client first
 	ctx := t.Context()
-	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -540,7 +686,7 @@ func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
 	ctx := t.Context()
 
 	// Create two different volumes
-	vol1, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+	vol1, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume-1",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -549,7 +695,7 @@ func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
 		t.Fatalf("Failed to create volume 1: %v", err)
 	}
 
-	vol2, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+	vol2, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume-2",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -628,7 +774,7 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	ctx := t.Context()
 
 	// Create a volume
-	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeRequest{
+	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -705,4 +851,489 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	// Clean up: allow stage operation to complete
 	execStage <- struct{}{}
 	<-respStage
+}
+
+// createVolumeForTest is a helper that creates a CSI volume and returns the volume ID.
+func createVolumeForTest(t *testing.T, driver *Driver, name string) string {
+	t.Helper()
+	vol, err := driver.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
+		Name:               name,
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		Parameters:         map[string]string{StorageTypeAttribute: "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume %s: %v", name, err)
+	}
+	return vol.Volume.VolumeId
+}
+
+// createSnapshotForTest is a helper that creates a CSI snapshot and returns the snapshot response.
+func createSnapshotForTest(t *testing.T, driver *Driver, name, volumeID string) *csi.CreateSnapshotResponse {
+	t.Helper()
+	snap, err := driver.CreateSnapshot(context.Background(), &csi.CreateSnapshotRequest{
+		Name:           name,
+		SourceVolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create snapshot %s: %v", name, err)
+	}
+	return snap
+}
+
+func TestListSnapshots_All(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-list-all")
+	createSnapshotForTest(t, driver, "snap-1", volID)
+	createSnapshotForTest(t, driver, "snap-2", volID)
+	createSnapshotForTest(t, driver, "snap-3", volID)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 3 {
+		t.Errorf("Expected 3 snapshots, got %d", len(resp.Entries))
+	}
+	for _, entry := range resp.Entries {
+		if entry.Snapshot.SnapshotId == "" {
+			t.Error("Expected non-empty SnapshotId")
+		}
+		if entry.Snapshot.SourceVolumeId == "" {
+			t.Error("Expected non-empty SourceVolumeId")
+		}
+		if entry.Snapshot.CreationTime == nil {
+			t.Error("Expected non-nil CreationTime")
+		}
+	}
+}
+
+func TestListSnapshots_BySnapshotId(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-by-id")
+	snap1 := createSnapshotForTest(t, driver, "snap-target", volID)
+	createSnapshotForTest(t, driver, "snap-other", volID)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SnapshotId: snap1.Snapshot.SnapshotId,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("Expected 1 snapshot, got %d", len(resp.Entries))
+	}
+	if resp.Entries[0].Snapshot.SnapshotId != snap1.Snapshot.SnapshotId {
+		t.Errorf("Expected snapshot ID %s, got %s", snap1.Snapshot.SnapshotId, resp.Entries[0].Snapshot.SnapshotId)
+	}
+}
+
+func TestListSnapshots_BySnapshotId_NotFound(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SnapshotId: "non-existent-id",
+	})
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent snapshot ID, got: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("Expected empty entries for non-existent snapshot ID, got %d", len(resp.Entries))
+	}
+}
+
+func TestListSnapshots_BySourceVolumeId(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID1 := createVolumeForTest(t, driver, "vol-source-1")
+	volID2 := createVolumeForTest(t, driver, "vol-source-2")
+	createSnapshotForTest(t, driver, "snap-vol1", volID1)
+	createSnapshotForTest(t, driver, "snap-vol2", volID2)
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SourceVolumeId: volID1,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("Expected 1 snapshot for volume %s, got %d", volID1, len(resp.Entries))
+	}
+	if resp.Entries[0].Snapshot.SourceVolumeId != volID1 {
+		t.Errorf("Expected source volume ID %s, got %s", volID1, resp.Entries[0].Snapshot.SourceVolumeId)
+	}
+}
+
+func TestListSnapshots_BySourceVolumeId_NotFound(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		SourceVolumeId: "non-existent-volume",
+	})
+	if err != nil {
+		t.Fatalf("Expected no error for non-existent source volume, got: %v", err)
+	}
+	if len(resp.Entries) != 0 {
+		t.Errorf("Expected empty entries for non-existent source volume, got %d", len(resp.Entries))
+	}
+}
+
+func TestListSnapshots_Pagination(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-pagination")
+	for i := 0; i < 5; i++ {
+		createSnapshotForTest(t, driver, "snap-page-"+strconv.Itoa(i), volID)
+	}
+
+	// Request first page with max_entries=2
+	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		MaxEntries: 2,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots returned error: %v", err)
+	}
+	if len(resp.Entries) != 2 {
+		t.Fatalf("Expected 2 entries on first page, got %d", len(resp.Entries))
+	}
+	if resp.NextToken == "" {
+		t.Fatal("Expected non-empty NextToken for first page")
+	}
+
+	// Request second page with starting_token
+	resp2, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		StartingToken: resp.NextToken,
+	})
+	if err != nil {
+		t.Fatalf("ListSnapshots with starting_token returned error: %v", err)
+	}
+	if len(resp2.Entries) != 3 {
+		t.Fatalf("Expected 3 remaining entries, got %d", len(resp2.Entries))
+	}
+	if resp2.NextToken != "" {
+		t.Errorf("Expected empty NextToken for last page, got %q", resp2.NextToken)
+	}
+
+	// Verify no duplicate snapshot IDs between pages
+	seen := make(map[string]bool)
+	for _, e := range resp.Entries {
+		seen[e.Snapshot.SnapshotId] = true
+	}
+	for _, e := range resp2.Entries {
+		if seen[e.Snapshot.SnapshotId] {
+			t.Errorf("Duplicate snapshot ID %s across pages", e.Snapshot.SnapshotId)
+		}
+	}
+}
+
+func TestListSnapshots_InvalidStartingToken(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	_, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+		StartingToken: "not-a-number",
+	})
+	if err == nil {
+		t.Fatal("Expected error for invalid starting_token, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.Aborted {
+		t.Errorf("Expected codes.Aborted, got %v", st.Code())
+	}
+}
+
+// TestCreateSnapshot_SnapshotLimitExhausted verifies that CreateSnapshot returns
+// codes.ResourceExhausted when the cloudscale API rejects snapshot creation
+// because the per-volume snapshot limit has been reached.
+func TestCreateSnapshot_SnapshotLimitExhausted(t *testing.T) {
+	// Create a driver with a fake client that enforces a snapshot limit of 2
+	initialServers := map[string]*cloudscale.Server{}
+	cloudscaleClient := NewFakeClient(initialServers)
+	fakeSnapService := cloudscaleClient.VolumeSnapshots.(*FakeVolumeSnapshotServiceOperations)
+	fakeSnapService.maxSnapshotsPerVolume = 2
+
+	driver := &Driver{
+		mounter:          &fakeMounter{},
+		log:              logrus.New().WithField("test_enabled", true),
+		cloudscaleClient: cloudscaleClient,
+		volumeLocks:      NewVolumeLocks(),
+	}
+	ctx := context.Background()
+
+	volID := createVolumeForTest(t, driver, "vol-snap-limit")
+
+	// Create snapshots up to the limit
+	createSnapshotForTest(t, driver, "snap-limit-1", volID)
+	createSnapshotForTest(t, driver, "snap-limit-2", volID)
+
+	// Third snapshot should fail with ResourceExhausted
+	_, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+		Name:           "snap-limit-3",
+		SourceVolumeId: volID,
+	})
+	if err == nil {
+		t.Fatal("Expected error when snapshot limit is reached, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Errorf("Expected codes.ResourceExhausted, got %v: %v", st.Code(), err)
+	}
+}
+
+// TestDeleteVolume_FailsWhenSnapshotsExist verifies that DeleteVolume returns
+// codes.FailedPrecondition when the volume has existing snapshots, matching
+// the CSI spec requirement for volumes that cannot be deleted independently
+// of their snapshots.
+func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+
+	// Create a volume
+	vol, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-volume-with-snapshot",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange: &csi.CapacityRange{
+			RequiredBytes: 1 * GB,
+		},
+		Parameters: map[string]string{
+			StorageTypeAttribute: "ssd",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create volume: %v", err)
+	}
+	volumeID := vol.Volume.VolumeId
+
+	// Create a snapshot on the volume
+	snap, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+		Name:           "test-snapshot",
+		SourceVolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create snapshot: %v", err)
+	}
+	if snap.Snapshot.SnapshotId == "" {
+		t.Fatalf("Expected non-empty snapshot ID")
+	}
+
+	// Attempt to delete the volume — should fail with FailedPrecondition
+	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+	})
+	if err == nil {
+		t.Fatalf("Expected error when deleting volume with snapshots, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.FailedPrecondition {
+		t.Errorf("Expected error code FailedPrecondition, got: %v", st.Code())
+	}
+
+	// Delete the snapshot, then delete the volume, should succeed now
+	_, err = driver.DeleteSnapshot(ctx, &csi.DeleteSnapshotRequest{
+		SnapshotId: snap.Snapshot.SnapshotId,
+	})
+	if err != nil {
+		t.Fatalf("Failed to delete snapshot: %v", err)
+	}
+
+	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+		VolumeId: volumeID,
+	})
+	if err != nil {
+		t.Fatalf("Expected volume deletion to succeed after snapshot removal, got: %v", err)
+	}
+}
+
+func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, string) {
+	t.Helper()
+	ctx := context.Background()
+
+	vol, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "src-vol-" + strconv.Itoa(rand.Int()),
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(sizeGB) * GB},
+		Parameters:         map[string]string{StorageTypeAttribute: "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("Failed to create source volume: %v", err)
+	}
+
+	snap, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+		Name:           "snap-" + strconv.Itoa(rand.Int()),
+		SourceVolumeId: vol.Volume.VolumeId,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create snapshot: %v", err)
+	}
+
+	return vol.Volume.VolumeId, snap.Snapshot.SnapshotId
+}
+
+func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
+	const snapshotSizeGiB = 5 // source volume and snapshot size (GiB)
+
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
+
+	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "restored-equal",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(snapshotSizeGiB*GB), resp.Volume.CapacityBytes)
+}
+
+func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
+
+	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "restored-larger",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp.Volume.CapacityBytes)
+
+	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp.Volume.VolumeId)
+	assert.NoError(t, err)
+	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
+}
+
+func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
+	const (
+		snapshotSizeGiB      = 5 // source volume and snapshot size (GiB)
+		belowSnapshotSizeGiB = 3 // requested size smaller than snapshot (invalid)
+	)
+
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
+
+	_, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "restored-smaller",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(belowSnapshotSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	})
+	assert.Error(t, err)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.OutOfRange, st.Code())
+}
+
+func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
+
+	req := &csi.CreateVolumeRequest{
+		Name:               "restored-idempotent",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	}
+
+	resp1, err := driver.CreateVolume(ctx, req)
+	assert.NoError(t, err)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp1.Volume.CapacityBytes)
+
+	resp2, err := driver.CreateVolume(ctx, req)
+	assert.NoError(t, err)
+	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
+}
+
+func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
+	const (
+		snapshotSizeGiB = 5  // source volume and snapshot size (GiB)
+		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
+	)
+
+	driver := createDriverForTest(t)
+	ctx := context.Background()
+	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
+
+	// First create at snapshot size (equal)
+	resp1, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "restored-needs-expand",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, int64(snapshotSizeGiB*GB), resp1.Volume.CapacityBytes)
+
+	// Now call again with a larger size -- simulates retry after expand failure
+	resp2, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "restored-needs-expand",
+		VolumeCapabilities: makeVolumeCapabilityObject(false),
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
+		VolumeContentSource: &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{SnapshotId: snapshotID},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
+	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
+
+	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp2.Volume.VolumeId)
+	assert.NoError(t, err)
+	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
 }

@@ -13,6 +13,9 @@ Cloud Foundry. Feel free to test it on other COs and give us feedback.
 ```shell
 # Add a cloudscale.ch API token as secret, replace the placeholder string starting with `a05...` with your own secret
 $ kubectl -n kube-system create secret generic cloudscale --from-literal=access-token=a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da
+# If your cluster does not already provide them, install VolumeSnapshot CRDs and snapshot controller
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
 # Add repository
 $ helm repo add csi-cloudscale https://cloudscale-ch.github.io/csi-cloudscale
 # Install driver
@@ -61,7 +64,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v3.6.0`**.
+The current version is: **`v4.0.0-beta1`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -89,14 +92,14 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.25               | v3.3.0                           | v3.5.6                           |
 | 1.26               | v3.3.0                           | v3.5.6                           |
 | 1.27               | v3.3.0                           | v3.5.6                           |
-| 1.28               | v3.3.0                           | v3.6.0                       |
-| 1.29               | v3.3.0                           | v3.6.0                       |
-| 1.30               | v3.3.0                           | v3.6.0                       |
-| 1.31               | v3.3.0                           | v3.6.0                       |
-| 1.32               | v3.3.0                           | v3.6.0                       |
-| 1.33               | v3.3.0                           | v3.6.0                       |
-| 1.34 [1]           | v3.3.0                           | v3.6.0                       |
-| 1.35               | v3.4.1                           | v3.6.0                       |
+| 1.28               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.29               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.30               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.31               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.32               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.33               | v3.3.0                           | v4.0.0-beta1                       |
+| 1.34 [1]           | v3.3.0                           | v4.0.0-beta1                       |
+| 1.35               | v3.4.1                           | v4.0.0-beta1                       |
 
 [1] Prometheus `kubelet_volume_stats_*` metrics not available in 1.34.0 and 1.34.1 due to a 
     [bug in Kubelet](https://github.com/kubernetes/kubernetes/issues/133847). Fixed in `1.34.2`.
@@ -113,8 +116,22 @@ on `quay.io` and `k8s.gcr.io` container registries. Use `registry.k8s.io` instea
 * If you want to use LUKS encrypted volumes, the kernel on your nodes must have support for 
   `device mapper` infrastructure with the `crypt target` and the appropriate cryptographic APIs
 
+#### 1. Required Kubernetes Snapshot Components
 
-#### 1. Create a secret with your cloudscale.ch API Access Token:
+Clusters running this driver version must have the VolumeSnapshot CRDs and snapshot controller installed.
+Some Kubernetes distributions already include these CRDs and controllers. 
+You only need to apply them manually if your cluster does not provide them.
+
+Install the snapshot resources using kustomize (recommended):
+```
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
+```
+
+When installing using the Helm chart, the `VolumeSnapshotClass` resources are created by the chart based on the `csi.snapshotClasses`
+configuration in `values.yaml`.
+
+#### 2. Create a secret with your cloudscale.ch API Access Token:
 
 Replace the placeholder string starting with `a05...` with your own secret and
 save it as `secret.yml`: 
@@ -145,14 +162,14 @@ default-token-jskxx   kubernetes.io/service-account-token   3         18h
 cloudscale            Opaque                                1         18h
 ```
 
-#### 2. Deploy the CSI plugin and sidecars:
+#### 3. Deploy the CSI plugin and sidecars:
 
 You can install the CSI plugin and sidecars using one of the following methods:
  * Helm (requires a Helm installation)
  * YAML Manifests (only kubectl required)
 
 
-#### 2a. Using Helm:
+#### 3a. Using Helm:
 
 Before you can install the csi-cloudscale chart, you need to add the helm repository:
 
@@ -193,15 +210,15 @@ Note: if you want to test a debug/dev release, you can use the following command
 $ helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
 ```
 
-#### 2b. Using YAML Manifests:
+#### 3b. Using YAML Manifests:
 
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v3.6.0`) you can execute the following command:
+For example, to use the latest stable version (`v4.0.0-beta1`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.6.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v4.0.0-beta1.yaml
 ```
 
 The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
@@ -209,7 +226,7 @@ storage class `cloudscale-volume-ssd` is set to **"default"** for dynamic provis
 using multiple storage classes you might want to remove the annotation and re-deploy it. This is
 based on the [recommended mechanism](https://github.com/kubernetes/community/blob/master/contributors/design-proposals/storage/container-storage-interface.md#recommended-mechanism-for-deploying-csi-drivers-on-kubernetes) of deploying CSI drivers on Kubernetes
 
-#### 3. Test and verify:
+#### 4. Test and verify:
 
 Create a PersistentVolumeClaim. This makes sure a volume is created and provisioned on your behalf:
 
@@ -306,6 +323,12 @@ When updating from csi-cloudscale v2.x to v3.x please note the following:
    added after the upgrade)
  * The `region` label will stay in place for existing nodes and not be added to new nodes. It
    can be safely removed from all nodes from a `csi-cloudscale` driver perspective.
+
+### From csi-cloudscale v3.x to v4.x
+
+Before upgrading, ensure that the Kubernetes VolumeSnapshot
+CRDs and snapshot controller are installed in the cluster.
+See [Required Kubernetes Snapshot Components](#1-required-kubernetes-snapshot-components).
 
 ## Advanced Configuration
 
@@ -422,15 +445,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v3.6.0` and then publish a new docker build:
+master with the version `v4.0.0-beta1` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v3.6.0` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v3.6.0`
+This will create a binary with version `v4.0.0-beta1` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v4.0.0-beta1`
 
 ### Release a pre-release version
 
