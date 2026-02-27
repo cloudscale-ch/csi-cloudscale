@@ -13,6 +13,9 @@ Cloud Foundry. Feel free to test it on other COs and give us feedback.
 ```shell
 # Add a cloudscale.ch API token as secret, replace the placeholder string starting with `a05...` with your own secret
 $ kubectl -n kube-system create secret generic cloudscale --from-literal=access-token=a05dd2f26b9b9ac2asdas__REPLACE_ME____123cb5d1ec17513e06da
+# If your cluster does not already provide them, install VolumeSnapshot CRDs and snapshot controller
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0
+kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0
 # Add repository
 $ helm repo add csi-cloudscale https://cloudscale-ch.github.io/csi-cloudscale
 # Install driver
