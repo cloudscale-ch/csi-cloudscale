@@ -61,7 +61,7 @@ secret `my-pvc-luks-key`.
 ## Releases
 
 The cloudscale.ch CSI plugin follows [semantic versioning](https://semver.org/).
-The current version is: **`v3.6.0`**.
+The current version is: **`v4.0.0`**.
 
 * Bug fixes will be released as a `PATCH` update.
 * New features (such as CSI spec bumps) will be released as a `MINOR` update.
@@ -105,14 +105,14 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.25               | v3.3.0                           | v3.5.6                           |
 | 1.26               | v3.3.0                           | v3.5.6                           |
 | 1.27               | v3.3.0                           | v3.5.6                           |
-| 1.28               | v3.3.0                           | v3.6.0                       |
-| 1.29               | v3.3.0                           | v3.6.0                       |
-| 1.30               | v3.3.0                           | v3.6.0                       |
-| 1.31               | v3.3.0                           | v3.6.0                       |
-| 1.32               | v3.3.0                           | v3.6.0                       |
-| 1.33               | v3.3.0                           | v3.6.0                       |
-| 1.34 [1]           | v3.3.0                           | v3.6.0                       |
-| 1.35               | v3.4.1                           | v3.6.0                       |
+| 1.28               | v3.3.0                           | v4.0.0                       |
+| 1.29               | v3.3.0                           | v4.0.0                       |
+| 1.30               | v3.3.0                           | v4.0.0                       |
+| 1.31               | v3.3.0                           | v4.0.0                       |
+| 1.32               | v3.3.0                           | v4.0.0                       |
+| 1.33               | v3.3.0                           | v4.0.0                       |
+| 1.34 [1]           | v3.3.0                           | v4.0.0                       |
+| 1.35               | v3.4.1                           | v4.0.0                       |
 
 [1] Prometheus `kubelet_volume_stats_*` metrics not available in 1.34.0 and 1.34.1 due to a 
     [bug in Kubelet](https://github.com/kubernetes/kubernetes/issues/133847). Fixed in `1.34.2`.
@@ -214,10 +214,10 @@ $ helm install -g -n kube-system --set controller.image.tag=dev --set node.image
 Before you continue, be sure to checkout to a [tagged
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases). 
 Always use the [latest stable version](https://github.com/cloudscale-ch/csi-cloudscale/releases/latest) 
-For example, to use the latest stable version (`v3.6.0`) you can execute the following command:
+For example, to use the latest stable version (`v4.0.0`) you can execute the following command:
 
 ```
-$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v3.6.0.yaml
+$ kubectl apply -f https://raw.githubusercontent.com/cloudscale-ch/csi-cloudscale/master/deploy/kubernetes/releases/csi-cloudscale-v4.0.0.yaml
 ```
 
 The storage classes `cloudscale-volume-ssd` and `cloudscale-volume-bulk` will be created. The 
@@ -438,15 +438,15 @@ $ git push origin
 
 After it's merged to master, [create a new Github
 release](https://github.com/cloudscale-ch/csi-cloudscale/releases/new) from
-master with the version `v3.6.0` and then publish a new docker build:
+master with the version `v4.0.0` and then publish a new docker build:
 
 ```
 $ git checkout master
 $ make publish
 ```
 
-This will create a binary with version `v3.6.0` and docker image pushed to
-`cloudscalech/cloudscale-csi-plugin:v3.6.0`
+This will create a binary with version `v4.0.0` and docker image pushed to
+`cloudscalech/cloudscale-csi-plugin:v4.0.0`
 
 ### Release a pre-release version
 
