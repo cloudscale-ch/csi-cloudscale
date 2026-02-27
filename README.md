@@ -130,8 +130,7 @@ kubectl apply -k https://github.com/kubernetes-csi/external-snapshotter/deploy/k
 ```
 
 When installing using the Helm chart, the `VolumeSnapshotClass` resources are created by the chart based on the `csi.snapshotClasses`
-configuration in `values.yaml`. If you install the driver using static YAML manifests instead
-of the Helm chart, you must create an appropriate `VolumeSnapshotClass` manually.
+configuration in `values.yaml`.
 
 #### 1. Create a secret with your cloudscale.ch API Access Token:
 
