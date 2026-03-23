@@ -400,6 +400,119 @@ func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+func TestPod_Create_Raw_Block_Volume_From_Snapshot(t *testing.T) {
+	podDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-raw-pvc-original",
+				SizeGB:       5,
+				StorageClass: "cloudscale-volume-ssd",
+				Block:        true,
+			},
+		},
+	}
+
+	// submit the pod and the pvc
+	pod := makeKubernetesPod(t, podDescriptor)
+	pvcs := makeKubernetesPVCs(t, podDescriptor)
+	assert.Equal(t, 1, len(pvcs))
+
+	// wait for the pod to be running and verify that the pvc is bound
+	waitForPod(t, client, pod.Name)
+	pvc := getPVC(t, client, pvcs[0].Name)
+	assert.Equal(t, v1.ClaimBound, pvc.Status.Phase)
+
+	// load the volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	originalVolume := getCloudscaleVolume(t, pvc.Spec.VolumeName)
+	assert.Equal(t, 5, originalVolume.SizeGB)
+	assert.Equal(t, "ssd", originalVolume.Type)
+
+	// verify the disk is a raw block device with no filesystem
+	disk, err := getVolumeInfo(t, pod, pvc.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", disk.Luks)
+	assert.Equal(t, "Block", disk.PVCVolumeMode)
+	assert.Equal(t, "", disk.Filesystem)
+	assert.Equal(t, 5*driver.GB, disk.DeviceSize)
+	assert.Equal(t, -1, disk.FilesystemSize)
+
+	// create a snapshot of the raw block volume
+	snapshotName := pseudoUuid()
+	snapshot := makeKubernetesVolumeSnapshot(t, snapshotName, pvc.Name)
+
+	// wait for the snapshot to be ready
+	waitForVolumeSnapshot(t, snapshot.Name)
+	snapshot = getVolumeSnapshot(t, snapshot.Name)
+	assert.NotNil(t, snapshot.Status)
+	assert.NotNil(t, snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.True(t, *snapshot.Status.ReadyToUse)
+
+	// verify the snapshot exists in the cloudscale.ch API
+	snapshotContent := getVolumeSnapshotContent(t, *snapshot.Status.BoundVolumeSnapshotContentName)
+	assert.NotNil(t, snapshotContent.Status)
+	assert.NotNil(t, snapshotContent.Status.SnapshotHandle)
+
+	cloudscaleSnapshot := getCloudscaleVolumeSnapshot(t, *snapshotContent.Status.SnapshotHandle)
+	assert.NotNil(t, cloudscaleSnapshot)
+	assert.Equal(t, *snapshotContent.Status.SnapshotHandle, cloudscaleSnapshot.UUID)
+	assert.Equal(t, "available", cloudscaleSnapshot.Status)
+	assert.Equal(t, 5, cloudscaleSnapshot.SizeGB)
+
+	// create a new pod with a raw block pvc restored from the snapshot
+	// we double the increase the size to 10 gb
+	restoredPodDescriptor := TestPodDescriptor{
+		Kind: "Pod",
+		Name: pseudoUuid(),
+		Volumes: []TestPodVolume{
+			{
+				ClaimName:    "csi-pod-ssd-raw-pvc-restored",
+				SizeGB:       10,
+				StorageClass: "cloudscale-volume-ssd",
+				Block:        true,
+			},
+		},
+	}
+
+	restoredPod := makeKubernetesPod(t, restoredPodDescriptor)
+	restoredPVCs := makeKubernetesPVCsFromSnapshot(t, restoredPodDescriptor, snapshot.Name)
+	assert.Equal(t, 1, len(restoredPVCs))
+
+	// wait for the restored pod to be running and verify that the pvc is bound
+	waitForPod(t, client, restoredPod.Name)
+	restoredPVC := getPVC(t, client, restoredPVCs[0].Name)
+	assert.Equal(t, v1.ClaimBound, restoredPVC.Status.Phase)
+
+	// load the restored volume from the cloudscale.ch api and verify that it
+	// has the requested size and volume type
+	restoredVolume := getCloudscaleVolume(t, restoredPVC.Spec.VolumeName)
+	assert.Equal(t, 10, restoredVolume.SizeGB)
+	assert.Equal(t, "ssd", restoredVolume.Type)
+
+	// verify the restored disk is also a raw block device with no filesystem
+	restoredDisk, err := getVolumeInfo(t, restoredPod, restoredPVC.Spec.VolumeName)
+	assert.NoError(t, err)
+	assert.Equal(t, "", restoredDisk.Luks)
+	assert.Equal(t, "Block", restoredDisk.PVCVolumeMode)
+	assert.Equal(t, "", restoredDisk.Filesystem)
+	assert.Equal(t, 10*driver.GB, restoredDisk.DeviceSize)
+	assert.Equal(t, -1, restoredDisk.FilesystemSize)
+
+	// delete the snapshot before deleting the volumes (cloudscale requires snapshots deleted before source volume)
+	deleteKubernetesVolumeSnapshot(t, snapshot.Name)
+	waitCloudscaleVolumeSnapshotDeleted(t, *snapshotContent.Status.SnapshotHandle)
+
+	// cleanup restored pod and pvc
+	cleanup(t, restoredPodDescriptor)
+	waitCloudscaleVolumeDeleted(t, restoredPVC.Spec.VolumeName)
+
+	// cleanup original pod and pvc
+	cleanup(t, podDescriptor)
+	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
+}
+
 func TestPod_Snapshot_Restore_Larger_Size(t *testing.T) {
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
