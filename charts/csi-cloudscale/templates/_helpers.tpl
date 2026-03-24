@@ -37,3 +37,19 @@
 namespace: {{ .Release.Namespace }}
 {{- end -}}
 {{- end -}}
+
+{{/* Render a value that may contain templates */}}
+{{/*
+This function is copied from bitnami/common to avoid that dependency for one function.
+License as follows:
+Copyright Broadcom, Inc. All Rights Reserved.
+
+SPDX-License-Identifier: APACHE-2.0
+*/}}
+{{- define "csi-cloudscale.tplvalues.render" -}}
+  {{- if typeIs "string" .value }}
+    {{- tpl .value .context }}
+  {{- else }}
+    {{- tpl (.value | toYaml) .context }}
+  {{- end }}
+{{- end -}}
