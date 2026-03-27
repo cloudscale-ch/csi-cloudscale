@@ -199,6 +199,11 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 		return nil, status.Error(codes.InvalidArgument, "DeleteVolume Volume ID must be provided")
 	}
 
+	if acquired := d.volumeLocks.TryAcquire(req.VolumeId); !acquired {
+		return nil, status.Errorf(codes.Aborted, "an operation with the given Volume ID %s already exists", req.VolumeId)
+	}
+	defer d.volumeLocks.Release(req.VolumeId)
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
 		"method":    "delete_volume",
@@ -248,6 +253,11 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		return nil, status.Error(codes.AlreadyExists, "read only Volumes are not supported")
 	}
 
+	if acquired := d.volumeLocks.TryAcquire(req.VolumeId); !acquired {
+		return nil, status.Errorf(codes.Aborted, "an operation with the given Volume ID %s already exists", req.VolumeId)
+	}
+	defer d.volumeLocks.Release(req.VolumeId)
+
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
 		"node_id":   req.NodeId,
@@ -255,10 +265,46 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	})
 	ll.Info("controller publish volume called")
 
+	// Check current attachment state before modifying it. This prevents
+	// silently moving a volume that is still attached to another node,
+	// which would cause a stale VolumeAttachment and Multi-Attach errors.
+	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
+	if err != nil {
+		return nil, reraiseNotFound(err, ll, "fetch volume for publish")
+	}
+
+	if volume.ServerUUIDs != nil && len(*volume.ServerUUIDs) > 0 {
+		alreadyAttachedToRequestedNode := false
+		for _, serverUUID := range *volume.ServerUUIDs {
+			if serverUUID == req.NodeId {
+				alreadyAttachedToRequestedNode = true
+				break
+			}
+		}
+
+		if alreadyAttachedToRequestedNode {
+			ll.Info("volume is already attached to the requested node")
+			return &csi.ControllerPublishVolumeResponse{
+				PublishContext: map[string]string{
+					PublishInfoVolumeName:  volume.Name,
+					LuksEncryptedAttribute: req.VolumeContext[LuksEncryptedAttribute],
+					LuksCipherAttribute:    req.VolumeContext[LuksCipherAttribute],
+					LuksKeySizeAttribute:   req.VolumeContext[LuksKeySizeAttribute],
+				},
+			}, nil
+		}
+
+		ll.WithField("current_server_uuids", *volume.ServerUUIDs).
+			Warn("volume is already attached to a different node")
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"volume %s is already attached to server(s) %v, must be detached first",
+			req.VolumeId, *volume.ServerUUIDs)
+	}
+
 	attachRequest := &cloudscale.VolumeRequest{
 		ServerUUIDs: &[]string{req.NodeId},
 	}
-	err := d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
+	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, attachRequest)
 	if err != nil {
 		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
 			return nil, status.Error(codes.ResourceExhausted, err.Error())
@@ -268,10 +314,6 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	ll.Info("volume is attached")
-	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
-	if err != nil {
-		return nil, reraiseNotFound(err, ll, "fetch volume")
-	}
 	return &csi.ControllerPublishVolumeResponse{
 		PublishContext: map[string]string{
 			PublishInfoVolumeName:  volume.Name,
@@ -287,6 +329,11 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerPublishVolume Volume ID must be provided")
 	}
+
+	if acquired := d.volumeLocks.TryAcquire(req.VolumeId); !acquired {
+		return nil, status.Errorf(codes.Aborted, "an operation with the given Volume ID %s already exists", req.VolumeId)
+	}
+	defer d.volumeLocks.Release(req.VolumeId)
 
 	ll := d.log.WithFields(logrus.Fields{
 		"volume_id": req.VolumeId,
@@ -511,6 +558,12 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 	if len(volID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID missing in request")
 	}
+
+	if acquired := d.volumeLocks.TryAcquire(volID); !acquired {
+		return nil, status.Errorf(codes.Aborted, "an operation with the given Volume ID %s already exists", volID)
+	}
+	defer d.volumeLocks.Release(volID)
+
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, volID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "ControllerExpandVolume could not retrieve existing volume: %v", err)
