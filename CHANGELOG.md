@@ -1,5 +1,11 @@
 ## unreleased
 
+## v3.6.1 - 2026.03.27
+
+* fix: prevent silent volume migration in ControllerPublishVolume due to race conditions
+  * before publish, verify volume is not attached to another server anymore
+  * introduce volume locks for all controller operations on volumes
+
 ## v3.6.0 - 2026.01.15
 * The minimum supported Kubernetes version is now 1.28.
 * Upgrade all sidecars to latest version
