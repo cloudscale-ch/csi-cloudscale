@@ -706,3 +706,259 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	execStage <- struct{}{}
 	<-respStage
 }
+
+func assertAbortedError(t *testing.T, err error, opName string) {
+	t.Helper()
+	if err == nil {
+		t.Errorf("%s: expected Aborted error when volume is locked, got nil", opName)
+		return
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Errorf("%s: expected gRPC status error, got: %v", opName, err)
+		return
+	}
+	if st.Code() != codes.Aborted {
+		t.Errorf("%s: expected codes.Aborted, got %v: %v", opName, st.Code(), err)
+	}
+}
+
+// TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode verifies that
+// ControllerPublishVolume returns FailedPrecondition when the volume is already
+// attached to a different node, preventing silent volume migration.
+func TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode(t *testing.T) {
+	serverA := "server-a-uuid"
+	serverB := "server-b-uuid"
+	initialServers := map[string]*cloudscale.Server{
+		serverA: {UUID: serverA},
+		serverB: {UUID: serverB},
+	}
+	cloudscaleClient := NewFakeClient(initialServers)
+	driver := &Driver{
+		endpoint:         "unix:///tmp/csi-test.sock",
+		serverId:         serverA,
+		zone:             DefaultZone.Slug,
+		cloudscaleClient: cloudscaleClient,
+		mounter:          &fakeMounter{mounted: map[string]string{}},
+		log:              logrus.New().WithField("test_enabled", true),
+		volumeLocks:      NewVolumeLocks(),
+	}
+
+	ctx := context.Background()
+	createResp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-vol-multiattach",
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		VolumeCapabilities: []*csi.VolumeCapability{{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		}},
+		Parameters: map[string]string{"type": "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume failed: %v", err)
+	}
+	volID := createResp.Volume.VolumeId
+
+	// Attach to server A
+	_, err = driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+		VolumeId: volID,
+		NodeId:   serverA,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Failed to publish volume to server A: %v", err)
+	}
+
+	// Try to attach the same volume to server B — should be rejected
+	_, err = driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+		VolumeId: volID,
+		NodeId:   serverB,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		},
+	})
+	if err == nil {
+		t.Fatal("Expected FailedPrecondition error when publishing to different node, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("Expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.FailedPrecondition {
+		t.Errorf("Expected codes.FailedPrecondition, got %v: %v", st.Code(), err)
+	}
+}
+
+// TestControllerPublishVolume_IdempotentSameNode tests that calling
+// ControllerPublishVolume for a volume already attached to the same node
+// returns success without error.
+func TestControllerPublishVolume_IdempotentSameNode(t *testing.T) {
+	serverA := "server-a-uuid"
+	initialServers := map[string]*cloudscale.Server{
+		serverA: {UUID: serverA},
+	}
+	cloudscaleClient := NewFakeClient(initialServers)
+	driver := &Driver{
+		endpoint:         "unix:///tmp/csi-test.sock",
+		serverId:         serverA,
+		zone:             DefaultZone.Slug,
+		cloudscaleClient: cloudscaleClient,
+		mounter:          &fakeMounter{mounted: map[string]string{}},
+		log:              logrus.New().WithField("test_enabled", true),
+		volumeLocks:      NewVolumeLocks(),
+	}
+
+	ctx := context.Background()
+	createResp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-vol-idempotent",
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		VolumeCapabilities: []*csi.VolumeCapability{{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		}},
+		Parameters: map[string]string{"type": "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume failed: %v", err)
+	}
+
+	publishReq := &csi.ControllerPublishVolumeRequest{
+		VolumeId: createResp.Volume.VolumeId,
+		NodeId:   serverA,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		},
+		VolumeContext: map[string]string{LuksEncryptedAttribute: "false"},
+	}
+
+	resp1, err := driver.ControllerPublishVolume(ctx, publishReq)
+	if err != nil {
+		t.Fatalf("First publish failed: %v", err)
+	}
+	resp2, err := driver.ControllerPublishVolume(ctx, publishReq)
+	if err != nil {
+		t.Fatalf("Second publish (idempotent) failed: %v", err)
+	}
+	if resp1.PublishContext[PublishInfoVolumeName] != resp2.PublishContext[PublishInfoVolumeName] {
+		t.Errorf("Publish context mismatch: %v vs %v", resp1.PublishContext, resp2.PublishContext)
+	}
+}
+
+// TestControllerPublishVolume_SucceedsWhenNotAttached tests that
+// ControllerPublishVolume works normally when the volume is not attached.
+func TestControllerPublishVolume_SucceedsWhenNotAttached(t *testing.T) {
+	serverA := "server-a-uuid"
+	initialServers := map[string]*cloudscale.Server{
+		serverA: {UUID: serverA},
+	}
+	cloudscaleClient := NewFakeClient(initialServers)
+	driver := &Driver{
+		endpoint:         "unix:///tmp/csi-test.sock",
+		serverId:         serverA,
+		zone:             DefaultZone.Slug,
+		cloudscaleClient: cloudscaleClient,
+		mounter:          &fakeMounter{mounted: map[string]string{}},
+		log:              logrus.New().WithField("test_enabled", true),
+		volumeLocks:      NewVolumeLocks(),
+	}
+
+	ctx := context.Background()
+	createResp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-vol-attach",
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		VolumeCapabilities: []*csi.VolumeCapability{{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		}},
+		Parameters: map[string]string{"type": "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume failed: %v", err)
+	}
+
+	resp, err := driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+		VolumeId: createResp.Volume.VolumeId,
+		NodeId:   serverA,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Publish failed: %v", err)
+	}
+	if resp.PublishContext[PublishInfoVolumeName] == "" {
+		t.Error("Expected non-empty volume name in publish context")
+	}
+}
+
+// TestControllerOperations_VolumeLocks tests that concurrent controller
+// operations on the same volume are properly serialized with volume locks.
+func TestControllerOperations_VolumeLocks(t *testing.T) {
+	initialServers := map[string]*cloudscale.Server{}
+	cloudscaleClient := NewFakeClient(initialServers)
+	driver := &Driver{
+		mounter:          &fakeMounter{},
+		log:              logrus.New().WithField("test_enabled", true),
+		cloudscaleClient: cloudscaleClient,
+		volumeLocks:      NewVolumeLocks(),
+	}
+
+	ctx := context.Background()
+	createResp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+		Name:               "test-vol-locks",
+		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
+		VolumeCapabilities: []*csi.VolumeCapability{{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		}},
+		Parameters: map[string]string{"type": "ssd"},
+	})
+	if err != nil {
+		t.Fatalf("CreateVolume failed: %v", err)
+	}
+	volID := createResp.Volume.VolumeId
+
+	// Pre-acquire the volume lock
+	if !driver.volumeLocks.TryAcquire(volID) {
+		t.Fatal("Failed to pre-acquire volume lock")
+	}
+
+	// ControllerPublishVolume should return Aborted
+	_, err = driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+		VolumeId: volID,
+		NodeId:   "some-node",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+		},
+	})
+	assertAbortedError(t, err, "ControllerPublishVolume")
+
+	// ControllerUnpublishVolume should return Aborted
+	_, err = driver.ControllerUnpublishVolume(ctx, &csi.ControllerUnpublishVolumeRequest{
+		VolumeId: volID,
+		NodeId:   "some-node",
+	})
+	assertAbortedError(t, err, "ControllerUnpublishVolume")
+
+	// DeleteVolume should return Aborted
+	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+		VolumeId: volID,
+	})
+	assertAbortedError(t, err, "DeleteVolume")
+
+	// ControllerExpandVolume should return Aborted
+	_, err = driver.ControllerExpandVolume(ctx, &csi.ControllerExpandVolumeRequest{
+		VolumeId:      volID,
+		CapacityRange: &csi.CapacityRange{RequiredBytes: 10 * GB},
+	})
+	assertAbortedError(t, err, "ControllerExpandVolume")
+
+	driver.volumeLocks.Release(volID)
+}
