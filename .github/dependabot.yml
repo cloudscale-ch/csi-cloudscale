@@ -17,10 +17,17 @@ updates:
       interval: "weekly"
     allow:
       - dependency-type: "direct"
-    ignore:
-      - dependency-name: "*"
+    groups:
+      k8s:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      all-minor-patch:
         update-types:
-          - "version-update:semver-patch"
+          - "minor"
+          - "patch"
+    cooldown:
+      default-days: 7
 
   # Check for helm updates
   - package-ecosystem: "helm"
