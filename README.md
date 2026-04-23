@@ -92,14 +92,15 @@ We recommend using the latest cloudscale.ch CSI driver compatible with your Kube
 | 1.25               | v3.3.0                           | v3.5.6                           |
 | 1.26               | v3.3.0                           | v3.5.6                           |
 | 1.27               | v3.3.0                           | v3.5.6                           |
-| 1.28               | v3.3.0                           | v4.0.0                       |
-| 1.29               | v3.3.0                           | v4.0.0                       |
-| 1.30               | v3.3.0                           | v4.0.0                       |
-| 1.31               | v3.3.0                           | v4.0.0                       |
-| 1.32               | v3.3.0                           | v4.0.0                       |
-| 1.33               | v3.3.0                           | v4.0.0                       |
-| 1.34 [1]           | v3.3.0                           | v4.0.0                       |
-| 1.35               | v3.4.1                           | v4.0.0                       |
+| 1.28               | v3.3.0                           | v4.0.0                           |
+| 1.29               | v3.3.0                           | v4.0.0                           |
+| 1.30               | v3.3.0                           | v4.0.0                           |
+| 1.31               | v3.3.0                           | v4.0.0                           |
+| 1.32               | v3.3.0                           | v4.0.0                           |
+| 1.33               | v3.3.0                           | v4.0.0                           |
+| 1.34 [1]           | v3.3.0                           | v4.0.0                           |
+| 1.35               | v3.4.1                           | v4.0.0                           |
+| 1.36               | v3.4.1                           | v4.0.0                           |
 
 [1] Prometheus `kubelet_volume_stats_*` metrics not available in 1.34.0 and 1.34.1 due to a 
     [bug in Kubelet](https://github.com/kubernetes/kubernetes/issues/133847). Fixed in `1.34.2`.
