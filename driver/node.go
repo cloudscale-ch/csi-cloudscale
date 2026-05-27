@@ -217,7 +217,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	}
 	if isLuks {
 		ll.Info("resizing LUKS container before filesystem resize")
-		if err := luksResize(devicePath); err != nil {
+		if err := luksResize(devicePath, ll); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to resize LUKS container on %s: %v", devicePath, err)
 		}
 	}
@@ -599,7 +599,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	// the luks container must be resized if the volume was resized while the disk was mounted
 	if isLuks {
 		ll.Info("resizing luks container")
-		err := luksResize(devicePath)
+		err := luksResize(devicePath, ll)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable resize luks container for volume %q at %q: %v", volumePath, devicePath, err)
 		}
