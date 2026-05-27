@@ -301,7 +301,7 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 func getMountSources(target string) ([]string, error) {
 	_, err := exec.LookPath("findmnt")
 	if err != nil {
-		if err == exec.ErrNotFound {
+		if errors.Is(err, exec.ErrNotFound) {
 			return nil, fmt.Errorf("%q executable not found in $PATH", "findmnt")
 		}
 		return nil, err
