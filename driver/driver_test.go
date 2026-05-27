@@ -125,18 +125,18 @@ type fakeMounter struct {
 	mu      sync.RWMutex
 }
 
-func (f *fakeMounter) Format(source string, fsType string, luksContext LuksContext) error {
+func (f *fakeMounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
 	return nil
 }
 
-func (f *fakeMounter) Mount(source string, target string, fsType string, luksContext LuksContext, options ...string) error {
+func (f *fakeMounter) Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mounted[target] = source
 	return nil
 }
 
-func (f *fakeMounter) Unmount(target string, luksContext LuksContext) error {
+func (f *fakeMounter) Unmount(target string, luksContext LuksContext, log *logrus.Entry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.mounted, target)
@@ -153,14 +153,14 @@ func (f *fakeMounter) GetDeviceName(_ mount.Interface, mountPath string) (string
 	return "", nil
 }
 
-func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
+func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entry) (string, error) {
 	return "/dev/sdb", nil
 }
 
-func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
+func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
-func (f *fakeMounter) IsMounted(target string) (bool, error) {
+func (f *fakeMounter) IsMounted(target string, log *logrus.Entry) (bool, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	_, ok := f.mounted[target]
@@ -168,7 +168,7 @@ func (f *fakeMounter) IsMounted(target string) (bool, error) {
 }
 
 func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
-	isMounted, err := f.IsMounted(path)
+	isMounted, err := f.IsMounted(path, nil)
 	if err != nil {
 		return "", err
 	}
