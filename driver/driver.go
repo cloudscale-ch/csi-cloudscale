@@ -115,7 +115,7 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 		serverId:         serverId,
 		zone:             zone,
 		cloudscaleClient: cloudscaleClient,
-		mounter:          newMounter(log),
+		mounter:          newMounter(),
 		log:              log,
 		volumeLocks:      NewVolumeLocks(),
 	}, nil
