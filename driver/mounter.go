@@ -86,6 +86,11 @@ type Mounter interface {
 	// case of system errors or if it's mounted incorrectly.
 	IsMounted(target string) (bool, error)
 
+	// GetMountSources returns the source devices currently mounted at the
+	// given target path (as reported by findmnt). The slice is empty when
+	// the path is not mounted.
+	GetMountSources(target string) ([]string, error)
+
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
 	FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, VolumeId string) (string, error)
@@ -295,6 +300,11 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 	}
 
 	return nil
+}
+
+// GetMountSources implements Mounter.
+func (m *mounter) GetMountSources(target string) ([]string, error) {
+	return getMountSources(target)
 }
 
 // gets the mount sources of a mountpoint

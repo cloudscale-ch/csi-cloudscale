@@ -167,6 +167,15 @@ func (f *fakeMounter) IsMounted(target string) (bool, error) {
 	return ok, nil
 }
 
+func (f *fakeMounter) GetMountSources(target string) ([]string, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if source, ok := f.mounted[target]; ok {
+		return []string{source}, nil
+	}
+	return nil, nil
+}
+
 func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
 	isMounted, err := f.IsMounted(path)
 	if err != nil {

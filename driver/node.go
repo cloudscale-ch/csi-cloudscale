@@ -20,7 +20,9 @@ package driver
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -85,7 +87,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	ll = ll.WithFields(logrus.Fields{
 		"source": source,
 	})
-	ll.Info("successfully found attached volume_id at device_path")
+	ll.Info("successfully found attached volume_id at source")
 
 	publishContext := req.GetPublishContext()
 	if publishContext == nil {
@@ -152,6 +154,40 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
+		// IsMounted only tells us *something* is mounted at the staging path.
+		// Verify it is mounted from the device we just resolved before
+		// declaring success — otherwise a stale mount left by an earlier
+		// (failed or racing) stage operation can be silently accepted, which
+		// is the same class of bug as the LUKS mapping reuse in luksOpen.
+		actualSources, err := d.mounter.GetMountSources(stagingTargetPath)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"stage path %s is mounted but findmnt failed: %v",
+				stagingTargetPath, err)
+		}
+
+		expected := source
+		if luksContext.EncryptionEnabled {
+			expected = "/dev/mapper/" + luksContext.VolumeName
+		} else if resolved, err := filepath.EvalSymlinks(source); err == nil {
+			// findmnt reports the kernel-resolved device, so compare against
+			// the canonical form. Fall back to the literal source on resolve
+			// failure — the mismatch will then surface as a loud error.
+			expected = resolved
+		}
+
+		matched := false
+		for _, s := range actualSources {
+			if strings.TrimSpace(s) == expected {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"stage path %s is mounted from %v, expected %s, refusing to reuse stale mount",
+				stagingTargetPath, actualSources, expected)
+		}
 		ll.Info("source device is already mounted to the stagingTargetPath path")
 	}
 
