@@ -69,22 +69,22 @@ type volumeStatistics struct {
 // more than just mounting functionality by now.
 type Mounter interface {
 	// Format formats the source with the given filesystem type
-	Format(source, fsType string, luksContext LuksContext) error
+	Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error
 
 	// Mount mounts source to target with the given fstype and options.
-	Mount(source, target, fsType string, luksContext LuksContext, options ...string) error
+	Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error
 
 	// Unmount unmounts the given target
-	Unmount(target string, luksContext LuksContext) error
+	Unmount(target string, luksContext LuksContext, log *logrus.Entry) error
 
 	// IsFormatted checks whether the source device is formatted or not. It
 	// returns true if the source device is already formatted.
-	IsFormatted(source string, luksContext LuksContext) (bool, error)
+	IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error)
 
 	// IsMounted checks whether the target path is a correct mount (i.e:
 	// propagated). It returns true if it's mounted. An error is returned in
 	// case of system errors or if it's mounted incorrectly.
-	IsMounted(target string) (bool, error)
+	IsMounted(target string, log *logrus.Entry) (bool, error)
 
 	// GetMountSources returns the source devices currently mounted at the
 	// given target path (as reported by findmnt). The slice is empty when
@@ -104,7 +104,7 @@ type Mounter interface {
 
 	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
 
-	FindAbsoluteDeviceByIDPath(volumeName string) (string, error)
+	FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entry) (string, error)
 	HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error)
 }
 
@@ -112,12 +112,11 @@ type Mounter interface {
 // architecture specific code in the future, such as mounter_darwin.go,
 // mounter_linux.go, etc..
 type mounter struct {
-	log      *logrus.Entry
 	kMounter *mount.SafeFormatAndMount
 }
 
 // newMounter returns a new mounter instance
-func newMounter(log *logrus.Entry) *mounter {
+func newMounter() *mounter {
 	kMounter := &mount.SafeFormatAndMount{
 		Interface: mount.New(""),
 		Exec:      kexec.New(),
@@ -125,16 +124,15 @@ func newMounter(log *logrus.Entry) *mounter {
 
 	return &mounter{
 		kMounter: kMounter,
-		log:      log,
 	}
 }
 
-func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
+func (m *mounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
 	mkfsCmd := fmt.Sprintf("mkfs.%s", fsType)
 
 	_, err := exec.LookPath(mkfsCmd)
 	if err != nil {
-		if err == exec.ErrNotFound {
+		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("%q executable not found in $PATH", mkfsCmd)
 		}
 		return err
@@ -160,7 +158,7 @@ func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
 	}
 
 	if !luksContext.EncryptionEnabled {
-		m.log.WithFields(logrus.Fields{
+		log.WithFields(logrus.Fields{
 			"cmd":  mkfsCmd,
 			"args": mkfsArgs,
 		}).Info("executing format command")
@@ -177,7 +175,7 @@ func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
 		if err != nil {
 			return err
 		}
-		err = luksFormat(source, mkfsCmd, mkfsArgs, luksContext, m.log)
+		err = luksFormat(source, mkfsCmd, mkfsArgs, luksContext, log)
 		if err != nil {
 			return err
 		}
@@ -185,7 +183,7 @@ func (m *mounter) Format(source, fsType string, luksContext LuksContext) error {
 	}
 }
 
-func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, options ...string) error {
+func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
 	if source == "" {
 		return errors.New("source is not specified for mounting the volume")
 	}
@@ -208,7 +206,7 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 			return fmt.Errorf("failed to create target file for raw block bind mount: %v", err)
 		}
 		if err := file.Close(); err != nil {
-			m.log.WithFields(logrus.Fields{"target": target}).Error("failed to close file handle")
+			log.WithFields(logrus.Fields{"target": target}).Error("failed to close file handle")
 		}
 	} else {
 		// create target, os.Mkdirall is noop if directory exists
@@ -219,9 +217,9 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 	}
 
 	if luksContext.EncryptionEnabled && luksContext.VolumeLifecycle == VolumeLifecycleNodeStageVolume {
-		luksSource, err := luksPrepareMount(source, luksContext, m.log)
+		luksSource, err := luksPrepareMount(source, luksContext, log)
 		if err != nil {
-			m.log.WithFields(logrus.Fields{
+			log.WithFields(logrus.Fields{
 				"error":  err.Error(),
 				"volume": luksContext.VolumeName,
 			}).Error("failed to prepare luks volume for mounting")
@@ -231,10 +229,10 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		source = luksSource
 	}
 
-	if m.log.Logger.IsLevelEnabled(logrus.DebugLevel) {
+	if log.Logger.IsLevelEnabled(logrus.DebugLevel) {
 		resolvedSource, resolveErr := filepath.EvalSymlinks(source)
 		if resolveErr != nil {
-			m.log.WithFields(logrus.Fields{
+			log.WithFields(logrus.Fields{
 				"source":        source,
 				"target":        target,
 				"fs_type":       fsType,
@@ -242,7 +240,7 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 				"resolve_error": resolveErr,
 			}).Debug("Mount: failed to resolve source symlink")
 		} else {
-			m.log.WithFields(logrus.Fields{
+			log.WithFields(logrus.Fields{
 				"source":          source,
 				"resolved_source": resolvedSource,
 				"target":          target,
@@ -252,7 +250,7 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 		}
 	}
 
-	m.log.WithFields(logrus.Fields{
+	log.WithFields(logrus.Fields{
 		"source":  source,
 		"target":  target,
 		"options": options,
@@ -265,7 +263,7 @@ func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, 
 	return nil
 }
 
-func (m *mounter) Unmount(target string, luksContext LuksContext) error {
+func (m *mounter) Unmount(target string, luksContext LuksContext, log *logrus.Entry) error {
 	if target == "" {
 		return errors.New("target is not specified for unmounting the volume")
 	}
@@ -291,7 +289,7 @@ func (m *mounter) Unmount(target string, luksContext LuksContext) error {
 				return err
 			}
 			if isLuksMapping {
-				err := luksClose(mappingName, m.log)
+				err := luksClose(mappingName, log)
 				if err != nil {
 					return err
 				}
@@ -328,12 +326,12 @@ func getMountSources(target string) ([]string, error) {
 	return strings.Split(string(out), "\n"), nil
 }
 
-func (m *mounter) IsFormatted(source string, luksContext LuksContext) (bool, error) {
+func (m *mounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	if !luksContext.EncryptionEnabled {
-		return isVolumeFormatted(source, m.log)
+		return isVolumeFormatted(source, log)
 	}
 
-	formatted, err := isLuksVolumeFormatted(source, luksContext, m.log)
+	formatted, err := isLuksVolumeFormatted(source, luksContext, log)
 	if err != nil {
 		return false, err
 	}
@@ -348,7 +346,7 @@ func isVolumeFormatted(source string, log *logrus.Entry) (bool, error) {
 	blkidCmd := "blkid"
 	_, err := exec.LookPath(blkidCmd)
 	if err != nil {
-		if err == exec.ErrNotFound {
+		if errors.Is(err, exec.ErrNotFound) {
 			return false, fmt.Errorf("%q executable not found in $PATH", blkidCmd)
 		}
 		return false, err
@@ -381,7 +379,7 @@ func isVolumeFormatted(source string, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
 
-func (m *mounter) IsMounted(target string) (bool, error) {
+func (m *mounter) IsMounted(target string, log *logrus.Entry) (bool, error) {
 	if target == "" {
 		return false, errors.New("target is not specified for checking the mount")
 	}
@@ -389,7 +387,7 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 	findmntCmd := "findmnt"
 	_, err := exec.LookPath(findmntCmd)
 	if err != nil {
-		if err == exec.ErrNotFound {
+		if errors.Is(err, exec.ErrNotFound) {
 			return false, fmt.Errorf("%q executable not found in $PATH", findmntCmd)
 		}
 		return false, err
@@ -397,7 +395,7 @@ func (m *mounter) IsMounted(target string) (bool, error) {
 
 	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", target, "-J"}
 
-	m.log.WithFields(logrus.Fields{
+	log.WithFields(logrus.Fields{
 		"cmd":  findmntCmd,
 		"args": findmntArgs,
 	}).Info("checking if target is mounted")
@@ -628,8 +626,8 @@ func (m *mounter) GetDeviceName(mounter mount.Interface, mountPath string) (stri
 }
 
 // FindAbsoluteDeviceByIDPath follows the /dev/disk/by-id symlink to find the absolute path of a device
-func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string) (string, error) {
-	path := guessDiskIDPathByVolumeID(volumeName, m.log)
+func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entry) (string, error) {
+	path := guessDiskIDPathByVolumeID(volumeName, log)
 	if path == "" {
 		return "", fmt.Errorf("could not find device-path for volume: %s", volumeName)
 	}

@@ -126,14 +126,14 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"luks_encrypted": luksContext.EncryptionEnabled,
 	})
 
-	formatted, err := d.mounter.IsFormatted(source, luksContext)
+	formatted, err := d.mounter.IsFormatted(source, luksContext, ll)
 	if err != nil {
 		return nil, err
 	}
 
 	if !formatted {
 		ll.Info("formatting the volume for staging")
-		if err := d.mounter.Format(source, fsType, luksContext); err != nil {
+		if err := d.mounter.Format(source, fsType, luksContext, ll); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -142,7 +142,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll.Info("checking if stagingTargetPath is already mounted")
 
-	mounted, err := d.mounter.IsMounted(stagingTargetPath)
+	mounted, err := d.mounter.IsMounted(stagingTargetPath, ll)
 	if err != nil {
 		ll.WithError(err).Error("unable to check if already mounted")
 		return nil, err
@@ -150,7 +150,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	if !mounted {
 		ll.Info("not mounted yet, mounting the volume for staging")
-		if err := d.mounter.Mount(source, stagingTargetPath, fsType, luksContext, options...); err != nil {
+		if err := d.mounter.Mount(source, stagingTargetPath, fsType, luksContext, ll, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -262,14 +262,14 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	})
 	ll.Info("node unstage volume called")
 
-	mounted, err := d.mounter.IsMounted(req.StagingTargetPath)
+	mounted, err := d.mounter.IsMounted(req.StagingTargetPath, ll)
 	if err != nil {
 		return nil, err
 	}
 
 	if mounted {
 		ll.Info("unmounting the staging target path")
-		err := d.mounter.Unmount(req.StagingTargetPath, luksContext)
+		err := d.mounter.Unmount(req.StagingTargetPath, luksContext, ll)
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +370,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	})
 	ll.Info("node unpublish volume called")
 
-	err := d.mounter.Unmount(req.TargetPath, luksContext)
+	err := d.mounter.Unmount(req.TargetPath, luksContext, ll)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 	})
 	ll.Info("node get volume stats called")
 
-	mounted, err := d.mounter.IsMounted(volumePath)
+	mounted, err := d.mounter.IsMounted(volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
@@ -548,7 +548,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	})
 	ll.Info("node expand volume called")
 
-	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeID)
+	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeID, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeID, err)
 	}
@@ -563,7 +563,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		}
 	}
 
-	mounted, err := d.mounter.IsMounted(volumePath)
+	mounted, err := d.mounter.IsMounted(volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
@@ -635,7 +635,7 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	})
 
 	ll.Info("mounting the volume")
-	if err := d.mounter.Mount(source, target, fsType, luksContext, mountOptions...); err != nil {
+	if err := d.mounter.Mount(source, target, fsType, luksContext, ll, mountOptions...); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
 
@@ -645,7 +645,7 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, ll *logrus.Entry) error {
 	volumeId := req.VolumeId
 
-	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeId)
+	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeId, ll)
 	if err != nil {
 		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeId, err)
 	}
@@ -659,7 +659,7 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 	})
 
 	ll.Info("mounting the volume")
-	if err := d.mounter.Mount(source, target, "", luksContext, mountOptions...); err != nil {
+	if err := d.mounter.Mount(source, target, "", luksContext, ll, mountOptions...); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
 
