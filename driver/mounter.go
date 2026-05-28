@@ -54,6 +54,15 @@ type fileSystem struct {
 	Options     string `json:"options"`
 }
 
+// MountInfo describes a single mount as reported by findmnt.
+type MountInfo struct {
+	Target      string
+	Source      string
+	Propagation string
+	FsType      string
+	Options     string
+}
+
 const (
 	// blkidExitStatusNoIdentifiers defines the exit code returned from blkid indicating that no devices have been found. See http://www.polarhome.com/service/man/?qf=blkid&tf=2&of=Alpinelinux for details.
 	blkidExitStatusNoIdentifiers = 2
@@ -81,15 +90,11 @@ type Mounter interface {
 	// returns true if the source device is already formatted.
 	IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error)
 
-	// IsMounted checks whether the target path is a correct mount (i.e:
-	// propagated). It returns true if it's mounted. An error is returned in
-	// case of system errors or if it's mounted incorrectly.
-	IsMounted(target string, log *logrus.Entry) (bool, error)
-
-	// GetMountSources returns the source devices currently mounted at the
-	// given target path (as reported by findmnt). The slice is empty when
-	// the path is not mounted.
-	GetMountSources(target string) ([]string, error)
+	// GetMountInfo returns the mount currently at target, or nil if nothing
+	// is mounted there. Returns a non-nil error only on lookup failures
+	// (findmnt missing, JSON parse error, etc.). Callers that require
+	// correct mount propagation must check info.Propagation themselves.
+	GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error)
 
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
@@ -268,62 +273,31 @@ func (m *mounter) Unmount(target string, luksContext LuksContext, log *logrus.En
 		return errors.New("target is not specified for unmounting the volume")
 	}
 
-	// if this is the unmount call after the mount-bind has been removed,
-	// a luks volume needs to be closed after unmounting; get the source
-	// of the mount to check if that is a luks volume
-	mountSources, err := getMountSources(target)
+	// Resolve the mounted source before tearing down so we can close any
+	// LUKS mapping that was backing it. Mount-propagation correctness is
+	// not Unmount's concern — a misconfigured mount must still be cleaned up.
+	info, err := m.GetMountInfo(target, log)
 	if err != nil {
-		return fmt.Errorf("failed to get mount sources for target %q: %v", target, err)
+		return fmt.Errorf("failed to get mount info for target %q: %v", target, err)
 	}
 
-	err = mount.CleanupMountPoint(target, m.kMounter, true)
-	if err != nil {
+	if err := mount.CleanupMountPoint(target, m.kMounter, true); err != nil {
 		return err
 	}
 
-	// if this is the unstaging process, check if the source is a luks volume and close it
-	if luksContext.VolumeLifecycle == VolumeLifecycleNodeUnstageVolume {
-		for _, source := range mountSources {
-			isLuksMapping, mappingName, err := isLuksMapping(source)
-			if err != nil {
+	if luksContext.VolumeLifecycle == VolumeLifecycleNodeUnstageVolume && info != nil {
+		isLuksMapping, mappingName, err := isLuksMapping(info.Source)
+		if err != nil {
+			return err
+		}
+		if isLuksMapping {
+			if err := luksClose(mappingName, log); err != nil {
 				return err
-			}
-			if isLuksMapping {
-				err := luksClose(mappingName, log)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}
 
 	return nil
-}
-
-// GetMountSources implements Mounter.
-func (m *mounter) GetMountSources(target string) ([]string, error) {
-	return getMountSources(target)
-}
-
-// gets the mount sources of a mountpoint
-func getMountSources(target string) ([]string, error) {
-	_, err := exec.LookPath("findmnt")
-	if err != nil {
-		if errors.Is(err, exec.ErrNotFound) {
-			return nil, fmt.Errorf("%q executable not found in $PATH", "findmnt")
-		}
-		return nil, err
-	}
-	out, err := exec.Command("sh", "-c", fmt.Sprintf("findmnt -o SOURCE -n -M %s", target)).CombinedOutput()
-	if err != nil {
-		// findmnt exits with non zero exit status if it couldn't find anything
-		if strings.TrimSpace(string(out)) == "" {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("checking mounted failed: %v cmd: %q output: %q",
-			err, "findmnt", string(out))
-	}
-	return strings.Split(string(out), "\n"), nil
 }
 
 func (m *mounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
@@ -379,21 +353,21 @@ func isVolumeFormatted(source string, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
 
-func (m *mounter) IsMounted(target string, log *logrus.Entry) (bool, error) {
+func (m *mounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
 	if target == "" {
-		return false, errors.New("target is not specified for checking the mount")
+		return nil, errors.New("target is not specified for checking the mount")
 	}
 
 	findmntCmd := "findmnt"
 	_, err := exec.LookPath(findmntCmd)
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
-			return false, fmt.Errorf("%q executable not found in $PATH", findmntCmd)
+			return nil, fmt.Errorf("%q executable not found in $PATH", findmntCmd)
 		}
-		return false, err
+		return nil, err
 	}
 
-	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS", "-M", target, "-J"}
+	findmntArgs := []string{"-o", "TARGET,PROPAGATION,FSTYPE,OPTIONS,SOURCE", "-M", target, "-J"}
 
 	log.WithFields(logrus.Fields{
 		"cmd":  findmntCmd,
@@ -402,40 +376,36 @@ func (m *mounter) IsMounted(target string, log *logrus.Entry) (bool, error) {
 
 	out, err := exec.Command(findmntCmd, findmntArgs...).CombinedOutput()
 	if err != nil {
-		// findmnt exits with non zero exit status if it couldn't find anything
+		// findmnt exits with non-zero exit status if it couldn't find anything
 		if strings.TrimSpace(string(out)) == "" {
-			return false, nil
+			return nil, nil
 		}
 
-		return false, fmt.Errorf("checking mounted failed: %v cmd: %q output: %q",
+		return nil, fmt.Errorf("checking mounted failed: %v cmd: %q output: %q",
 			err, findmntCmd, string(out))
 	}
 
-	// no response means there is no mount
-	if string(out) == "" {
-		return false, nil
+	if len(out) == 0 {
+		return nil, nil
 	}
 
 	var resp *findmntResponse
-	err = json.Unmarshal(out, &resp)
-	if err != nil {
-		return false, fmt.Errorf("couldn't unmarshal data: %q: %s", string(out), err)
+	if err := json.Unmarshal(out, &resp); err != nil {
+		return nil, fmt.Errorf("couldn't unmarshal data: %q: %s", string(out), err)
 	}
 
-	targetFound := false
 	for _, fs := range resp.FileSystems {
-		// check if the mount is propagated correctly. It should be set to shared.
-		if fs.Propagation != "shared" {
-			return true, fmt.Errorf("mount propagation for target %q is not enabled", target)
+		if fs.Target != target {
+			continue
 		}
-
-		// the mountpoint should match as well
-		if fs.Target == target {
-			targetFound = true
-		}
+		return &MountInfo{
+			Target:      fs.Target,
+			Source:      fs.Source,
+			Propagation: fs.Propagation,
+			FsType:      fs.FsType,
+			Options:     fs.Options,
+		}, nil
 	}
-
-	return targetFound, nil
 }
 
 // Copyright note for the functions below. Originally taken from
