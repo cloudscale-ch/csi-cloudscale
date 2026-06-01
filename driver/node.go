@@ -19,8 +19,11 @@ package driver
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
@@ -140,18 +143,41 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll.Info("checking if stagingTargetPath is already mounted")
 
-	mounted, err := d.mounter.IsMounted(stagingTargetPath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(stagingTargetPath, ll)
 	if err != nil {
 		ll.WithError(err).Error("unable to check if already mounted")
 		return nil, err
 	}
+	if mountInfo != nil && mountInfo.Propagation != "shared" {
+		return nil, fmt.Errorf("mount propagation for target %q is not enabled", stagingTargetPath)
+	}
 
-	if !mounted {
+	if mountInfo == nil {
 		ll.Info("not mounted yet, mounting the volume for staging")
 		if err := d.mounter.Mount(source, stagingTargetPath, fsType, luksContext, ll, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
+		// Something is already mounted at the staging path. Verify it is
+		// mounted from the device we just resolved before declaring success —
+		// otherwise a stale mount left by an earlier (failed or racing) stage
+		// operation can be silently accepted, which is the same class of bug
+		// as the LUKS mapping reuse in luksOpen.
+		expected := source
+		if luksContext.EncryptionEnabled {
+			expected = "/dev/mapper/" + luksContext.VolumeName
+		} else if resolved, err := filepath.EvalSymlinks(source); err == nil {
+			// findmnt reports the kernel-resolved device, so compare against
+			// the canonical form. Fall back to the literal source on resolve
+			// failure — the mismatch will then surface as a loud error.
+			expected = resolved
+		}
+
+		if strings.TrimSpace(mountInfo.Source) != expected {
+			return nil, status.Errorf(codes.FailedPrecondition,
+				"stage path %s is mounted from %q, expected %s, refusing to reuse stale mount",
+				stagingTargetPath, mountInfo.Source, expected)
+		}
 		ll.Info("source device is already mounted to the stagingTargetPath path")
 	}
 
@@ -226,12 +252,12 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	})
 	ll.Info("node unstage volume called")
 
-	mounted, err := d.mounter.IsMounted(req.StagingTargetPath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(req.StagingTargetPath, ll)
 	if err != nil {
 		return nil, err
 	}
 
-	if mounted {
+	if mountInfo != nil {
 		ll.Info("unmounting the staging target path")
 		err := d.mounter.Unmount(req.StagingTargetPath, luksContext, ll)
 		if err != nil {
@@ -430,12 +456,15 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 	})
 	ll.Info("node get volume stats called")
 
-	mounted, err := d.mounter.IsMounted(volumePath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
+	if mountInfo != nil && mountInfo.Propagation != "shared" {
+		return nil, status.Errorf(codes.Internal, "mount propagation for target %q is not enabled", volumePath)
+	}
 
-	if !mounted {
+	if mountInfo == nil {
 		return nil, status.Errorf(codes.NotFound, "volume path %q is not mounted", volumePath)
 	}
 
@@ -527,12 +556,15 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		}
 	}
 
-	mounted, err := d.mounter.IsMounted(volumePath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
+	if mountInfo != nil && mountInfo.Propagation != "shared" {
+		return nil, status.Errorf(codes.Internal, "NodeExpandVolume mount propagation for target %q is not enabled", volumePath)
+	}
 
-	if !mounted {
+	if mountInfo == nil {
 		return nil, status.Errorf(codes.NotFound, "NodeExpandVolume volume path %q is not mounted", volumePath)
 	}
 
