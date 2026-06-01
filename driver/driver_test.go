@@ -160,19 +160,22 @@ func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.
 func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
-func (f *fakeMounter) IsMounted(target string, log *logrus.Entry) (bool, error) {
+func (f *fakeMounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	_, ok := f.mounted[target]
-	return ok, nil
+	source, ok := f.mounted[target]
+	if !ok {
+		return nil, nil
+	}
+	return &MountInfo{Target: target, Source: source, Propagation: "shared"}, nil
 }
 
 func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
-	isMounted, err := f.IsMounted(path, nil)
+	info, err := f.GetMountInfo(path, nil)
 	if err != nil {
 		return "", err
 	}
-	if isMounted {
+	if info != nil {
 		return sanity.PathIsDir, nil
 	}
 	return sanity.PathIsNotFound, nil
