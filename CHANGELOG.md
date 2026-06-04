@@ -1,5 +1,40 @@
 ## unreleased
 
+## v4.0.1 - 2026.06.04
+
+Fixes a LUKS volume handling bug that could leave a volume stuck attached to a node after pod termination, surfacing later as a `Multi-Attach error`
+when the workload was rescheduled. The node plugin now verifies that an existing LUKS mapping is backed by the expected device before reusing it,
+and rejects a staging path that is already mounted from an unexpected source.
+
+In addition, every gRPC handler now uses a request-scoped logger, so log lines include the volume and request context that triggered them.
+
+### Detecting whether you were affected
+
+The bug surfaces in two places, neither of which is the csi-cloudscale logs:
+
+- `kube-controller-manager` logs (or the pod's events):
+  `Multi-Attach error: volume is already exclusively attached and can't be attached to another node`
+- `kubelet` logs on the node listed in `attachedTo=[...]`: repeated
+  `GetDeviceMountRefs check failed for volume ... is still mounted by other references` entries, typically every ~2 minutes.
+
+### Recovering a stuck volume
+
+Upgrading to v4.0.1 prevents new occurrences but does not clean up volumes that are already stuck. To recover one:
+
+1. From the `Multi-Attach error` message, note the affected node listed in `attachedTo=[...]`. Confirm no pod is actively using the
+   volume on that node (`kubectl get pods --all-namespaces -o wide` and check mount refs under `/var/lib/kubelet/pods/`).
+2. Cordon the node so no new workloads land on it during recovery: `kubectl cordon <node>`.
+3. On that node, inspect the stale state. They are the duplicated `.../globalmount` paths that share a `(major, minor)`:
+   - `findmnt | grep globalmount`
+4. `umount` each stale staging path. Once `/proc/self/mountinfo` is clean, kubelet's next `NodeUnstageVolume` retry (within ~2 minutes) succeeds. 
+   The csi-cloudscale node plugin runs `cryptsetup close` itself as part of that unstage, the `VolumeAttachment` is deleted, 
+   and the cloudscale API detaches the volume. The next pod can then attach it elsewhere.
+5. Uncordon the node: `kubectl uncordon <node>`.
+
+If a leftover `/dev/mapper/pvc-<name>` is still present after several minutes, close it manually with `cryptsetup close pvc-<name>` once
+nothing references it. If you cannot identify or clear the stale state safely, rebooting the node is a valid fallback. 
+Kernel state is discarded and the volume detaches on the next reconcile.
+
 ## v4.0.0 - 2026.03.30
 ⚠️ See the [update instructions](https://github.com/cloudscale-ch/csi-cloudscale#from-csi-cloudscale-v3x-to-v4x).
 
