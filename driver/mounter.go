@@ -107,6 +107,17 @@ type Mounter interface {
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
 
+	// GetBlockDeviceNumber runs stat on path, expecting a block device file and
+	// returns the device number it represents (st_rdev). Symlinks are
+	// followed. Returns an error if path is not a block device.
+	GetBlockDeviceNumber(path string) (uint64, error)
+
+	// GetFilesystemDeviceNumber runs stat on path and returns the device number of
+	// the filesystem the path lives on (st_dev). Symlinks are followed. Returns
+	// an error if path is a block device, because st_dev would refer to devtmpfs
+	// rather than the filesystem the caller is asking about.
+	GetFilesystemDeviceNumber(path string) (uint64, error)
+
 	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
 
 	FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entry) (string, error)
@@ -684,4 +695,26 @@ func (m *mounter) IsBlockDevice(devicePath string) (bool, error) {
 	}
 
 	return (stat.Mode & unix.S_IFMT) == unix.S_IFBLK, nil
+}
+
+func (m *mounter) GetBlockDeviceNumber(path string) (uint64, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return 0, err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFBLK {
+		return 0, fmt.Errorf("%s is not a block device", path)
+	}
+	return uint64(st.Rdev), nil
+}
+
+func (m *mounter) GetFilesystemDeviceNumber(path string) (uint64, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		return 0, err
+	}
+	if st.Mode&unix.S_IFMT == unix.S_IFBLK {
+		return 0, fmt.Errorf("%s is a block device, expected a filesystem path", path)
+	}
+	return uint64(st.Dev), nil
 }

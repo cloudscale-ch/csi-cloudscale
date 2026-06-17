@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -18,14 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
-	"github.com/stretchr/testify/assert"
-	"golang.org/x/oauth2"
-	"k8s.io/client-go/rest"
 
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	snapshotclientset "github.com/kubernetes-csi/external-snapshotter/client/v6/clientset/versioned"
+	"github.com/stretchr/testify/assert"
+	"golang.org/x/oauth2"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,9 +36,11 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -118,6 +120,7 @@ func TestNode_Zone_Annotation(t *testing.T) {
 }
 
 func TestPod_Single_SSD_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -163,6 +166,7 @@ func TestPod_Single_SSD_Volume(t *testing.T) {
 }
 
 func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -279,6 +283,7 @@ func TestPod_Create_Volume_From_Snapshot(t *testing.T) {
 }
 
 func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -401,6 +406,7 @@ func TestPod_Single_SSD_Luks_Volume_Snapshot(t *testing.T) {
 }
 
 func TestPod_Create_Raw_Block_Volume_From_Snapshot(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -514,6 +520,7 @@ func TestPod_Create_Raw_Block_Volume_From_Snapshot(t *testing.T) {
 }
 
 func TestPod_Snapshot_Restore_Larger_Size(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -599,6 +606,7 @@ func TestPod_Snapshot_Restore_Larger_Size(t *testing.T) {
 // Test that restoring a LUKS-encrypted snapshot into a larger volume results in
 // the block device and filesystem both being expanded.
 func TestPod_Luks_Snapshot_Restore_Larger_Size(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -698,6 +706,7 @@ func TestPod_Luks_Snapshot_Restore_Larger_Size(t *testing.T) {
 }
 
 func TestCreateMultipleSnapshots_DifferentVolumes(t *testing.T) {
+	t.Parallel()
 	// Create two independent volumes, each with one snapshot, to verify that
 	// the CSI driver correctly handles creating snapshots from different
 	// volumes and the snapshot controller can reconcile them concurrently.
@@ -790,6 +799,7 @@ func TestCreateMultipleSnapshots_DifferentVolumes(t *testing.T) {
 }
 
 func TestCreateMultipleSnapshots_SameVolume(t *testing.T) {
+	t.Parallel()
 	// Create two snapshots from the same volume to verify that the CSI driver
 	// correctly creates distinct snapshots. This exercises the name-based
 	// idempotency check in CreateSnapshot: the driver must not return an
@@ -865,12 +875,13 @@ func TestCreateMultipleSnapshots_SameVolume(t *testing.T) {
 }
 
 func TestPod_Single_SSD_Raw_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
 		Volumes: []TestPodVolume{
 			{
-				ClaimName:    "csi-pod-ssd-pvc",
+				ClaimName:    "csi-pod-ssd-raw-pvc",
 				SizeGB:       5,
 				StorageClass: "cloudscale-volume-ssd",
 				Block:        true,
@@ -911,6 +922,7 @@ func TestPod_Single_SSD_Raw_Volume(t *testing.T) {
 }
 
 func TestPod_Single_Bulk_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -955,12 +967,13 @@ func TestPod_Single_Bulk_Volume(t *testing.T) {
 }
 
 func TestPod_Single_Bulk_Raw_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
 		Volumes: []TestPodVolume{
 			{
-				ClaimName:    "csi-pod-bulk-pvc",
+				ClaimName:    "csi-pod-bulk-raw-pvc",
 				SizeGB:       100,
 				StorageClass: "cloudscale-volume-bulk",
 				Block:        true,
@@ -1000,6 +1013,7 @@ func TestPod_Single_Bulk_Raw_Volume(t *testing.T) {
 }
 
 func TestDeployment_Single_SSD_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Deployment",
 		Name: pseudoUuid(),
@@ -1044,6 +1058,7 @@ func TestDeployment_Single_SSD_Volume(t *testing.T) {
 }
 
 func TestPod_Multi_SSD_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -1085,6 +1100,7 @@ func TestPod_Multi_SSD_Volume(t *testing.T) {
 }
 
 func TestPod_Multiple_Volumes(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -1140,6 +1156,7 @@ func TestPod_Multiple_Volumes(t *testing.T) {
 }
 
 func TestPod_Single_SSD_Luks_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -1187,7 +1204,89 @@ func TestPod_Single_SSD_Luks_Volume(t *testing.T) {
 	waitCloudscaleVolumeDeleted(t, pvc.Spec.VolumeName)
 }
 
+// TestPod_KubeletRestart_RestageSucceeds ensures restaging the same path (after kubelet restart) works.
+// This is a regression test against the bug introduced in v4.0.1.
+// After kubelet restart, kubelet rebuilds its actual-state from disk and re-issues NodeStageVolume against an already
+// staged path.
+func TestPod_KubeletRestart_RestageSucceeds(t *testing.T) {
+	cases := []struct {
+		name         string
+		storageClass string
+		luksKey      string
+	}{
+		{"non-luks", "cloudscale-volume-ssd", ""},
+		{"luks", "cloudscale-volume-ssd-luks", "secret"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			podDescriptor := TestPodDescriptor{
+				Kind: "Pod",
+				Name: pseudoUuid(),
+				Volumes: []TestPodVolume{
+					{
+						ClaimName:    "restage-pvc-" + tc.name,
+						SizeGB:       1,
+						StorageClass: tc.storageClass,
+						LuksKey:      tc.luksKey,
+					},
+				},
+			}
+
+			pod := makeKubernetesPod(t, podDescriptor)
+			pvcs := makeKubernetesPVCs(t, podDescriptor)
+			assert.Equal(t, 1, len(pvcs))
+			waitForPod(t, client, pod.Name)
+
+			defer cleanup(t, podDescriptor)
+
+			nodeName, err := getNodeName(pod.Namespace, pod.Name)
+			assert.NoError(t, err)
+
+			restartTime := time.Now()
+
+			if err := restartKubeletOnNode(t, nodeName); err != nil {
+				t.Fatalf("restart kubelet on %s: %v", nodeName, err)
+			}
+
+			// Give kubelet some time to restart and re-stage.
+			time.Sleep(60 * time.Second)
+
+			// fetch logs but with a bit of grace period to ensure we don't miss anything important
+			// and counter possible clock-skew (though that should normally not happen).
+			logs, err := getCSINodeLogsSince(t.Context(), nodeName, restartTime.Add(-60*time.Second))
+			if err != nil {
+				t.Fatalf("fetch csi-node logs: %v", err)
+			}
+
+			if strings.Contains(logs, "refusing to reuse stale mount") {
+				t.Fatalf("csi-node logged stale-mount rejection after kubelet restart (regression of v4.0.1 bug):\n%s",
+					extractStaleMountLines(logs))
+			}
+
+			// Require that re-stage actually happened
+			if !strings.Contains(logs, "node stage volume called") &&
+				!strings.Contains(logs, "source device is already mounted") {
+				t.Fatalf("no NodeStageVolume call observed in csi-node logs after kubelet restart on %s; "+
+					"test cannot prove the stale-mount check was exercised",
+					nodeName)
+			}
+
+			// Pod must still be Running with its volume usable.
+			refreshed, err := client.CoreV1().Pods(pod.Namespace).Get(context.Background(), pod.Name, metav1.GetOptions{})
+			assert.NoError(t, err)
+			assert.Equal(t, v1.PodRunning, refreshed.Status.Phase)
+
+			boundPVC := getPVC(t, client, pvcs[0].Name)
+			info, err := getVolumeInfo(t, pod, boundPVC.Spec.VolumeName)
+			assert.NoError(t, err)
+			assert.Equal(t, "ext4", info.Filesystem)
+		})
+	}
+}
+
 func TestPod_Single_Bulk_Luks_Volume(t *testing.T) {
+	t.Parallel()
 	podDescriptor := TestPodDescriptor{
 		Kind: "Pod",
 		Name: pseudoUuid(),
@@ -1249,14 +1348,16 @@ var resizeCases = []struct {
 }
 
 func TestPersistentVolume_Resize(t *testing.T) {
+	t.Parallel()
 	for _, tt := range resizeCases {
 		t.Run(fmt.Sprintf("%v %v", tt.storageClass, tt.block), func(t *testing.T) {
+			t.Parallel()
 			podDescriptor := TestPodDescriptor{
 				Kind: "Pod",
 				Name: pseudoUuid(),
 				Volumes: []TestPodVolume{
 					{
-						ClaimName:    "csi-pod-ssd-pvc",
+						ClaimName:    fmt.Sprintf("csi-pod-resize-pvc-%v-%v", tt.storageClass, tt.block),
 						SizeGB:       tt.initialSizeGB,
 						StorageClass: tt.storageClass,
 						LuksKey:      tt.LuksKey,
@@ -1364,6 +1465,7 @@ func TestPersistentVolume_Resize(t *testing.T) {
 }
 
 func TestVolumeStats(t *testing.T) {
+	t.Parallel()
 	pvcName := fmt.Sprintf("csi-pvc-stats-%v", pseudoUuid())
 	podName := pseudoUuid()
 	podDescriptor := TestPodDescriptor{
@@ -1920,7 +2022,8 @@ func getPod(t *testing.T, client kubernetes.Interface, name string) *v1.Pod {
 
 // loads the volume with the given name from the cloudscale.ch API
 func getCloudscaleVolume(t *testing.T, volumeName string) cloudscale.Volume {
-	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	volumes, err := cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 
 	assert.NoError(t, err)
@@ -1933,8 +2036,9 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 	start := time.Now()
 
 	for {
-		ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		volumes, err := cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
+		cancel()
 		if len(volumes) == 0 {
 			t.Logf("volume %v is deleted on cloudscale", volumeName)
 			return
@@ -2126,6 +2230,111 @@ func ExecCommand(podNamespace string, podName string, command ...string) (string
 	}
 
 	return execOut.String(), nil
+}
+
+// restartKubeletOnNode runs `systemctl restart kubelet` on the given node by
+// creating an ephemeral privileged debug pod that uses nsenter to enter the host PID
+// namespace.
+func restartKubeletOnNode(t *testing.T, nodeName string) error {
+	t.Helper()
+	podName := "debug-restart-kubelet-" + pseudoUuid()
+	debugPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: "kube-system",
+		},
+		Spec: v1.PodSpec{
+			NodeName:      nodeName,
+			HostPID:       true,
+			RestartPolicy: v1.RestartPolicyNever,
+			Tolerations: []v1.Toleration{
+				{Operator: v1.TolerationOpExists},
+			},
+			Containers: []v1.Container{
+				{
+					Name:  "ctr",
+					Image: "busybox:1.36",
+					// nsenter attaches to PID 1's namespaces (the host's init,
+					// visible because HostPID is true) and runs the command there,
+					// so systemctl talks to the host's systemd instead of the
+					// container. Flags: -t 1 target PID, -m mount ns (host
+					// filesystem / unit files), -u UTS ns (hostname), -i IPC ns
+					// (D-Bus socket), -n network ns, -p PID ns (so systemd sees
+					// host PIDs).
+					Command: []string{
+						"sh", "-c",
+						"nsenter -t 1 -m -u -i -n -p -- systemctl restart kubelet",
+					},
+					SecurityContext: &v1.SecurityContext{Privileged: ptr.To(true)},
+				},
+			},
+		},
+	}
+
+	created, err := client.CoreV1().Pods("kube-system").Create(t.Context(), debugPod, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("create debug pod: %w", err)
+	}
+	defer func() {
+		_ = client.CoreV1().Pods("kube-system").Delete(t.Context(), created.Name, metav1.DeleteOptions{})
+	}()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			p, err := client.CoreV1().Pods("kube-system").Get(ctx, created.Name, metav1.GetOptions{})
+			if err != nil {
+				return false, nil
+			}
+			switch p.Status.Phase {
+			case v1.PodSucceeded:
+				return true, nil
+			case v1.PodFailed:
+				return false, fmt.Errorf("debug pod failed: %s", p.Status.Message)
+			}
+			return false, nil
+		})
+}
+
+// getCSINodeLogsSince fetches recent csi-node plugin logs for the given node.
+func getCSINodeLogsSince(ctx context.Context, nodeName string, since time.Time) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	pods, err := client.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
+		LabelSelector: "app=csi-cloudscale-node,role=csi-cloudscale",
+	})
+	if err != nil {
+		return "", err
+	}
+	for _, p := range pods.Items {
+		if p.Spec.NodeName != nodeName {
+			continue
+		}
+		sinceTime := metav1.NewTime(since)
+		stream, err := client.CoreV1().Pods(p.Namespace).GetLogs(p.Name, &v1.PodLogOptions{
+			Container: "csi-cloudscale-plugin",
+			SinceTime: &sinceTime,
+		}).Stream(ctx)
+		if err != nil {
+			return "", err
+		}
+		buf, err := io.ReadAll(stream)
+		stream.Close()
+		return string(buf), err
+	}
+	return "", fmt.Errorf("no csi-node pod found on node %s", nodeName)
+}
+
+func extractStaleMountLines(logs string) string {
+	var out []string
+	for _, line := range strings.Split(logs, "\n") {
+		if strings.Contains(line, "refusing to reuse stale mount") {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // Metrics Handling

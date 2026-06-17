@@ -19,14 +19,14 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
@@ -158,25 +158,50 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
-		// Something is already mounted at the staging path. Verify it is
-		// mounted from the device we just resolved before declaring success —
-		// otherwise a stale mount left by an earlier (failed or racing) stage
-		// operation can be silently accepted, which is the same class of bug
-		// as the LUKS mapping reuse in luksOpen.
-		expected := source
+		// Something is already mounted at the staging path. Compare by devices using kernel device number to ensure
+		// the same underlying device is there.
+		expectedDevice := source
 		if luksContext.EncryptionEnabled {
-			expected = "/dev/mapper/" + luksContext.VolumeName
-		} else if resolved, err := filepath.EvalSymlinks(source); err == nil {
-			// findmnt reports the kernel-resolved device, so compare against
-			// the canonical form. Fall back to the literal source on resolve
-			// failure — the mismatch will then surface as a loud error.
-			expected = resolved
+			expectedDevice = "/dev/mapper/" + luksContext.VolumeName
 		}
 
-		if strings.TrimSpace(mountInfo.Source) != expected {
+		ll = ll.WithFields(logrus.Fields{
+			"expected_device": expectedDevice,
+		})
+		ll.Info("resolving device numbers for expectedDevice and stagingTargetPath")
+
+		expectedDevNum, err := d.mounter.GetBlockDeviceNumber(expectedDevice)
+		if err != nil {
+			// A missing expected device while something else is mounted at the
+			// staging path is also a stale mount.
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"stage path %s is mounted but expected device %s does not exist, refusing to reuse stale mount",
+					stagingTargetPath, expectedDevice)
+			}
+			return nil, status.Errorf(codes.Internal,
+				"failed to resolve device number for %s: %v", expectedDevice, err)
+		}
+		mountDevNum, err := d.mounter.GetFilesystemDeviceNumber(stagingTargetPath)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal,
+				"failed to resolve device number for stage path %s: %v",
+				stagingTargetPath, err)
+		}
+
+		ll = ll.WithFields(logrus.Fields{
+			"expected_device_num": expectedDevNum,
+			"mount_dev_num":       mountDevNum,
+		})
+		ll.Info("checking if device numbers match")
+
+		if expectedDevNum != mountDevNum {
 			return nil, status.Errorf(codes.FailedPrecondition,
-				"stage path %s is mounted from %q, expected %s, refusing to reuse stale mount",
-				stagingTargetPath, mountInfo.Source, expected)
+				"stage path %s is mounted from device %d:%d, expected %s (%d:%d), refusing to reuse stale mount",
+				stagingTargetPath,
+				unix.Major(mountDevNum), unix.Minor(mountDevNum),
+				expectedDevice,
+				unix.Major(expectedDevNum), unix.Minor(expectedDevNum))
 		}
 		ll.Info("source device is already mounted to the stagingTargetPath path")
 	}
