@@ -65,7 +65,7 @@ test:
 .PHONY: test-integration
 test-integration:
 	@echo "==> Started integration tests"
-	@env GO111MODULE=on go test -race -count 1 -v $(TESTARGS) -tags integration -timeout 20m ./test/...
+	@env GO111MODULE=on go test -race -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...
 
 .PHONY: build
 build: compile

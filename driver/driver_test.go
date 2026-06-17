@@ -37,6 +37,7 @@ import (
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/mount-utils"
@@ -57,23 +58,9 @@ func TestDriverSuite(t *testing.T) {
 		t.Fatalf("failed to remove unix domain socket file %s, error: %s", socket, err)
 	}
 
-	serverId := "987654"
-	initialServers := map[string]*cloudscale.Server{
-		serverId: {UUID: serverId},
-	}
-	cloudscaleClient := NewFakeClient(initialServers)
-	fm := &fakeMounter{
-		mounted: map[string]string{},
-	}
-	driver := &Driver{
-		endpoint:         endpoint,
-		serverId:         serverId,
-		zone:             DefaultZone.Slug,
-		cloudscaleClient: cloudscaleClient,
-		mounter:          fm,
-		log:              logrus.New().WithField("test_enabed", true),
-		volumeLocks:      NewVolumeLocks(),
-	}
+	fm := newFakeMounter()
+	driver := newTestDriver(t, fm)
+	driver.endpoint = endpoint
 	defer driver.Stop()
 
 	go func() {
@@ -122,7 +109,17 @@ func NewFakeClient(initialServers map[string]*cloudscale.Server) *cloudscale.Cli
 
 type fakeMounter struct {
 	mounted map[string]string
-	mu      sync.RWMutex
+	// blockDeviceNumbers maps a path the production code stats as a block
+	// device to its st_rdev value (the device the file represents).
+	blockDeviceNumbers map[string]uint64
+	// filesystemDeviceNumbers maps a path the production code stats for its
+	// backing fs to its st_dev value (the device backing the mount).
+	filesystemDeviceNumbers map[string]uint64
+	// nextDevNum is used by Mount to allocate a fresh synthetic device number
+	// for each unique source, mirroring the kernel invariant that a mount's
+	// st_dev equals the source's st_rdev.
+	nextDevNum uint64
+	mu         sync.RWMutex
 }
 
 func (f *fakeMounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
@@ -133,6 +130,20 @@ func (f *fakeMounter) Mount(source, target, fsType string, luksContext LuksConte
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mounted[target] = source
+
+	// LUKS mounts go through /dev/mapper/<name>, not the raw source.
+	expectedDevice := source
+	if luksContext.EncryptionEnabled {
+		expectedDevice = "/dev/mapper/" + luksContext.VolumeName
+	}
+
+	devNum, ok := f.blockDeviceNumbers[expectedDevice]
+	if !ok {
+		f.nextDevNum++
+		devNum = f.nextDevNum
+		f.blockDeviceNumbers[expectedDevice] = devNum
+	}
+	f.filesystemDeviceNumbers[target] = devNum
 	return nil
 }
 
@@ -140,6 +151,7 @@ func (f *fakeMounter) Unmount(target string, luksContext LuksContext, log *logru
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.mounted, target)
+	delete(f.filesystemDeviceNumbers, target)
 	return nil
 }
 
@@ -159,6 +171,33 @@ func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.
 
 func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	return true, nil
+}
+
+func (f *fakeMounter) IsBlockDevice(volumePath string) (bool, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	_, ok := f.blockDeviceNumbers[volumePath]
+	return ok, nil
+}
+
+func (f *fakeMounter) GetBlockDeviceNumber(path string) (uint64, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	n, ok := f.blockDeviceNumbers[path]
+	if !ok {
+		return 0, fmt.Errorf("fakeMounter: %s not registered as a block device", path)
+	}
+	return n, nil
+}
+
+func (f *fakeMounter) GetFilesystemDeviceNumber(path string) (uint64, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	n, ok := f.filesystemDeviceNumbers[path]
+	if !ok {
+		return 0, fmt.Errorf("fakeMounter: %s not registered with a filesystem device number", path)
+	}
+	return n, nil
 }
 func (f *fakeMounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
 	f.mu.RLock()
@@ -371,10 +410,6 @@ type FakeServerServiceOperations struct {
 	servers    map[string]*cloudscale.Server
 }
 
-func (f *fakeMounter) IsBlockDevice(volumePath string) (bool, error) {
-	return false, nil
-}
-
 func (f *FakeServerServiceOperations) Create(ctx context.Context, createRequest *cloudscale.ServerRequest) (*cloudscale.Server, error) {
 	panic("implement me")
 }
@@ -577,30 +612,15 @@ func (f *FakeBlockingMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus
 // NewFakeBlockingMounter creates a new FakeBlockingMounter with the given channel.
 func NewFakeBlockingMounter(readyToExecute chan chan struct{}) *FakeBlockingMounter {
 	return &FakeBlockingMounter{
-		fakeMounter: &fakeMounter{
-			mounted: map[string]string{},
-		},
+		fakeMounter:    newFakeMounter(),
 		ReadyToExecute: readyToExecute,
 	}
 }
 
 // initBlockingDriver creates a Driver with a FakeBlockingMounter for concurrency testing.
 func initBlockingDriver(t *testing.T, readyToExecute chan chan struct{}) *Driver {
-	serverId := "987654"
-	initialServers := map[string]*cloudscale.Server{
-		serverId: {UUID: serverId},
-	}
-	cloudscaleClient := NewFakeClient(initialServers)
-
-	return &Driver{
-		endpoint:         "unix:///tmp/csi-test.sock",
-		serverId:         serverId,
-		zone:             DefaultZone.Slug,
-		cloudscaleClient: cloudscaleClient,
-		mounter:          NewFakeBlockingMounter(readyToExecute),
-		log:              logrus.New().WithField("test_enabled", true),
-		volumeLocks:      NewVolumeLocks(),
-	}
+	t.Helper()
+	return newTestDriver(t, NewFakeBlockingMounter(readyToExecute))
 }
 
 // TestNodeStageVolume_ConcurrentSameVolume tests that concurrent NodeStageVolume
@@ -854,6 +874,167 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	// Clean up: allow stage operation to complete
 	execStage <- struct{}{}
 	<-respStage
+}
+
+// newFakeMounter returns a zero-state fakeMounter.
+func newFakeMounter() *fakeMounter {
+	return &fakeMounter{
+		mounted:                 map[string]string{},
+		blockDeviceNumbers:      map[string]uint64{},
+		filesystemDeviceNumbers: map[string]uint64{},
+	}
+}
+
+// newTestDriver builds a Driver wired to the given mounter, a fake cloudscale
+// client containing a single server, and a dummy unix endpoint.
+func newTestDriver(t *testing.T, m Mounter) *Driver {
+	t.Helper()
+	const serverId = "987654"
+	return &Driver{
+		endpoint: "unix:///tmp/csi-test.sock",
+		serverId: serverId,
+		zone:     DefaultZone.Slug,
+		cloudscaleClient: NewFakeClient(map[string]*cloudscale.Server{
+			serverId: {UUID: serverId},
+		}),
+		mounter:     m,
+		log:         logrus.New().WithField("test_enabled", true),
+		volumeLocks: NewVolumeLocks(),
+	}
+}
+
+// initDriverWithFakeMounter builds a Driver with a fakeMounter for NodeStageVolume tests.
+func initDriverWithFakeMounter(t *testing.T) (*Driver, *fakeMounter) {
+	t.Helper()
+	fm := newFakeMounter()
+	return newTestDriver(t, fm), fm
+}
+
+func makeStageReq(volumeID, stagingPath, volumeName string, luks bool) *csi.NodeStageVolumeRequest {
+	pubCtx := map[string]string{
+		PublishInfoVolumeName:  volumeName,
+		LuksEncryptedAttribute: "false",
+	}
+	if luks {
+		pubCtx[LuksEncryptedAttribute] = "true"
+		pubCtx[LuksCipherAttribute] = "aes-xts-plain64"
+		pubCtx[LuksKeySizeAttribute] = "512"
+	}
+	return &csi.NodeStageVolumeRequest{
+		VolumeId:          volumeID,
+		StagingTargetPath: stagingPath,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{FsType: "ext4"},
+			},
+		},
+		Secrets:        map[string]string{LuksKeyAttribute: "test-luks-key"},
+		PublishContext: pubCtx,
+	}
+}
+
+// TestNodeStageVolume_Restage_NonLUKS_ByIdEquivalent tests the driver for a regression against the v4.0.1 bug:
+// an already-staged volume gets a second NodeStageVolume call (e.g. after kubelet restart). The fake's stored source
+// string differs from the by-id-vs-canonical paths, but the major:minor numbers match.
+// NodeStageVolume must succeed therefore.
+func TestNodeStageVolume_Restage_NonLUKS_ByIdEquivalent(t *testing.T) {
+	driver, fm := initDriverWithFakeMounter(t)
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
+		Name: "vol", SizeGB: 1, Type: "ssd",
+	})
+	if err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+	stagingPath := "/mnt/staging-restage-nonluks-ok"
+	// Simulate a prior successful stage: mount table records the by-id path
+	// the driver passed to mount(2); the source the production code will
+	// resolve via FinalizeVolumeAttachmentAndFindPath is "SomePath" (fake's
+	// return). Both have the same kernel device number and therefore the staging must succeed.
+	fm.mounted[stagingPath] = "/dev/disk/by-id/scsi-X"
+	fm.blockDeviceNumbers["SomePath"] = unix.Mkdev(8, 16)
+	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 16)
+
+	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
+	if err != nil {
+		t.Fatalf("expected no error on re-stage, got: %v", err)
+	}
+}
+
+// TestNodeStageVolume_Restage_NonLUKS_StaleDevice ensures the driver rejects a stale mount.
+// The staging path is mounted from a different physical device than the one we expect.
+func TestNodeStageVolume_Restage_NonLUKS_StaleDevice(t *testing.T) {
+	driver, fm := initDriverWithFakeMounter(t)
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
+		Name: "vol", SizeGB: 1, Type: "ssd",
+	})
+	if err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+	stagingPath := "/mnt/staging-restage-nonluks-stale"
+
+	fm.mounted[stagingPath] = "/dev/disk/by-id/scsi-X"
+	fm.blockDeviceNumbers["SomePath"] = unix.Mkdev(8, 16)       // what we expect
+	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 32) // actually mounted device
+
+	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
+	if err == nil {
+		t.Fatal("expected FailedPrecondition on stale mount, got nil")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v: %v", st.Code(), err)
+	}
+}
+
+// TestNodeStageVolume_Restage_LUKS_ByIdEquivalent ensures restaging works with LUKS volumes too.
+func TestNodeStageVolume_Restage_LUKS_ByIdEquivalent(t *testing.T) {
+	driver, fm := initDriverWithFakeMounter(t)
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
+		Name: "vol-luks", SizeGB: 1, Type: "ssd",
+	})
+	if err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+
+	stagingPath := "/mnt/staging-restage-luks-stale"
+	mapper := "/dev/mapper/" + vol.Name
+	fm.mounted[stagingPath] = "/dev/sdb"
+	fm.blockDeviceNumbers[mapper] = unix.Mkdev(252, 0)
+	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(252, 0)
+
+	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
+	if err != nil {
+		t.Fatalf("expected no error on re-stage, got: %v", err)
+	}
+}
+
+// TestNodeStageVolume_Restage_LUKS_RawDeviceMount ensures the LUKS check rejects a stale mount.
+func TestNodeStageVolume_Restage_LUKS_RawDeviceMount(t *testing.T) {
+	driver, fm := initDriverWithFakeMounter(t)
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
+		Name: "vol-luks", SizeGB: 1, Type: "ssd",
+	})
+	if err != nil {
+		t.Fatalf("create volume: %v", err)
+	}
+
+	stagingPath := "/mnt/staging-restage-luks-stale"
+	mapper := "/dev/mapper/" + vol.Name
+	fm.mounted[stagingPath] = "/dev/sdb"
+	fm.blockDeviceNumbers[mapper] = unix.Mkdev(252, 0)          // we expect the mapper
+	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 16) // but the mount is from raw sdb
+
+	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
+	if err == nil {
+		t.Fatal("expected FailedPrecondition on stale LUKS mount, got nil")
+	}
+	st, _ := status.FromError(err)
+	if st.Code() != codes.FailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v: %v", st.Code(), err)
+	}
 }
 
 // createVolumeForTest is a helper that creates a CSI volume and returns the volume ID.
