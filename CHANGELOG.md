@@ -1,5 +1,7 @@
 ## unreleased
 
+## v4.0.2-beta.1 - 2026.06.18
+
 ## v4.0.1 - 2026.06.04
 
 Fixes a LUKS volume handling bug that could leave a volume stuck attached to a node after pod termination, surfacing later as a `Multi-Attach error`
