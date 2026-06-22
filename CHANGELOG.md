@@ -1,5 +1,12 @@
 ## unreleased
 
+## v4.0.2 - 2026.06.22
+
+Fixes a regression from v4.0.1 where restaging a non-LUKS volume could fail because the staging mount check compared
+path strings that never match (/dev/sdX vs /dev/disk/by-id/...). This caused NodeStageVolume to reject the existing
+mount. The check now compares kernel device numbers instead of path strings, so the same underlying device is
+recognized regardless of which path was used to mount it.
+
 ## v4.0.1 - 2026.06.04
 
 Fixes a LUKS volume handling bug that could leave a volume stuck attached to a node after pod termination, surfacing later as a `Multi-Attach error`
