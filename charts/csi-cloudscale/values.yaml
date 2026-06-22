@@ -59,7 +59,7 @@ attacher:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-attacher
-    tag: v4.10.0
+    tag: v4.11.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
