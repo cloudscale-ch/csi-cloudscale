@@ -91,7 +91,7 @@ snapshotter:
   image:
     registry: registry.k8s.io
     repository: sig-storage/csi-snapshotter
-    tag: v8.4.0
+    tag: v8.5.0
     pullPolicy: IfNotPresent
   logLevelVerbosity: "5"
   resources: {}
