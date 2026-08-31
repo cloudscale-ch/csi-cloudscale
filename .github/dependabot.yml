@@ -5,16 +5,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-patch"
+      day: "monday"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
 
   # Check for Go module updates
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
     allow:
       - dependency-type: "direct"
     groups:
@@ -34,23 +38,32 @@ updates:
     directory: "/charts/csi-cloudscale"
     schedule:
       interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
 
   # Check docker base image updates
   - package-ecosystem: "docker"
     directory: "/cmd/cloudscale-csi-plugin"
     schedule:
       interval: "weekly"
+      day: "monday"
     ignore:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+    cooldown:
+      default-days: 7
 
   # Check docker side-car containers in helm updates
   - package-ecosystem: "docker"
     directory: "/charts/csi-cloudscale"
     schedule:
       interval: "weekly"
+      day: "monday"
     ignore:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+    cooldown:
+      default-days: 7

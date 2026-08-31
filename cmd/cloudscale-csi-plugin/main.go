@@ -18,13 +18,17 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/sirupsen/logrus"
 
 	"github.com/cloudscale-ch/csi-cloudscale/driver"
-	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -56,7 +60,10 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	if err := drv.Run(); err != nil {
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	if err := drv.Run(ctx); err != nil {
+		cancel()
 		log.Fatalln(err)
 	}
+	cancel()
 }

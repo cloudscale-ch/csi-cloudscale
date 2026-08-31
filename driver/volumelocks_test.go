@@ -105,10 +105,8 @@ func TestVolumeLocks_ConcurrentAcquire(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Start many goroutines trying to acquire the same lock
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numGoroutines {
+		wg.Go(func() {
 			if acquired := vl.TryAcquire(volumeID); acquired {
 				mu.Lock()
 				successCount++
@@ -117,7 +115,7 @@ func TestVolumeLocks_ConcurrentAcquire(t *testing.T) {
 				time.Sleep(time.Millisecond)
 				vl.Release(volumeID)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -141,13 +139,12 @@ func TestVolumeLocks_ConcurrentDifferentVolumes(t *testing.T) {
 	results := make([]bool, numVolumes)
 
 	// Each goroutine tries to lock a different volume
-	for i := 0; i < numVolumes; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			volumeID := "test-volume-" + string(rune('A'+idx))
+	for i := range numVolumes {
+		idx := i
+		wg.Go(func() {
+			volumeID := "test-volume-" + string(rune('A'+idx)) //nolint:gosec // G115
 			results[idx] = vl.TryAcquire(volumeID)
-		}(i)
+		})
 	}
 
 	wg.Wait()
@@ -166,7 +163,7 @@ func TestVolumeLocks_RapidAcquireRelease(t *testing.T) {
 
 	const iterations = 1000
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		if acquired := vl.TryAcquire(volumeID); !acquired {
 			t.Fatalf("Iteration %d: TryAcquire should succeed after release", i)
 		}
@@ -182,19 +179,18 @@ func TestVolumeLocks_ConcurrentAcquireReleaseDifferentVolumes(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Multiple goroutines doing acquire/release on different volumes
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(volumeNum int) {
-			defer wg.Done()
-			volumeID := "test-volume-" + string(rune('A'+volumeNum))
-			for j := 0; j < iterations; j++ {
+	for i := range numGoroutines {
+		volumeNum := i
+		wg.Go(func() {
+			volumeID := "test-volume-" + string(rune('A'+volumeNum)) //nolint:gosec // G115
+			for range iterations {
 				if acquired := vl.TryAcquire(volumeID); acquired {
 					// Simulate some work
 					time.Sleep(time.Microsecond)
 					vl.Release(volumeID)
 				}
 			}
-		}(i)
+		})
 	}
 
 	wg.Wait()
