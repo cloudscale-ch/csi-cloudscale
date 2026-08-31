@@ -1,0 +1,88 @@
+version: "2"
+run:
+  allow-parallel-runners: true
+linters:
+  default: none
+  enable:
+    - asasalint # warns about passing []any to func(...any) without expanding it
+    - asciicheck # non ascii symbols
+    - copyloopvar # copying loop variables
+    - errcheck  # unchecked errors
+    - exhaustive # exhaustiveness of enum switch statements
+    - gocritic # bugs, performance, style
+    - gocyclo # cyclomatic complexity of functions
+    - godoclint # go documentation linting against best practices
+    - gosec # potential security problems
+    - govet # basically 'go vet'
+    - importas # enforces consistent import aliases.
+    - ineffassign # ineffectual assignments
+    - loggercheck # check for even key/value pairs in logger calls
+    - modernize # suggest simplifications to Go code, using modern language and library features
+    - misspell # spelling checks
+    - nakedret  # naked returns (named return parameters and an empty return)
+    - noctx  # http requests without context.Context
+    - predeclared # shadowing predeclared identifiers
+    - revive # better version of golint
+    - staticcheck # many static checks
+    - unconvert # unnecessary type conversions
+    - unparam # unused function parameters
+    - unused # unused constants, variables,functions, types
+    - usestdlibvars # using variables/constants from the standard library
+    - usetesting # reports uses of functions with replacement inside the testing package
+    - whitespace # unnecessary newlines
+  settings:
+    loggercheck:
+      kitlog: false
+      slog: false
+      zap: false
+      require-string-key: true
+      no-printf-like: true
+    modernize:
+      disable:
+        - omitzero
+    gocritic:
+      disabled-checks:
+        - ifElseChain # disabled ifElseChain because this is purely stylistic
+    revive:
+      rules:
+        # The following rules are recommended https://github.com/mgechev/revive#recommended-configuration
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: redefines-builtin-id
+    staticcheck:
+      dot-import-whitelist:
+        - fmt
+  exclusions:
+    generated: lax
+    warn-unused: true
+formatters:
+  enable:
+    - goimports # ensures imports are organized
+    - gofmt # Check if the code is formatted according to 'gofmt' command.
+  settings:
+    goimports:
+      # A list of prefixes, which, if set, checks import paths
+      # with the given prefixes are grouped after 3rd-party packages.
+      # Default: []
+      local-prefixes:
+        - github.com/cloudscale-ch/csi-cloudscale
+  exclusions:
+    generated: lax
+    warn-unused: true

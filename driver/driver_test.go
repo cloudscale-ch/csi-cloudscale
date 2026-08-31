@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v10"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/google/uuid"
 	"github.com/kubernetes-csi/csi-test/v5/pkg/sanity"
@@ -49,7 +49,7 @@ const (
 
 type idGenerator struct{}
 
-var DefaultZone = cloudscale.Zone{Slug: "dev1"}
+var DefaultZone = cloudscale.ZoneStub{Slug: "dev1"}
 
 func TestDriverSuite(t *testing.T) {
 	socket := "/tmp/csi.sock"
@@ -64,7 +64,7 @@ func TestDriverSuite(t *testing.T) {
 	defer driver.Stop()
 
 	go func() {
-		if err := driver.Run(); err != nil {
+		if err := driver.Run(t.Context()); err != nil {
 			panic(err)
 		}
 	}()
@@ -122,11 +122,11 @@ type fakeMounter struct {
 	mu         sync.RWMutex
 }
 
-func (f *fakeMounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
+func (f *fakeMounter) Format(ctx context.Context, source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
 	return nil
 }
 
-func (f *fakeMounter) Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
+func (f *fakeMounter) Mount(ctx context.Context, source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mounted[target] = source
@@ -147,7 +147,7 @@ func (f *fakeMounter) Mount(source, target, fsType string, luksContext LuksConte
 	return nil
 }
 
-func (f *fakeMounter) Unmount(target string, luksContext LuksContext, log *logrus.Entry) error {
+func (f *fakeMounter) Unmount(ctx context.Context, target string, luksContext LuksContext, log *logrus.Entry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.mounted, target)
@@ -169,7 +169,7 @@ func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.
 	return "/dev/sdb", nil
 }
 
-func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
+func (f *fakeMounter) IsFormatted(ctx context.Context, source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
 
@@ -199,7 +199,7 @@ func (f *fakeMounter) GetFilesystemDeviceNumber(path string) (uint64, error) {
 	}
 	return n, nil
 }
-func (f *fakeMounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
+func (f *fakeMounter) GetMountInfo(ctx context.Context, target string, log *logrus.Entry) (*MountInfo, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	source, ok := f.mounted[target]
@@ -210,7 +210,7 @@ func (f *fakeMounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo
 }
 
 func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
-	info, err := f.GetMountInfo(path, nil)
+	info, err := f.GetMountInfo(context.Background(), path, nil)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +220,7 @@ func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
 	return sanity.PathIsNotFound, nil
 }
 
-func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error) {
+func (f *fakeMounter) GetStatistics(ctx context.Context, volumePath string) (volumeStatistics, error) {
 	return volumeStatistics{
 		availableBytes: 3 * GB,
 		totalBytes:     10 * GB,
@@ -232,11 +232,11 @@ func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error)
 	}, nil
 }
 
-func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+func (f *fakeMounter) HasRequiredSize(ctx context.Context, log *logrus.Entry, path string, requiredSize int64) (bool, error) {
 	return true, nil
 }
 
-func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, target string) (string, error) {
+func (f *fakeMounter) FinalizeVolumeAttachmentAndFindPath(ctx context.Context, logger *logrus.Entry, target string) (string, error) {
 	path := "SomePath"
 	return path, nil
 }
@@ -263,7 +263,12 @@ func (f *FakeVolumeServiceOperations) Create(ctx context.Context, createRequest 
 			return nil, err
 		}
 		vol.SizeGB = snap.SizeGB
-		vol.Type = snap.SourceVolume.Type
+		// Look up the source volume to get its type.
+		sourceVol, err := f.fakeClient.Volumes.Get(ctx, snap.SourceVolume.UUID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get source volume: %s", err)
+		}
+		vol.Type = sourceVol.Type
 		vol.Zone = snap.Zone
 	} else {
 		vol.Zone = DefaultZone
@@ -320,7 +325,7 @@ func extractParams(modifiers []cloudscale.ListRequestModifier) url.Values {
 	// undoing the cloudscale.WithNameFilter(volumeName) magic
 
 	modifierFunc := modifiers[0]
-	req, _ := http.NewRequest("GET", "http://example.com", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com", nil)
 	modifierFunc(req)
 	params, err := url.ParseQuery(req.URL.RawQuery)
 	if err != nil {
@@ -461,7 +466,6 @@ type FakeVolumeSnapshotServiceOperations struct {
 }
 
 func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createRequest *cloudscale.VolumeSnapshotCreateRequest) (*cloudscale.VolumeSnapshot, error) {
-
 	vol, err := f.fakeClient.Volumes.Get(ctx, createRequest.SourceVolume)
 	if err != nil {
 		return nil, err
@@ -490,9 +494,8 @@ func (f FakeVolumeSnapshotServiceOperations) Create(ctx context.Context, createR
 		SizeGB:    vol.SizeGB,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		Status:    "available",
-		SourceVolume: cloudscale.VolumeStub{
+		SourceVolume: cloudscale.SourceVolumeStub{
 			UUID: createRequest.SourceVolume,
-			Type: vol.Type,
 		},
 	}
 	snap.Zone = vol.Zone
@@ -505,7 +508,6 @@ func (f *FakeVolumeSnapshotServiceOperations) Get(
 	ctx context.Context,
 	snapshotID string,
 ) (*cloudscale.VolumeSnapshot, error) {
-
 	snap, ok := f.snapshots[snapshotID]
 	if !ok {
 		return nil, generateNotFoundError()
@@ -567,10 +569,12 @@ func generateNotFoundError() *cloudscale.ErrorResponse {
 	}
 }
 
+//nolint:unparam // keep `n` parameter for potential future use
 func randString(n int) string {
 	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	b := make([]byte, n)
 	for i := range b {
+		//nolint:gosec // G404: weak random generator acceptable in test code
 		b[i] = letterBytes[rand.Intn(len(letterBytes))]
 	}
 	return string(b)
@@ -602,11 +606,11 @@ type FakeBlockingMounter struct {
 
 // FinalizeVolumeAttachmentAndFindPath blocks until signaled, allowing tests to control
 // the order of execution for concurrency testing.
-func (f *FakeBlockingMounter) FinalizeVolumeAttachmentAndFindPath(logger *logrus.Entry, volumeID string) (string, error) {
+func (f *FakeBlockingMounter) FinalizeVolumeAttachmentAndFindPath(ctx context.Context, logger *logrus.Entry, volumeID string) (string, error) {
 	executeOp := make(chan struct{})
 	f.ReadyToExecute <- executeOp
 	<-executeOp
-	return f.fakeMounter.FinalizeVolumeAttachmentAndFindPath(logger, volumeID)
+	return f.fakeMounter.FinalizeVolumeAttachmentAndFindPath(ctx, logger, volumeID)
 }
 
 // NewFakeBlockingMounter creates a new FakeBlockingMounter with the given channel.
@@ -631,8 +635,7 @@ func TestNodeStageVolume_ConcurrentSameVolume(t *testing.T) {
 	driver := initBlockingDriver(t, readyToExecute)
 
 	// Create the volume in the fake client first
-	ctx := t.Context()
-	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -664,7 +667,7 @@ func TestNodeStageVolume_ConcurrentSameVolume(t *testing.T) {
 	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
 		response := make(chan error, 1)
 		go func() {
-			_, err := driver.NodeStageVolume(context.Background(), req)
+			_, err := driver.NodeStageVolume(t.Context(), req)
 			response <- err
 		}()
 		return response
@@ -706,10 +709,8 @@ func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
 	readyToExecute := make(chan chan struct{}, 2)
 	driver := initBlockingDriver(t, readyToExecute)
 
-	ctx := t.Context()
-
 	// Create two different volumes
-	vol1, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
+	vol1, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume-1",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -718,7 +719,7 @@ func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
 		t.Fatalf("Failed to create volume 1: %v", err)
 	}
 
-	vol2, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
+	vol2, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume-2",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -751,7 +752,7 @@ func TestNodeStageVolume_ConcurrentDifferentVolumes(t *testing.T) {
 	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
 		response := make(chan error, 1)
 		go func() {
-			_, err := driver.NodeStageVolume(context.Background(), req)
+			_, err := driver.NodeStageVolume(t.Context(), req)
 			response <- err
 		}()
 		return response
@@ -794,10 +795,8 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	readyToExecute := make(chan chan struct{}, 1)
 	driver := initBlockingDriver(t, readyToExecute)
 
-	ctx := t.Context()
-
 	// Create a volume
-	vol, err := driver.cloudscaleClient.Volumes.Create(ctx, &cloudscale.VolumeCreateRequest{
+	vol, err := driver.cloudscaleClient.Volumes.Create(t.Context(), &cloudscale.VolumeCreateRequest{
 		Name:   "test-volume",
 		SizeGB: 10,
 		Type:   "ssd",
@@ -832,7 +831,7 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	runNodeStage := func(req *csi.NodeStageVolumeRequest) <-chan error {
 		response := make(chan error, 1)
 		go func() {
-			_, err := driver.NodeStageVolume(context.Background(), req)
+			_, err := driver.NodeStageVolume(t.Context(), req)
 			response <- err
 		}()
 		return response
@@ -841,7 +840,7 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 	runNodeUnstage := func(req *csi.NodeUnstageVolumeRequest) <-chan error {
 		response := make(chan error, 1)
 		go func() {
-			_, err := driver.NodeUnstageVolume(context.Background(), req)
+			_, err := driver.NodeUnstageVolume(t.Context(), req)
 			response <- err
 		}()
 		return response
@@ -889,13 +888,13 @@ func newFakeMounter() *fakeMounter {
 // client containing a single server, and a dummy unix endpoint.
 func newTestDriver(t *testing.T, m Mounter) *Driver {
 	t.Helper()
-	const serverId = "987654"
+	const serverID = "987654"
 	return &Driver{
 		endpoint: "unix:///tmp/csi-test.sock",
-		serverId: serverId,
+		serverID: serverID,
 		zone:     DefaultZone.Slug,
 		cloudscaleClient: NewFakeClient(map[string]*cloudscale.Server{
-			serverId: {UUID: serverId},
+			serverID: {UUID: serverID},
 		}),
 		mounter:     m,
 		log:         logrus.New().WithField("test_enabled", true),
@@ -957,7 +956,7 @@ func TestNodeStageVolume_Restage_NonLUKS_ByIdEquivalent(t *testing.T) {
 	fm.blockDeviceNumbers["SomePath"] = unix.Mkdev(8, 16)
 	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 16)
 
-	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
+	_, err = driver.NodeStageVolume(t.Context(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
 	if err != nil {
 		t.Fatalf("expected no error on re-stage, got: %v", err)
 	}
@@ -979,7 +978,7 @@ func TestNodeStageVolume_Restage_NonLUKS_StaleDevice(t *testing.T) {
 	fm.blockDeviceNumbers["SomePath"] = unix.Mkdev(8, 16)       // what we expect
 	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 32) // actually mounted device
 
-	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
+	_, err = driver.NodeStageVolume(t.Context(), makeStageReq(vol.UUID, stagingPath, vol.Name, false))
 	if err == nil {
 		t.Fatal("expected FailedPrecondition on stale mount, got nil")
 	}
@@ -1005,7 +1004,7 @@ func TestNodeStageVolume_Restage_LUKS_ByIdEquivalent(t *testing.T) {
 	fm.blockDeviceNumbers[mapper] = unix.Mkdev(252, 0)
 	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(252, 0)
 
-	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
+	_, err = driver.NodeStageVolume(t.Context(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
 	if err != nil {
 		t.Fatalf("expected no error on re-stage, got: %v", err)
 	}
@@ -1027,7 +1026,7 @@ func TestNodeStageVolume_Restage_LUKS_RawDeviceMount(t *testing.T) {
 	fm.blockDeviceNumbers[mapper] = unix.Mkdev(252, 0)          // we expect the mapper
 	fm.filesystemDeviceNumbers[stagingPath] = unix.Mkdev(8, 16) // but the mount is from raw sdb
 
-	_, err = driver.NodeStageVolume(context.Background(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
+	_, err = driver.NodeStageVolume(t.Context(), makeStageReq(vol.UUID, stagingPath, vol.Name, true))
 	if err == nil {
 		t.Fatal("expected FailedPrecondition on stale LUKS mount, got nil")
 	}
@@ -1040,7 +1039,7 @@ func TestNodeStageVolume_Restage_LUKS_RawDeviceMount(t *testing.T) {
 // createVolumeForTest is a helper that creates a CSI volume and returns the volume ID.
 func createVolumeForTest(t *testing.T, driver *Driver, name string) string {
 	t.Helper()
-	vol, err := driver.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
+	vol, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               name,
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: 1 * GB},
@@ -1055,7 +1054,7 @@ func createVolumeForTest(t *testing.T, driver *Driver, name string) string {
 // createSnapshotForTest is a helper that creates a CSI snapshot and returns the snapshot response.
 func createSnapshotForTest(t *testing.T, driver *Driver, name, volumeID string) *csi.CreateSnapshotResponse {
 	t.Helper()
-	snap, err := driver.CreateSnapshot(context.Background(), &csi.CreateSnapshotRequest{
+	snap, err := driver.CreateSnapshot(t.Context(), &csi.CreateSnapshotRequest{
 		Name:           name,
 		SourceVolumeId: volumeID,
 	})
@@ -1066,15 +1065,14 @@ func createSnapshotForTest(t *testing.T, driver *Driver, name, volumeID string) 
 }
 
 func TestListSnapshots_All(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
 	volID := createVolumeForTest(t, driver, "vol-list-all")
 	createSnapshotForTest(t, driver, "snap-1", volID)
 	createSnapshotForTest(t, driver, "snap-2", volID)
 	createSnapshotForTest(t, driver, "snap-3", volID)
 
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{})
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{})
 	if err != nil {
 		t.Fatalf("ListSnapshots returned error: %v", err)
 	}
@@ -1095,14 +1093,13 @@ func TestListSnapshots_All(t *testing.T) {
 }
 
 func TestListSnapshots_BySnapshotId(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
 	volID := createVolumeForTest(t, driver, "vol-by-id")
 	snap1 := createSnapshotForTest(t, driver, "snap-target", volID)
 	createSnapshotForTest(t, driver, "snap-other", volID)
 
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		SnapshotId: snap1.Snapshot.SnapshotId,
 	})
 	if err != nil {
@@ -1117,10 +1114,9 @@ func TestListSnapshots_BySnapshotId(t *testing.T) {
 }
 
 func TestListSnapshots_BySnapshotId_NotFound(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		SnapshotId: "non-existent-id",
 	})
 	if err != nil {
@@ -1132,15 +1128,14 @@ func TestListSnapshots_BySnapshotId_NotFound(t *testing.T) {
 }
 
 func TestListSnapshots_BySourceVolumeId(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
 	volID1 := createVolumeForTest(t, driver, "vol-source-1")
 	volID2 := createVolumeForTest(t, driver, "vol-source-2")
 	createSnapshotForTest(t, driver, "snap-vol1", volID1)
 	createSnapshotForTest(t, driver, "snap-vol2", volID2)
 
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		SourceVolumeId: volID1,
 	})
 	if err != nil {
@@ -1155,10 +1150,9 @@ func TestListSnapshots_BySourceVolumeId(t *testing.T) {
 }
 
 func TestListSnapshots_BySourceVolumeId_NotFound(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		SourceVolumeId: "non-existent-volume",
 	})
 	if err != nil {
@@ -1170,16 +1164,15 @@ func TestListSnapshots_BySourceVolumeId_NotFound(t *testing.T) {
 }
 
 func TestListSnapshots_Pagination(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
 	volID := createVolumeForTest(t, driver, "vol-pagination")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		createSnapshotForTest(t, driver, "snap-page-"+strconv.Itoa(i), volID)
 	}
 
 	// Request first page with max_entries=2
-	resp, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		MaxEntries: 2,
 	})
 	if err != nil {
@@ -1193,7 +1186,7 @@ func TestListSnapshots_Pagination(t *testing.T) {
 	}
 
 	// Request second page with starting_token
-	resp2, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	resp2, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		StartingToken: resp.NextToken,
 	})
 	if err != nil {
@@ -1219,10 +1212,9 @@ func TestListSnapshots_Pagination(t *testing.T) {
 }
 
 func TestListSnapshots_InvalidStartingToken(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
-	_, err := driver.ListSnapshots(ctx, &csi.ListSnapshotsRequest{
+	_, err := driver.ListSnapshots(t.Context(), &csi.ListSnapshotsRequest{
 		StartingToken: "not-a-number",
 	})
 	if err == nil {
@@ -1253,7 +1245,6 @@ func TestCreateSnapshot_SnapshotLimitExhausted(t *testing.T) {
 		cloudscaleClient: cloudscaleClient,
 		volumeLocks:      NewVolumeLocks(),
 	}
-	ctx := context.Background()
 
 	volID := createVolumeForTest(t, driver, "vol-snap-limit")
 
@@ -1262,7 +1253,7 @@ func TestCreateSnapshot_SnapshotLimitExhausted(t *testing.T) {
 	createSnapshotForTest(t, driver, "snap-limit-2", volID)
 
 	// Third snapshot should fail with ResourceExhausted
-	_, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+	_, err := driver.CreateSnapshot(t.Context(), &csi.CreateSnapshotRequest{
 		Name:           "snap-limit-3",
 		SourceVolumeId: volID,
 	})
@@ -1284,11 +1275,10 @@ func TestCreateSnapshot_SnapshotLimitExhausted(t *testing.T) {
 // the CSI spec requirement for volumes that cannot be deleted independently
 // of their snapshots.
 func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 
 	// Create a volume
-	vol, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	vol, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "test-volume-with-snapshot",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange: &csi.CapacityRange{
@@ -1304,7 +1294,7 @@ func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
 	volumeID := vol.Volume.VolumeId
 
 	// Create a snapshot on the volume
-	snap, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+	snap, err := driver.CreateSnapshot(t.Context(), &csi.CreateSnapshotRequest{
 		Name:           "test-snapshot",
 		SourceVolumeId: volumeID,
 	})
@@ -1316,7 +1306,7 @@ func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
 	}
 
 	// Attempt to delete the volume — should fail with FailedPrecondition
-	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+	_, err = driver.DeleteVolume(t.Context(), &csi.DeleteVolumeRequest{
 		VolumeId: volumeID,
 	})
 	if err == nil {
@@ -1332,14 +1322,14 @@ func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
 	}
 
 	// Delete the snapshot, then delete the volume, should succeed now
-	_, err = driver.DeleteSnapshot(ctx, &csi.DeleteSnapshotRequest{
+	_, err = driver.DeleteSnapshot(t.Context(), &csi.DeleteSnapshotRequest{
 		SnapshotId: snap.Snapshot.SnapshotId,
 	})
 	if err != nil {
 		t.Fatalf("Failed to delete snapshot: %v", err)
 	}
 
-	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+	_, err = driver.DeleteVolume(t.Context(), &csi.DeleteVolumeRequest{
 		VolumeId: volumeID,
 	})
 	if err != nil {
@@ -1347,11 +1337,12 @@ func TestDeleteVolume_FailsWhenSnapshotsExist(t *testing.T) {
 	}
 }
 
+//nolint:unparam // keep `sizeGB` parameter for potential future use
 func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, string) {
 	t.Helper()
-	ctx := context.Background()
 
-	vol, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	vol, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
+		//nolint:gosec // G404: weak random generator acceptable in test code
 		Name:               "src-vol-" + strconv.Itoa(rand.Int()),
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(sizeGB) * GB},
@@ -1361,7 +1352,8 @@ func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, 
 		t.Fatalf("Failed to create source volume: %v", err)
 	}
 
-	snap, err := driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+	snap, err := driver.CreateSnapshot(t.Context(), &csi.CreateSnapshotRequest{
+		//nolint:gosec // G404: weak random generator acceptable in test code
 		Name:           "snap-" + strconv.Itoa(rand.Int()),
 		SourceVolumeId: vol.Volume.VolumeId,
 	})
@@ -1375,11 +1367,10 @@ func createVolumeAndSnapshot(t *testing.T, driver *Driver, sizeGB int) (string, 
 func TestCreateVolumeFromSnapshot_EqualSize(t *testing.T) {
 	const snapshotSizeGiB = 5 // source volume and snapshot size (GiB)
 
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
-	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	resp, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "restored-equal",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
@@ -1399,11 +1390,10 @@ func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
 		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
 	)
 
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
-	resp, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	resp, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "restored-larger",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
@@ -1416,7 +1406,7 @@ func TestCreateVolumeFromSnapshot_LargerSize(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(expandedSizeGiB*GB), resp.Volume.CapacityBytes)
 
-	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp.Volume.VolumeId)
+	vol, err := driver.cloudscaleClient.Volumes.Get(t.Context(), resp.Volume.VolumeId)
 	assert.NoError(t, err)
 	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
 }
@@ -1427,11 +1417,10 @@ func TestCreateVolumeFromSnapshot_SmallerSize_Rejected(t *testing.T) {
 		belowSnapshotSizeGiB = 3 // requested size smaller than snapshot (invalid)
 	)
 
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
-	_, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	_, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "restored-smaller",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(belowSnapshotSizeGiB) * GB},
@@ -1453,8 +1442,7 @@ func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
 		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
 	)
 
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	req := &csi.CreateVolumeRequest{
@@ -1468,11 +1456,11 @@ func TestCreateVolumeFromSnapshot_Idempotent_AlreadyExpanded(t *testing.T) {
 		},
 	}
 
-	resp1, err := driver.CreateVolume(ctx, req)
+	resp1, err := driver.CreateVolume(t.Context(), req)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(expandedSizeGiB*GB), resp1.Volume.CapacityBytes)
 
-	resp2, err := driver.CreateVolume(ctx, req)
+	resp2, err := driver.CreateVolume(t.Context(), req)
 	assert.NoError(t, err)
 	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
 	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
@@ -1484,12 +1472,11 @@ func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 		expandedSizeGiB = 10 // requested size larger than snapshot (triggers expansion)
 	)
 
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	_, snapshotID := createVolumeAndSnapshot(t, driver, snapshotSizeGiB)
 
 	// First create at snapshot size (equal)
-	resp1, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	resp1, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "restored-needs-expand",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(snapshotSizeGiB) * GB},
@@ -1503,7 +1490,7 @@ func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 	assert.Equal(t, int64(snapshotSizeGiB*GB), resp1.Volume.CapacityBytes)
 
 	// Now call again with a larger size -- simulates retry after expand failure
-	resp2, err := driver.CreateVolume(ctx, &csi.CreateVolumeRequest{
+	resp2, err := driver.CreateVolume(t.Context(), &csi.CreateVolumeRequest{
 		Name:               "restored-needs-expand",
 		VolumeCapabilities: makeVolumeCapabilityObject(false),
 		CapacityRange:      &csi.CapacityRange{RequiredBytes: int64(expandedSizeGiB) * GB},
@@ -1517,7 +1504,7 @@ func TestCreateVolumeFromSnapshot_Idempotent_NeedsExpansion(t *testing.T) {
 	assert.Equal(t, resp1.Volume.VolumeId, resp2.Volume.VolumeId)
 	assert.Equal(t, int64(expandedSizeGiB*GB), resp2.Volume.CapacityBytes)
 
-	vol, err := driver.cloudscaleClient.Volumes.Get(ctx, resp2.Volume.VolumeId)
+	vol, err := driver.cloudscaleClient.Volumes.Get(t.Context(), resp2.Volume.VolumeId)
 	assert.NoError(t, err)
 	assert.Equal(t, expandedSizeGiB, vol.SizeGB)
 }
@@ -1536,7 +1523,7 @@ func TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode(t *testing.T
 
 	driver := &Driver{
 		endpoint:         "unix:///tmp/csi-test.sock",
-		serverId:         serverA,
+		serverID:         serverA,
 		zone:             DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          &fakeMounter{mounted: map[string]string{}},
@@ -1544,11 +1531,10 @@ func TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode(t *testing.T
 		volumeLocks:      NewVolumeLocks(),
 	}
 
-	ctx := context.Background()
 	volumeID := createVolumeForTest(t, driver, "test-vol-multiattach")
 
 	// Attach volume to server A
-	_, err := driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+	_, err := driver.ControllerPublishVolume(t.Context(), &csi.ControllerPublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   serverA,
 		VolumeCapability: &csi.VolumeCapability{
@@ -1565,7 +1551,7 @@ func TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode(t *testing.T
 	}
 
 	// Try to attach the same volume to server B — should be rejected
-	_, err = driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+	_, err = driver.ControllerPublishVolume(t.Context(), &csi.ControllerPublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   serverB,
 		VolumeCapability: &csi.VolumeCapability{
@@ -1590,7 +1576,7 @@ func TestControllerPublishVolume_RejectsWhenAttachedToDifferentNode(t *testing.T
 	}
 
 	// Verify the volume is still attached to server A (not silently moved)
-	vol, err := cloudscaleClient.Volumes.Get(ctx, volumeID)
+	vol, err := cloudscaleClient.Volumes.Get(t.Context(), volumeID)
 	if err != nil {
 		t.Fatalf("Failed to get volume: %v", err)
 	}
@@ -1611,7 +1597,7 @@ func TestControllerPublishVolume_IdempotentSameNode(t *testing.T) {
 
 	driver := &Driver{
 		endpoint:         "unix:///tmp/csi-test.sock",
-		serverId:         serverA,
+		serverID:         serverA,
 		zone:             DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          &fakeMounter{mounted: map[string]string{}},
@@ -1619,7 +1605,6 @@ func TestControllerPublishVolume_IdempotentSameNode(t *testing.T) {
 		volumeLocks:      NewVolumeLocks(),
 	}
 
-	ctx := context.Background()
 	volumeID := createVolumeForTest(t, driver, "test-vol-idempotent")
 
 	publishReq := &csi.ControllerPublishVolumeRequest{
@@ -1639,13 +1624,13 @@ func TestControllerPublishVolume_IdempotentSameNode(t *testing.T) {
 	}
 
 	// First publish
-	resp1, err := driver.ControllerPublishVolume(ctx, publishReq)
+	resp1, err := driver.ControllerPublishVolume(t.Context(), publishReq)
 	if err != nil {
 		t.Fatalf("First publish failed: %v", err)
 	}
 
 	// Second publish to same node — should succeed (idempotent)
-	resp2, err := driver.ControllerPublishVolume(ctx, publishReq)
+	resp2, err := driver.ControllerPublishVolume(t.Context(), publishReq)
 	if err != nil {
 		t.Fatalf("Second publish (idempotent) failed: %v", err)
 	}
@@ -1667,7 +1652,7 @@ func TestControllerPublishVolume_SucceedsWhenNotAttached(t *testing.T) {
 
 	driver := &Driver{
 		endpoint:         "unix:///tmp/csi-test.sock",
-		serverId:         serverA,
+		serverID:         serverA,
 		zone:             DefaultZone.Slug,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          &fakeMounter{mounted: map[string]string{}},
@@ -1675,10 +1660,9 @@ func TestControllerPublishVolume_SucceedsWhenNotAttached(t *testing.T) {
 		volumeLocks:      NewVolumeLocks(),
 	}
 
-	ctx := context.Background()
 	volumeID := createVolumeForTest(t, driver, "test-vol-attach")
 
-	resp, err := driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+	resp, err := driver.ControllerPublishVolume(t.Context(), &csi.ControllerPublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   serverA,
 		VolumeCapability: &csi.VolumeCapability{
@@ -1699,7 +1683,7 @@ func TestControllerPublishVolume_SucceedsWhenNotAttached(t *testing.T) {
 	}
 
 	// Verify volume is attached to the server
-	vol, err := cloudscaleClient.Volumes.Get(ctx, volumeID)
+	vol, err := cloudscaleClient.Volumes.Get(t.Context(), volumeID)
 	if err != nil {
 		t.Fatalf("Failed to get volume: %v", err)
 	}
@@ -1711,8 +1695,7 @@ func TestControllerPublishVolume_SucceedsWhenNotAttached(t *testing.T) {
 // TestControllerOperations_VolumeLocks tests that concurrent controller
 // operations on the same volume are properly serialized with volume locks.
 func TestControllerOperations_VolumeLocks(t *testing.T) {
-	driver := createDriverForTest(t)
-	ctx := context.Background()
+	driver := createDriverForTest()
 	volumeID := createVolumeForTest(t, driver, "test-vol-locks")
 
 	// Pre-acquire the volume lock
@@ -1721,7 +1704,7 @@ func TestControllerOperations_VolumeLocks(t *testing.T) {
 	}
 
 	// ControllerPublishVolume should return Aborted
-	_, err := driver.ControllerPublishVolume(ctx, &csi.ControllerPublishVolumeRequest{
+	_, err := driver.ControllerPublishVolume(t.Context(), &csi.ControllerPublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   "some-node",
 		VolumeCapability: &csi.VolumeCapability{
@@ -1736,27 +1719,27 @@ func TestControllerOperations_VolumeLocks(t *testing.T) {
 	assertAbortedError(t, err, "ControllerPublishVolume")
 
 	// ControllerUnpublishVolume should return Aborted
-	_, err = driver.ControllerUnpublishVolume(ctx, &csi.ControllerUnpublishVolumeRequest{
+	_, err = driver.ControllerUnpublishVolume(t.Context(), &csi.ControllerUnpublishVolumeRequest{
 		VolumeId: volumeID,
 		NodeId:   "some-node",
 	})
 	assertAbortedError(t, err, "ControllerUnpublishVolume")
 
 	// DeleteVolume should return Aborted
-	_, err = driver.DeleteVolume(ctx, &csi.DeleteVolumeRequest{
+	_, err = driver.DeleteVolume(t.Context(), &csi.DeleteVolumeRequest{
 		VolumeId: volumeID,
 	})
 	assertAbortedError(t, err, "DeleteVolume")
 
 	// ControllerExpandVolume should return Aborted
-	_, err = driver.ControllerExpandVolume(ctx, &csi.ControllerExpandVolumeRequest{
+	_, err = driver.ControllerExpandVolume(t.Context(), &csi.ControllerExpandVolumeRequest{
 		VolumeId:      volumeID,
 		CapacityRange: &csi.CapacityRange{RequiredBytes: 10 * GB},
 	})
 	assertAbortedError(t, err, "ControllerExpandVolume")
 
 	// CreateSnapshot should return Aborted (locks on source volume ID)
-	_, err = driver.CreateSnapshot(ctx, &csi.CreateSnapshotRequest{
+	_, err = driver.CreateSnapshot(t.Context(), &csi.CreateSnapshotRequest{
 		Name:           "snap-locked",
 		SourceVolumeId: volumeID,
 	})

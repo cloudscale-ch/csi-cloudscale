@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v10"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/oauth2"
@@ -57,7 +57,7 @@ type Driver struct {
 	csi.UnimplementedNodeServer
 
 	endpoint string
-	serverId string
+	serverID string
 	zone     string
 
 	srv              *grpc.Server
@@ -85,7 +85,7 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
 
 	metadataClient := cloudscale.NewMetadataClient(nil)
-	metadata, err := metadataClient.GetMetadata()
+	metadata, err := metadataClient.GetMetadata(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get metadata: %s", err)
 	}
@@ -93,7 +93,7 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 	// We don't have any other information than the availability zone. Just use
 	// it as the zone for now.
 	zone := metadata.AvailabilityZone
-	serverId := metadata.Meta.CloudscaleUUID
+	serverID := metadata.Meta.CloudscaleUUID
 
 	cloudscaleClient := cloudscale.NewClient(oauthClient)
 	baseURL, err := url.Parse(urlstr)
@@ -106,13 +106,13 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 	logger.SetLevel(logLevel)
 	log := logger.WithFields(logrus.Fields{
 		"zone":    zone,
-		"node_id": serverId,
+		"node_id": serverID,
 		"version": version,
 	})
 
 	return &Driver{
 		endpoint:         ep,
-		serverId:         serverId,
+		serverID:         serverID,
 		zone:             zone,
 		cloudscaleClient: cloudscaleClient,
 		mounter:          newMounter(),
@@ -122,7 +122,7 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 }
 
 // Run starts the CSI plugin by communication over the given endpoint
-func (d *Driver) Run() error {
+func (d *Driver) Run(ctx context.Context) error {
 	u, err := url.Parse(d.endpoint)
 	if err != nil {
 		return fmt.Errorf("unable to parse address: %q", err)
@@ -136,23 +136,24 @@ func (d *Driver) Run() error {
 	// CSI plugins talk only over UNIX sockets currently
 	if u.Scheme != "unix" {
 		return fmt.Errorf("currently only unix domain sockets are supported, have: %s", u.Scheme)
-	} else {
-		// remove the socket if it's already there. This can happen if we
-		// deploy a new version and the socket was created from the old running
-		// plugin.
-		d.log.WithField("socket", addr).Info("removing socket")
-		if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove unix domain socket file %s, error: %s", addr, err)
-		}
 	}
 
-	listener, err := net.Listen(u.Scheme, addr)
+	// remove the socket if it's already there. This can happen if we
+	// deploy a new version and the socket was created from the old running
+	// plugin.
+	d.log.WithField("socket", addr).Info("removing socket")
+	if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove unix domain socket file %s, error: %s", addr, err)
+	}
+
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, u.Scheme, addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 
 	// log response errors for better observability
-	errHandler := func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	errHandler := func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			d.log.WithError(err).WithField("method", info.FullMethod).Error("method failed")
@@ -180,12 +181,12 @@ func (d *Driver) Stop() {
 	d.srv.Stop()
 }
 
+// GetVersion returns the current release version, as inserted at build time.
+//
 // When building any packages that import version, pass the build/install cmd
 // ldflags like so:
 //
 //	go build -ldflags "-X github.com/cloudscale-ch/csi-cloudscale/driver.version=0.0.1"
-//
-// GetVersion returns the current release version, as inserted at build time.
 func GetVersion() string {
 	return version
 }
