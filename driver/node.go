@@ -80,7 +80,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 	// Apparently sometimes we need to call udevadm trigger to get the volume
 	// properly registered in /dev/disk. More information can be found here:
 	// https://github.com/cloudscale-ch/csi-cloudscale/issues/9
-	source, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(ll, req.VolumeId)
+	source, err := d.mounter.FinalizeVolumeAttachmentAndFindPath(ctx, ll, req.VolumeId)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +104,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	// If it is a block volume, we do nothing for stage volume
 	// because we bind mount the absolute device path to a file
-	switch req.VolumeCapability.GetAccessType().(type) {
-	case *csi.VolumeCapability_Block:
+	if _, ok := req.VolumeCapability.GetAccessType().(*csi.VolumeCapability_Block); ok {
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
 
@@ -127,14 +126,14 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 		"luks_encrypted": luksContext.EncryptionEnabled,
 	})
 
-	formatted, err := d.mounter.IsFormatted(source, luksContext, ll)
+	formatted, err := d.mounter.IsFormatted(ctx, source, luksContext, ll)
 	if err != nil {
 		return nil, err
 	}
 
 	if !formatted {
 		ll.Info("formatting the volume for staging")
-		if err := d.mounter.Format(source, fsType, luksContext, ll); err != nil {
+		if err := d.mounter.Format(ctx, source, fsType, luksContext, ll); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -143,7 +142,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	ll.Info("checking if stagingTargetPath is already mounted")
 
-	mountInfo, err := d.mounter.GetMountInfo(stagingTargetPath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(ctx, stagingTargetPath, ll)
 	if err != nil {
 		ll.WithError(err).Error("unable to check if already mounted")
 		return nil, err
@@ -154,7 +153,7 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	if mountInfo == nil {
 		ll.Info("not mounted yet, mounting the volume for staging")
-		if err := d.mounter.Mount(source, stagingTargetPath, fsType, luksContext, ll, options...); err != nil {
+		if err := d.mounter.Mount(ctx, source, stagingTargetPath, fsType, luksContext, ll, options...); err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
@@ -226,24 +225,25 @@ func (d *Driver) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRe
 
 	// If the staged device is a LUKS mapping, grow the LUKS container first so
 	// the filesystem can see the larger size.
-	isLuks, _, err := isLuksMapping(devicePath)
+	isLuksVolume, _, err := isLuksMapping(ctx, devicePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeStageVolume unable to test if volume at %q is encrypted with LUKS: %v", devicePath, err)
 	}
-	if isLuks {
+	if isLuksVolume {
 		ll.Info("resizing LUKS container before filesystem resize")
-		if err := luksResize(devicePath, ll); err != nil {
+		if err := luksResize(ctx, devicePath, ll); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to resize LUKS container on %s: %v", devicePath, err)
 		}
 	}
 
 	r := mount.NewResizeFs(utilexec.New())
+	//nolint:staticcheck // ResizeFs.NeedResize is stub on macOS, functional on Linux
 	needResize, err := r.NeedResize(devicePath, stagingTargetPath)
-	if err != nil {
+	if err != nil { //nolint:staticcheck // ResizeFs.NeedResize is stub on macOS, functional on Linux
 		ll.WithError(err).Warn("unable to check if filesystem needs resize")
 	} else if needResize {
 		ll.Info("resizing filesystem to match block device size")
-		if _, err := r.Resize(devicePath, stagingTargetPath); err != nil {
+		if _, err := r.Resize(devicePath, stagingTargetPath); err != nil { //nolint:staticcheck // ResizeFs is stub on macOS, functional on Linux
 			return nil, status.Errorf(codes.Internal, "failed to resize filesystem on %s: %v", devicePath, err)
 		}
 		ll.Info("filesystem resized successfully")
@@ -277,14 +277,14 @@ func (d *Driver) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolu
 	})
 	ll.Info("node unstage volume called")
 
-	mountInfo, err := d.mounter.GetMountInfo(req.StagingTargetPath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(ctx, req.StagingTargetPath, ll)
 	if err != nil {
 		return nil, err
 	}
 
 	if mountInfo != nil {
 		ll.Info("unmounting the staging target path")
-		err := d.mounter.Unmount(req.StagingTargetPath, luksContext, ll)
+		err := d.mounter.Unmount(ctx, req.StagingTargetPath, luksContext, ll)
 		if err != nil {
 			return nil, err
 		}
@@ -345,9 +345,9 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	var err error
 	switch req.GetVolumeCapability().GetAccessType().(type) {
 	case *csi.VolumeCapability_Block:
-		err = d.nodePublishVolumeForBlock(req, luksContext, options, ll)
+		err = d.nodePublishVolumeForBlock(ctx, req, luksContext, options, ll)
 	case *csi.VolumeCapability_Mount:
-		err = d.nodePublishVolumeForFileSystem(req, luksContext, options, ll)
+		err = d.nodePublishVolumeForFileSystem(ctx, req, luksContext, options, ll)
 	default:
 		return nil, status.Error(codes.InvalidArgument, "Unknown access type")
 	}
@@ -385,7 +385,7 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	})
 	ll.Info("node unpublish volume called")
 
-	err := d.mounter.Unmount(req.TargetPath, luksContext, ll)
+	err := d.mounter.Unmount(ctx, req.TargetPath, luksContext, ll)
 	if err != nil {
 		return nil, err
 	}
@@ -397,21 +397,21 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 // NodeGetCapabilities returns the supported capabilities of the node server
 func (d *Driver) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
 	nscaps := []*csi.NodeServiceCapability{
-		&csi.NodeServiceCapability{
+		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
 					Type: csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 				},
 			},
 		},
-		&csi.NodeServiceCapability{
+		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
 					Type: csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
 				},
 			},
 		},
-		&csi.NodeServiceCapability{
+		{
 			Type: &csi.NodeServiceCapability_Rpc{
 				Rpc: &csi.NodeServiceCapability_RPC{
 					Type: csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
@@ -448,7 +448,7 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 	maxVolumesPerNode := getEnvAsInt("CLOUDSCALE_MAX_CSI_VOLUMES_PER_NODE", fallbackMaxVolumesPerNode)
 
 	return &csi.NodeGetInfoResponse{
-		NodeId:            d.serverId,
+		NodeId:            d.serverID,
 		MaxVolumesPerNode: maxVolumesPerNode,
 
 		// make sure that the driver works on this particular region only
@@ -463,7 +463,6 @@ func (d *Driver) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (
 // NodeGetVolumeStats returns the volume capacity statistics available for the
 // the given volume.
 func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
-
 	if req.VolumeId == "" {
 		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats Volume ID must be provided")
 	}
@@ -481,7 +480,7 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 	})
 	ll.Info("node get volume stats called")
 
-	mountInfo, err := d.mounter.GetMountInfo(volumePath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(ctx, volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
@@ -498,7 +497,7 @@ func (d *Driver) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeS
 		return nil, status.Errorf(codes.Internal, "failed to determine if %q is block device: %s", volumePath, err)
 	}
 
-	stats, err := d.mounter.GetStatistics(volumePath)
+	stats, err := d.mounter.GetStatistics(ctx, volumePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to retrieve capacity statistics for volume path %q: %s", volumePath, err)
 	}
@@ -574,14 +573,13 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	ll = ll.WithField("source", source)
 
 	if req.GetVolumeCapability() != nil {
-		switch req.GetVolumeCapability().GetAccessType().(type) {
-		case *csi.VolumeCapability_Block:
+		if _, ok := req.GetVolumeCapability().GetAccessType().(*csi.VolumeCapability_Block); ok {
 			ll.Info("filesystem expansion is skipped for block volumes")
 			return &csi.NodeExpandVolumeResponse{}, nil
 		}
 	}
 
-	mountInfo, err := d.mounter.GetMountInfo(volumePath, ll)
+	mountInfo, err := d.mounter.GetMountInfo(ctx, volumePath, ll)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume failed to check if volume path %q is mounted: %s", volumePath, err)
 	}
@@ -599,7 +597,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to get device path for %q: %v", volumePath, err)
 	}
 
-	isLuks, _, err := isLuksMapping(devicePath)
+	isLuksVolume, _, err := isLuksMapping(ctx, devicePath)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to test if volume %q at %q is encrypted with luks: %v", volumePath, devicePath, err)
 	}
@@ -607,7 +605,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	ll = ll.WithFields(logrus.Fields{
 		"device_path": devicePath,
 	})
-	hasRequiredSize, err := d.mounter.HasRequiredSize(ll, source, req.CapacityRange.RequiredBytes)
+	hasRequiredSize, err := d.mounter.HasRequiredSize(ctx, ll, source, req.CapacityRange.RequiredBytes)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable to test if volume %q at %q has required size: %v", volumePath, source, err)
 	}
@@ -618,9 +616,9 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	}
 
 	// the luks container must be resized if the volume was resized while the disk was mounted
-	if isLuks {
+	if isLuksVolume {
 		ll.Info("resizing luks container")
-		err := luksResize(devicePath, ll)
+		err := luksResize(ctx, devicePath, ll)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "NodeExpandVolume unable resize luks container for volume %q at %q: %v", volumePath, devicePath, err)
 		}
@@ -628,7 +626,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 
 	r := mount.NewResizeFs(utilexec.New())
 	ll.Info("resizing volume")
-	if _, err := r.Resize(devicePath, volumePath); err != nil {
+	if _, err := r.Resize(devicePath, volumePath); err != nil { //nolint:staticcheck // ResizeFs is stub on macOS, functional on Linux
 		return nil, status.Errorf(codes.Internal, "NodeExpandVolume could not resize volume %q (%q):  %v", volumeID, req.GetVolumePath(), err)
 	}
 
@@ -636,7 +634,7 @@ func (d *Driver) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolume
 	return &csi.NodeExpandVolumeResponse{}, nil
 }
 
-func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, ll *logrus.Entry) error {
+func (d *Driver) nodePublishVolumeForFileSystem(ctx context.Context, req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, ll *logrus.Entry) error {
 	source := req.StagingTargetPath
 	target := req.TargetPath
 
@@ -656,19 +654,19 @@ func (d *Driver) nodePublishVolumeForFileSystem(req *csi.NodePublishVolumeReques
 	})
 
 	ll.Info("mounting the volume")
-	if err := d.mounter.Mount(source, target, fsType, luksContext, ll, mountOptions...); err != nil {
+	if err := d.mounter.Mount(ctx, source, target, fsType, luksContext, ll, mountOptions...); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
 
 	return nil
 }
 
-func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, ll *logrus.Entry) error {
-	volumeId := req.VolumeId
+func (d *Driver) nodePublishVolumeForBlock(ctx context.Context, req *csi.NodePublishVolumeRequest, luksContext LuksContext, mountOptions []string, ll *logrus.Entry) error {
+	volumeID := req.VolumeId
 
-	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeId, ll)
+	source, err := d.mounter.FindAbsoluteDeviceByIDPath(volumeID, ll)
 	if err != nil {
-		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeId, err)
+		return status.Errorf(codes.Internal, "Failed to find device path for volume %s. %v", volumeID, err)
 	}
 
 	target := req.TargetPath
@@ -680,7 +678,7 @@ func (d *Driver) nodePublishVolumeForBlock(req *csi.NodePublishVolumeRequest, lu
 	})
 
 	ll.Info("mounting the volume")
-	if err := d.mounter.Mount(source, target, "", luksContext, ll, mountOptions...); err != nil {
+	if err := d.mounter.Mount(ctx, source, target, "", luksContext, ll, mountOptions...); err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
 

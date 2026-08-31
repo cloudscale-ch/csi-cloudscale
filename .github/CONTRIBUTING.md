@@ -7,4 +7,8 @@ Thanks for trying to improve the csi-cloudscale experience.
    Pull Request (to get the correct PR number).
 2. If it's a breaking change or exceeds 100 lines of code then please open an
    issue first and describe the changes you want to make.
-
+3. Before opening a PR, make sure to run:
+   ```
+   make lint-fix
+   make test
+   ```
