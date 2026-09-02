@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Ensures that any Kubernetes cluster is cleaned up
+#
+set -euo pipefail
+
+# Make sure the k8test/helpers/release-set CLI is available
+source helpers/run-in-test-cluster
+ensure-k8test > /dev/null
+
+for attempt in 1 2 3; do
+    echo "Destroy attempt ${attempt}..."
+
+    if k8test/playbooks/destroy-cluster.yml \
+        -i k8test/cluster/inventory.yml \
+        -e cluster_prefix="$CLUSTER_PREFIX"; then
+        exit 0
+    fi
+
+    echo "Cleanup failed, retrying in 60s..."
+    sleep 60
+done
+
+echo "Cleanup failed after 3 attempts."
+exit 1

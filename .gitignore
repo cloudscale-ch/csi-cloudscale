@@ -7,3 +7,5 @@ charts/csi-cloudscale/charts
 cmd/cloudscale-csi-plugin/cloudscale-csi-plugin
 k8test/
 bin/
+
+__pycache__/
