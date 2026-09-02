@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+""" Looks at the GITHUB_REF environment variable and determins the image name
+that should be used for the pipeline.
+
+For more information:
+https://docs.github.com/en/actions/learn-github-actions/contexts#github-context
+
+The output is meant to be used with $GITHUB_ENV.
+
+"""
+
+import argparse
+import os
+import sys
+
+REPOSITORY = 'quay.io/cloudscalech/cloudscale-csi-plugin'
+
+parser = argparse.ArgumentParser(usage=__doc__)
+parser.add_argument('--ref', default=os.environ.get('GITHUB_REF'))
+
+
+def main(ref: str) -> int:
+    if not ref:
+        print("Either use --ref or set GITHUB_REF")
+        return 1
+
+    match ref.split('/'):
+        case ["refs", "heads", *branch_parts]:
+            tag = f"branch-{'-'.join(branch_parts)}"
+        case ["refs", "pull", pull_request, "merge"]:
+            tag = f"pull-request-{pull_request}"
+        case ["refs", "tags", tag_name]:
+            tag = tag_name
+        case _:
+            print(f"'{ref}' did not match any known pattern")
+            return 1
+
+    print(f"IMAGE={REPOSITORY}:{tag}")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(**vars(parser.parse_args())))

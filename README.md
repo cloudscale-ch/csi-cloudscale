@@ -418,13 +418,7 @@ This will create a binary with version `dev` and docker image pushed to
 `cloudscalech/cloudscale-csi-plugin:dev`
 
 
-To run the integration tests run the following:
-
-```
-$ export KUBECONFIG=$(pwd)/kubeconfig 
-$ TESTARGS='-run TestPod_Single_SSD_Volume' make test-integration
-```
-
+Refer to the [deploy/README.md](deploy/README.md) for instructions on how to run the integration tests.
 
 ### Release a new version
 
