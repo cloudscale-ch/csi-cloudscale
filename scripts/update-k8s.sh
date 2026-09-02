@@ -33,7 +33,6 @@ done < <(curl -fsSL "https://raw.githubusercontent.com/kubernetes/kubernetes/v$K
   | grep -E '^[[:space:]]*k8s.io.* v0.0.0$')
 
 unset GOROOT GOPATH
-export GO111MODULE=on
 
 set -x
 # shellcheck disable=SC2086

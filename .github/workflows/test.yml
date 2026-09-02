@@ -1,0 +1,31 @@
+name: Tests
+
+permissions: {}
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    permissions:
+      contents: read
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Check Go modules
+        run: go mod tidy
+      - name: Running Tests
+        run: make test TESTARGS='-race'

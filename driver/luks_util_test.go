@@ -11,6 +11,7 @@ You may obtain a copy of the License at
 package driver
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -137,10 +138,10 @@ func TestValidateExistingLuksMapping(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := func(string) (cryptsetupStatusInfo, error) {
+			fake := func(context.Context, string) (cryptsetupStatusInfo, error) {
 				return tt.status, tt.statusErr
 			}
-			inactive, backing, err := validateExistingLuksMapping("mapper", tt.volume, fake)
+			inactive, backing, err := validateExistingLuksMapping(t.Context(), "mapper", tt.volume, fake)
 
 			if tt.wantErrSub != "" {
 				if err == nil {

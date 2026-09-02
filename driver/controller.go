@@ -23,12 +23,13 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/cloudscale-ch/cloudscale-go-sdk/v7"
+	"github.com/cloudscale-ch/cloudscale-go-sdk/v10"
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -46,17 +47,17 @@ const (
 )
 
 const (
-	// allowed size increments for SSDs
+	// SSDStepSizeGB is the allowed size increments for SSDs.
 	SSDStepSizeGB = 1
 
-	// allowed size increments for bulk disks
+	// BulkStepSizeGB is the allowed size increments for bulk disks.
 	BulkStepSizeGB = 100
 
 	// PublishInfoVolumeName is used to pass the volume name from
 	// `ControllerPublishVolume` to `NodeStageVolume or `NodePublishVolume`
 	PublishInfoVolumeName = DriverName + "/volume-name"
 
-	// Storage type of the volume, must be either "ssd" or "bulk"
+	// StorageTypeAttribute is the storage type of the volume, must be either "ssd" or "bulk"
 	StorageTypeAttribute = DriverName + "/volume-type"
 )
 
@@ -228,8 +229,7 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	// Verify snapshot exists and get its properties, must return NotFound when snapshot does not exist.
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, sourceSnapshotID)
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				return nil, status.Errorf(codes.NotFound, "source snapshot %s not found", sourceSnapshotID)
 			}
@@ -237,9 +237,15 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 		return nil, status.Errorf(codes.Internal, "failed to get source snapshot: %v", err)
 	}
 
+	// Fetch source volume to determine storage type
+	sourceVolume, err := d.cloudscaleClient.Volumes.Get(ctx, snapshot.SourceVolume.UUID)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get source volume for snapshot: %v", err)
+	}
+
 	ll = ll.WithFields(logrus.Fields{
 		"snapshot_size_gb":     snapshot.SizeGB,
-		"snapshot_volume_type": snapshot.SourceVolume.Type,
+		"snapshot_volume_type": sourceVolume.Type,
 		"snapshot_zone":        snapshot.Zone,
 	})
 
@@ -248,7 +254,7 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	// targetSizeGB is used to track whether we must expand to meet the requested capacity.
 	targetSizeGB := snapshot.SizeGB
 
-	storageType := snapshot.SourceVolume.Type
+	storageType := sourceVolume.Type
 
 	if req.CapacityRange != nil {
 		calculatedSize, err := calculateStorageGB(req.CapacityRange, storageType)
@@ -411,8 +417,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the volume might already have been
 				// deleted, so a 404 is ok.
@@ -487,13 +492,7 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	}
 
 	if volume.ServerUUIDs != nil && len(*volume.ServerUUIDs) > 0 {
-		alreadyAttachedToRequestedNode := false
-		for _, serverUUID := range *volume.ServerUUIDs {
-			if serverUUID == req.NodeId {
-				alreadyAttachedToRequestedNode = true
-				break
-			}
-		}
+		alreadyAttachedToRequestedNode := slices.Contains(*volume.ServerUUIDs, req.NodeId)
 
 		if alreadyAttachedToRequestedNode {
 			ll.Info("volume is already attached to the requested node")
@@ -558,8 +557,7 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	// check if volume exist before trying to detach it
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				ll.Info("assuming volume is detached because it does not exist")
 				return &csi.ControllerUnpublishVolumeResponse{}, nil
@@ -694,11 +692,11 @@ func (d *Driver) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (
 
 // ControllerGetCapabilities returns the capabilities of the controller service.
 func (d *Driver) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
-	newCap := func(cap csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
+	newCap := func(rpcType csi.ControllerServiceCapability_RPC_Type) *csi.ControllerServiceCapability {
 		return &csi.ControllerServiceCapability{
 			Type: &csi.ControllerServiceCapability_Rpc{
 				Rpc: &csi.ControllerServiceCapability_RPC{
-					Type: cap,
+					Type: rpcType,
 				},
 			},
 		}
@@ -771,8 +769,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	ll.Info("find existing volume snapshots with same name")
 	allSnapshots, err := d.cloudscaleClient.VolumeSnapshots.List(ctx, cloudscale.WithNameFilter(req.Name))
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -816,8 +813,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 	ll.WithField("volume_snapshot_create_request", volumeSnapshotCreateRequest).Info("creating volume snapshot")
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Create(ctx, volumeSnapshotCreateRequest)
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -861,8 +857,7 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 	// Cloudscale handles the deletion asynchronously. The operation is idempotent.
 	err := d.cloudscaleClient.VolumeSnapshots.Delete(ctx, req.SnapshotId)
 	if err != nil {
-		var errorResponse *cloudscale.ErrorResponse
-		if errors.As(err, &errorResponse) {
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			if errorResponse.StatusCode == http.StatusNotFound {
 				// To make it idempotent, the snapshot might already have been
 				// deleted, so a 404 is ok.
@@ -1039,8 +1034,7 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 
 	nodeExpansionRequired := true
 	if req.GetVolumeCapability() != nil {
-		switch req.GetVolumeCapability().GetAccessType().(type) {
-		case *csi.VolumeCapability_Block:
+		if _, ok := req.GetVolumeCapability().GetAccessType().(*csi.VolumeCapability_Block); ok {
 			log.Info("node expansion is not required for block volumes")
 			nodeExpansionRequired = false
 		}
@@ -1094,13 +1088,13 @@ func calculateStorageGB(capRange *csi.CapacityRange, storageType string) (int, e
 
 	steps := requiredBytes / GB / int64(sizeIncrements)
 	if steps*GB*int64(sizeIncrements) < requiredBytes {
-		steps += 1
+		steps++
 	}
 
 	sizeGB := steps * int64(sizeIncrements)
 
-	if limitSet && limitBytes < (int64(sizeGB)*GB) {
-		return 0, fmt.Errorf("for required (%v) limit (%v) must be at least %v for type '%s'", formatBytes(requiredBytes), formatBytes(limitBytes), formatBytes(int64(sizeGB)*GB), storageType)
+	if limitSet && limitBytes < (sizeGB*GB) {
+		return 0, fmt.Errorf("for required (%v) limit (%v) must be at least %v for type '%s'", formatBytes(requiredBytes), formatBytes(limitBytes), formatBytes(sizeGB*GB), storageType)
 	}
 	return int(sizeGB), nil
 }
@@ -1111,16 +1105,16 @@ func formatBytes(inputBytes int64) string {
 
 	switch {
 	case inputBytes >= TB:
-		output = output / TB
+		output /= TB
 		unit = "Ti"
 	case inputBytes >= GB:
-		output = output / GB
+		output /= GB
 		unit = "Gi"
 	case inputBytes >= MB:
-		output = output / MB
+		output /= MB
 		unit = "Mi"
 	case inputBytes >= KB:
-		output = output / KB
+		output /= KB
 		unit = "Ki"
 	case inputBytes == 0:
 		return "0"
@@ -1166,8 +1160,7 @@ func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
 }
 
 func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
-	var errorResponse *cloudscale.ErrorResponse
-	if errors.As(err, &errorResponse) {
+	if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 		lt := log.WithFields(logrus.Fields{
 			"error":         err,
 			"errorResponse": errorResponse,
@@ -1175,10 +1168,9 @@ func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
 		if errorResponse.StatusCode == http.StatusNotFound {
 			lt.Warnf("%q: Server or volume not found", operation)
 			return status.Error(codes.NotFound, err.Error())
-		} else {
-			lt.Warnf("%q: operation failed", operation)
-			return status.Errorf(codes.Aborted, "%s: Request failed", operation)
 		}
+		lt.Warnf("%q: operation failed", operation)
+		return status.Errorf(codes.Aborted, "%s: Request failed", operation)
 	}
 	log.Warnf("%q: random error", operation)
 	return status.Errorf(codes.Aborted, "%s: Random error", operation)

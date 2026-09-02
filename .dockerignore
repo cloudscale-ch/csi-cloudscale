@@ -1,0 +1,15 @@
+.git
+.gitignore
+*.md
+.github/
+/charts/
+deploy/
+examples/
+helpers/
+scripts/
+test/
+go.mod
+go.sum
+Dockerfile
+Makefile
+VERSION
