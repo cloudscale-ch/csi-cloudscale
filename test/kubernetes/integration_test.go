@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1510,19 +1511,21 @@ func TestVolumeStats(t *testing.T) {
 }
 
 func setup() error {
-	// if you want to change the loading rules (which files in which order),
-	// you can do so here
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	// Kubernetes client
+	k8test, ok := os.LookupEnv("K8TEST_PATH")
+	if !ok {
+		log.Fatalf("could not find K8TEST_PATH environment variable\n")
+	}
 
-	// if you want to change override values or bind them to flags, there are
-	// methods to help you
-	configOverrides := &clientcmd.ConfigOverrides{}
-
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	var err error
-	config, err = kubeConfig.ClientConfig()
+	path := filepath.Join(k8test, "cluster", "admin.conf")
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read kubeconfig at path %q: %w", path, err)
+	}
+
+	config, err = clientcmd.RESTConfigFromKubeConfig(data)
+	if err != nil {
+		return fmt.Errorf("failed to apply kubeconfig at path %q: %w", path, err)
 	}
 
 	// create the clientset

@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+#
+# Ensures that a Kubernetes test cluster is present and updated
+#
+# shellcheck source=/dev/null
+set -euo pipefail
+
+export ANSIBLE_CONFIG="$PWD"/k8test/ansible.cfg
+export KUBERNETES="${KUBERNETES-latest}"
+export CLUSTER_PREFIX="${CLUSTER_PREFIX-csi}"
+export SUBNET="${SUBNET-10.200.1.0/24}"
+export IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
+export CCM_RELEASE_URL="https://github.com/cloudscale-ch/cloudscale-cloud-controller-manager/releases/latest/download/config.yml"
+
+# Prepares k8test with an existing virtual env, or a newly created on
+function ensure-k8test() {
+
+  # On GitHub actions, things are a bit different. Ansible is actually found
+  # on the runners and cloning via SSH does not work.
+  #
+  # Therefore we run a separate install block that is only meant for GitHub.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    if test -d k8test; then
+      source k8test/venv/bin/activate
+      return
+    fi
+
+    mkdir -p ~/.ssh/ && touch ~/.ssh/known_hosts
+    git clone https://github.com/cloudscale-ch/k8test
+    python3 -m venv k8test/venv
+    source k8test/venv/bin/activate
+    pip install poetry
+    poetry install --directory k8test
+    return
+  fi
+
+  if ! test -d k8test; then
+    git clone git@github.com:cloudscale-ch/k8test.git
+  fi
+
+  if [[ "${VIRTUAL_ENV:-}" == "" ]]; then
+
+    if ! test -d k8test/venv; then
+      python3 -m venv k8test/venv
+    fi
+
+    source k8test/venv/bin/activate
+  fi
+
+  if ! command -v poetry > /dev/null; then
+    pip install poetry
+  fi
+
+  if ! command -v ansible > /dev/null; then
+    poetry install --directory k8test
+  fi
+}
+
+# Prints a random zone
+function random-zone() {
+  arr[0]="rma1"
+  arr[1]="lpg1"
+
+  rand=$((RANDOM % 2))
+  echo "${arr[$rand]}"
+}
+
+# Launches the test cluster, if there's no admin.conf yet
+function ensure-cluster() {
+  if ! test -d k8test/cluster; then
+    mkdir k8test/cluster
+  fi
+
+  if ! test -f k8test/cluster/ssh.pub; then
+    ssh-keygen -t ed25519 -N '' -f k8test/cluster/ssh
+  fi
+
+  if ! test -f k8test/cluster/admin.conf; then
+    zone="$(random-zone)"
+
+    # First create the cluster, without configuring the network
+    k8test/playbooks/create-cluster.yml \
+      -e zone="$zone" \
+      -e ssh_key=k8test/cluster/ssh.pub \
+      -e control_count=2 \
+      -e worker_count=2 \
+      -e kubelet_extra_args='--cloud-provider=external' \
+      -e kubernetes="${KUBERNETES}" \
+      -e cluster_prefix="${CLUSTER_PREFIX}" \
+      -e subnet="${SUBNET}" \
+      --tags setup-vms,setup-controls
+
+    # Those won't really change between runs, so update them during install
+    k8test/playbooks/update-secrets.yml \
+      -i k8test/cluster/inventory.yml
+
+    # Second, get the CCM running. Without it setting the node IPs, Cilium
+    # won't work.
+    deploy-ccm
+
+    # Finally, setup the cluster to completion (includes Cilium install)
+    k8test/playbooks/create-cluster.yml \
+      -e zone="$zone" \
+      -e ssh_key=k8test/cluster/ssh.pub \
+      -e control_count=2 \
+      -e worker_count=2 \
+      -e kubelet_extra_args='--cloud-provider=external' \
+      -e kubernetes="${KUBERNETES}" \
+      -e cluster_prefix="${CLUSTER_PREFIX}" \
+      -e subnet="${SUBNET}"
+  fi
+}
+
+# Build the latest image each time
+function build-image() {
+  k8test/playbooks/build-image.yml \
+    -i k8test/cluster/inventory.yml \
+    -e dockerfile=./Dockerfile \
+    -e tag="$IMAGE" \
+    -e extra='--build-arg=VERSION=test' \
+    -l controls
+}
+
+# Import an image from the host
+function import-image() {
+  k8test/playbooks/import-image.yml \
+    -i k8test/cluster/inventory.yml \
+    -e image="$PWD/image.tar"
+}
+
+# Deploy CCM from official GitHub release
+function deploy-ccm() {
+  export KUBECONFIG=k8test/cluster/admin.conf
+  local api_url=$(echo "${CLOUDSCALE_API_URL-https://api.cloudscale.ch}" | sed 's|/v1||g; s|/$||g')
+
+  echo "Deploying CCM from ${CCM_RELEASE_URL}..."
+
+  # Download manifest, patch API URL, and apply
+  curl -sL "${CCM_RELEASE_URL}" | \
+    sed "s|https://api.cloudscale.ch/|${api_url}/|g" | \
+    kubectl apply -f -
+
+  echo "Waiting for CCM to be ready..."
+  kubectl -n kube-system rollout status daemonset/cloudscale-cloud-controller-manager --timeout=120s
+}
+
+# Deploy VolumeSnapshot CRDs and snapshot controller
+function deploy-snapshot-crds() {
+  export KUBECONFIG=k8test/cluster/admin.conf
+
+  echo "Installing VolumeSnapshot CRDs..."
+  kubectl apply -k "https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0"
+
+  echo "Installing snapshot controller..."
+  kubectl apply -k "https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0"
+}
+
+# Deploy CSI using Helm chart with custom image
+function deploy-csi() {
+  api_url=$(echo "${CLOUDSCALE_API_URL-https://api.cloudscale.ch}" | sed 's|/v1||g')
+
+  export KUBECONFIG=k8test/cluster/admin.conf
+
+  # Parse IMAGE to extract tag
+  local image_tag="${IMAGE##*:}"
+
+  echo "Deploying CSI with image tag: ${image_tag}..."
+
+  # Determine imagePullPolicy - force Never for local-only images
+  local image_pull_policy="IfNotPresent"
+  if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
+    image_pull_policy="Never"
+    echo "Using imagePullPolicy=Never (import mode - local images only)"
+  fi
+
+  # Generate manifest and capture for inspection
+  local manifest_file="/tmp/csi-manifest-$$.yaml"
+  helm template csi-cloudscale -n kube-system \
+    --set nameOverride=csi-cloudscale \
+    --set controller.image.tag="${image_tag}" \
+    --set node.image.tag="${image_tag}" \
+    --set controller.image.pullPolicy="${image_pull_policy}" \
+    --set node.image.pullPolicy="${image_pull_policy}" \
+    --set cloudscale.apiUrl="${api_url}/" \
+    ./charts/csi-cloudscale > "$manifest_file"
+
+  echo ""
+  echo "Deployed Image Configuration:"
+  echo "Expected image: ${IMAGE}"
+  echo "imagePullPolicy: ${image_pull_policy}"
+  echo ""
+  echo "Container images in manifest:"
+  grep -E "^\s+image:" "$manifest_file" | sed 's/^[[:space:]]*/  /' | head -10
+  echo ""
+
+  # Apply the manifest
+  kubectl apply -n kube-system -f "$manifest_file"
+
+  # Cleanup
+  rm -f "$manifest_file"
+
+  echo "Waiting for CSI controller to be ready..."
+  echo "  - Checking initial pod status..."
+  kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o wide
+
+  if ! kubectl -n kube-system rollout status statefulset/csi-cloudscale-controller --timeout=180s; then
+    echo "CSI Controller rollout failed"
+    exit 1
+  fi
+
+  echo "Waiting for CSI node daemonset to be ready..."
+  echo "  - Checking node daemonset pod status..."
+  kubectl -n kube-system get pods -l app=csi-cloudscale-node -o wide
+
+  if ! kubectl -n kube-system rollout status daemonset/csi-cloudscale-node --timeout=300s; then
+    echo "CSI Node DaemonSet rollout failed"
+    exit 1
+  fi
+}
+
+# Deploy both CCM and CSI components
+function deploy-components() {
+  echo "Deploying Components"
+  echo "IMAGE_SOURCE: ${IMAGE_SOURCE-build}"
+  echo "IMAGE: ${IMAGE}"
+  echo ""
+
+  # Deploy CCM first (required for node initialization and networking)
+  deploy-ccm
+
+  # Install VolumeSnapshot CRDs and snapshot controller (required for CSI driver)
+  deploy-snapshot-crds
+
+  # Import pre-built CSI image (used in CI via IMAGE_SOURCE=import)
+  if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
+    echo "Importing CSI image from image.tar..."
+    import-image
+  fi
+
+  # Deploy CSI
+  deploy-csi
+}
+
+# Execute if not sourced
+if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
+
+  # The image name requires a slash in it, or Podman will add `localhost/` and
+  # confuse Kubernetes.
+  if [[ "$IMAGE" != *"/"* ]]; then
+    echo "\$IMAGE has no slash: $IMAGE"
+    exit 1
+  fi
+
+  first_run=$(test ! -f k8test/cluster/inventory.yml && echo "yes" || echo "no")
+
+  ensure-k8test
+  ensure-cluster
+
+  # Deploy components on both new and existing clusters. For new clusters,
+  # this happens after the full cluster bootstrap (including Cilium) is done.
+  deploy-components
+fi
