@@ -44,14 +44,9 @@ updates:
 
   # Check docker base image updates
   - package-ecosystem: "docker"
-    directory: "/cmd/cloudscale-csi-plugin"
     schedule:
       interval: "weekly"
       day: "monday"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-patch"
     cooldown:
       default-days: 7
 
