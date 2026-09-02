@@ -1,11 +1,7 @@
 NAME=cloudscale-csi-plugin
 OS ?= linux
 GO_VERSION := $(shell awk '/^go/ {print $$2}' go.mod)
-ifeq ($(strip $(shell git status --porcelain 2>/dev/null)),)
-  GIT_TREE_STATE=clean
-else
-  GIT_TREE_STATE=dirty
-endif
+GIT_TREE_STATE ?= $(shell git status --porcelain 2>/dev/null | grep -q . && echo "dirty" || echo "clean")
 COMMIT ?= $(shell git rev-parse HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
 LDFLAGS ?= -X github.com/cloudscale-ch/csi-cloudscale/driver.version=${VERSION} -X github.com/cloudscale-ch/csi-cloudscale/driver.commit=${COMMIT} -X github.com/cloudscale-ch/csi-cloudscale/driver.gitTreeState=${GIT_TREE_STATE}
@@ -14,6 +10,7 @@ PKG ?= github.com/cloudscale-ch/csi-cloudscale/cmd/cloudscale-csi-plugin
 VERSION ?= $(shell cat VERSION)
 CHART_VERSION ?= $(shell awk '/^version:/ {print $$2}' charts/csi-cloudscale/Chart.yaml)
 DOCKER_REPO ?= quay.io/cloudscalech/cloudscale-csi-plugin
+IMAGE ?= $(DOCKER_REPO):$(VERSION)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -115,13 +112,18 @@ govulncheck: govulncheck-tool ## Run govulncheck (advisory only)
 
 .PHONY: compile
 compile: ## Build the project binary
-	@echo "==> Building the project"
-	@docker run --rm -it -e GOOS=${OS} -e GOARCH=amd64 -v ${PWD}/:/app -w /app golang:${GO_VERSION}-alpine sh -c 'apk add git && go build -o cmd/cloudscale-csi-plugin/${NAME} -ldflags "$(LDFLAGS)" ${PKG}'
+	@echo "==> Building the binary"
+	CGO_ENABLED=0 go build -o cmd/cloudscale-csi-plugin/$(NAME) -ldflags "$(LDFLAGS)" $(PKG)
 
 .PHONY: build
-build: compile ## Build the docker image
+build: ## Build the docker image
 	@echo "==> Building the docker image"
-	@docker build --platform linux/amd64 -t $(DOCKER_REPO):$(VERSION) cmd/cloudscale-csi-plugin -f cmd/cloudscale-csi-plugin/Dockerfile
+	docker build --platform linux/amd64 \
+		-t $(IMAGE) \
+		--build-arg VERSION="$(VERSION)" \
+		--build-arg COMMIT="$(COMMIT)" \
+		--build-arg GIT_TREE_STATE="$(GIT_TREE_STATE)" \
+		-f cmd/cloudscale-csi-plugin/Dockerfile .
 
 .PHONY: push
 push: ## Push docker image to registry
@@ -132,9 +134,9 @@ ifeq ($(DOCKER_REPO),quay.io/cloudscalech/cloudscale-csi-plugin)
     endif
   endif
 endif
-	@echo "==> Publishing $(DOCKER_REPO):$(VERSION)"
-	@docker push $(DOCKER_REPO):$(VERSION)
-	@echo "==> Your image is now available at $(DOCKER_REPO):$(VERSION)"
+	@echo "==> Publishing $(IMAGE)"
+	@docker push $(IMAGE)
+	@echo "==> Your image is now available at $(IMAGE)"
 
 .PHONY: publish
 publish: build push clean ## Build, push, and clean
