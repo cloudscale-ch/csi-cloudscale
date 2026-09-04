@@ -129,6 +129,58 @@ function import-image() {
     -e image="$PWD/image.tar"
 }
 
+# Verify imported image exists on all nodes
+function verify-image-import() {
+  echo ""
+  echo "=== Verifying CSI Image Import on All Nodes ==="
+  echo "Expected image: ${CSI_IMAGE}"
+  echo ""
+
+  # Show full image list from all nodes
+  echo "--- Full Image List on All Nodes ---"
+  ansible -i k8test/cluster/inventory.yml nodes \
+    -m shell \
+    -a "sudo nerdctl --namespace k8s.io images | grep -v '<none>' | grep -v 'REPOSITORY' || echo 'No images found'" \
+    --user ubuntu
+
+  echo ""
+  echo "--- CSI Image Check ---"
+
+  # Check for CSI image on each node and track failures
+  local missing_nodes=()
+  local node_list
+  node_list=$(ansible -i k8test/cluster/inventory.yml nodes --list-hosts 2>/dev/null | tail -n +2 || true)
+
+  for node in $node_list; do
+    if ! ansible -i k8test/cluster/inventory.yml "$node" \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi-plugin' || echo 'NOT_FOUND'" \
+      --user ubuntu 2>/dev/null | grep -q "cloudscale-csi-plugin"; then
+      missing_nodes+=("$node")
+      echo "❌ ${node}: CSI image NOT FOUND"
+    else
+      echo "✓ ${node}: CSI image found"
+    fi
+  done
+
+  echo ""
+
+  # Fail if any nodes are missing the image
+  if [[ ${#missing_nodes[@]} -gt 0 ]]; then
+    echo "=== IMAGE IMPORT VERIFICATION FAILED ==="
+    echo "Missing on nodes: ${missing_nodes[*]}"
+    echo ""
+    echo "This usually means:"
+    echo "  1. The image.tar file doesn't exist or is corrupted"
+    echo "  2. The import playbook failed on some nodes"
+    echo "  3. Hostname mismatch between inventory and actual VMs"
+    echo ""
+    exit 1
+  fi
+
+  echo "✓ All nodes have the CSI image"
+}
+
 # Deploy CCM from official GitHub release
 function deploy-ccm() {
   export KUBECONFIG=k8test/cluster/admin.conf
@@ -177,6 +229,10 @@ function deploy-csi() {
   if ! kubectl -n kube-system rollout status statefulset/csi-cloudscale-controller --timeout=180s; then
     echo "=== CSI Controller rollout FAILED ==="
     echo ""
+    echo "--- Expected Image ---"
+    echo "Container: csi-cloudscale-plugin"
+    echo "Image: ${CSI_IMAGE}"
+    echo ""
     echo "--- Pod Status ---"
     kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o wide
     echo ""
@@ -185,6 +241,12 @@ function deploy-csi() {
     echo ""
     echo "--- Pod Description (includes events) ---"
     kubectl -n kube-system describe pods -l app=csi-cloudscale-controller
+    echo ""
+    echo "--- Images on Cluster Nodes ---"
+    ansible -i k8test/cluster/inventory.yml nodes \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi|REPOSITORY' || echo '  No CSI images found'" \
+      --user ubuntu
     exit 1
   fi
 
@@ -195,6 +257,10 @@ function deploy-csi() {
   if ! kubectl -n kube-system rollout status daemonset/csi-cloudscale-node --timeout=300s; then
     echo "=== CSI Node DaemonSet rollout FAILED ==="
     echo ""
+    echo "--- Expected Image ---"
+    echo "Container: csi-cloudscale-plugin"
+    echo "Image: ${CSI_IMAGE}"
+    echo ""
     echo "--- Pod Status ---"
     kubectl -n kube-system get pods -l app=csi-cloudscale-node -o wide
     echo ""
@@ -203,12 +269,23 @@ function deploy-csi() {
     echo ""
     echo "--- Pod Description (includes events) ---"
     kubectl -n kube-system describe pods -l app=csi-cloudscale-node
+    echo ""
+    echo "--- Images on Cluster Nodes ---"
+    ansible -i k8test/cluster/inventory.yml nodes \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi|REPOSITORY' || echo '  No CSI images found'" \
+      --user ubuntu
     exit 1
   fi
 }
 
 # Deploy both CCM and CSI components
 function deploy-components() {
+  echo "=== Deploying Components ==="
+  echo "IMAGE_SOURCE: ${IMAGE_SOURCE-build}"
+  echo "CSI_IMAGE: ${CSI_IMAGE}"
+  echo ""
+
   # Deploy CCM first (required for node initialization and networking)
   deploy-ccm
 
@@ -219,6 +296,7 @@ function deploy-components() {
   if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
     echo "Importing CSI image from image.tar..."
     import-image
+    verify-image-import
   fi
 
   # Deploy CSI

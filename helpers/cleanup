@@ -4,8 +4,6 @@
 #
 set -euo pipefail
 
-export CLUSTER_PREFIX="${CLUSTER_PREFIX-k8test}"
-
 # Make sure the k8test/helpers/release-set CLI is available
 source helpers/run-in-test-cluster
 ensure-k8test > /dev/null
