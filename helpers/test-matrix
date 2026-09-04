@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Make sure the k8test/helpers/release-set CLI is available
+source helpers/run-in-test-cluster
+ensure-k8test > /dev/null
+
+# Returns a matrix entry for a specific Kubernetes version
+function matrixentry {
+  local k8s_version="$1"
+  local matrix_index="$2"
+
+  # Kubernetes release
+  k8test/helpers/release-set --kubernetes="$k8s_version" --limit kubernetes | jq -r '.kubernetes.version'
+
+  # The private subnet range
+  echo "10.200.$matrix_index.0/24"
+
+  # A semi-predictable cluster prefix (we want to reuse them across jobs, but
+  # not inside a job). Reuse allows us to ensure that the cleanup process
+  # at the beginning of a test will remove old runs.
+  echo "csi-matrix-$matrix_index"
+}
+
+function matrixobject {
+  local k8s_version="$1"
+  local matrix_index="$2"
+
+  matrixentry "$k8s_version" "$matrix_index" | jq --raw-input --null-input --compact-output '{
+    "kubernetes": inputs,
+    "subnet": inputs,
+    "cluster_prefix": inputs,
+  }'
+}
+
+function matrixentries {
+  # Kubernetes 1.28 (oldest supported per README compatibility matrix)
+  matrixobject "1.28" "1"
+
+  # Two newest Kubernetes releases
+  matrixobject "-1" "2"
+  matrixobject "0" "3"
+}
+
+function matrixobjects {
+  matrixentries | jq --slurp --compact-output '.'
+}
+
+matrixobjects

@@ -1,0 +1,324 @@
+#!/usr/bin/env bash
+#
+# Ensures that a Kubernetes test cluster is present and updated
+#
+# shellcheck source=/dev/null
+set -euo pipefail
+
+export ANSIBLE_CONFIG="$PWD"/k8test/ansible.cfg
+export KUBERNETES="${KUBERNETES-latest}"
+export CLUSTER_PREFIX="${CLUSTER_PREFIX-csi}"
+export SUBNET="${SUBNET-10.200.1.0/24}"
+export CSI_IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
+export IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
+export CCM_RELEASE_URL="https://github.com/cloudscale-ch/cloudscale-cloud-controller-manager/releases/latest/download/config.yml"
+
+# Prepares k8test with an existing virtual env, or a newly created on
+function ensure-k8test() {
+
+  # On GitHub actions, things are a bit different. Ansible is actually found
+  # on the runners and cloning via SSH does not work.
+  #
+  # Therefore we run a separate install block that is only meant for GitHub.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    if test -d k8test; then
+      source k8test/venv/bin/activate
+      return
+    fi
+
+    mkdir -p ~/.ssh/ && touch ~/.ssh/known_hosts
+    git clone https://github.com/cloudscale-ch/k8test
+    python3 -m venv k8test/venv
+    source k8test/venv/bin/activate
+    pip install poetry
+    poetry install --directory k8test
+    return
+  fi
+
+  if ! test -d k8test; then
+    git clone git@github.com:cloudscale-ch/k8test.git
+  fi
+
+  if [[ "${VIRTUAL_ENV:-}" == "" ]]; then
+
+    if ! test -d k8test/venv; then
+      python3 -m venv k8test/venv
+    fi
+
+    source k8test/venv/bin/activate
+  fi
+
+  if ! command -v poetry > /dev/null; then
+    pip install poetry
+  fi
+
+  if ! command -v ansible > /dev/null; then
+    poetry install --directory k8test
+  fi
+}
+
+# Prints a random zone
+function random-zone() {
+  arr[0]="rma1"
+  arr[1]="lpg1"
+
+  rand=$((RANDOM % 2))
+  echo "${arr[$rand]}"
+}
+
+# Launches the test cluster, if there's no admin.conf yet
+function ensure-cluster() {
+  if ! test -d k8test/cluster; then
+    mkdir k8test/cluster
+  fi
+
+  if ! test -f k8test/cluster/ssh.pub; then
+    ssh-keygen -t ed25519 -N '' -f k8test/cluster/ssh
+  fi
+
+  if ! test -f k8test/cluster/admin.conf; then
+    zone="$(random-zone)"
+
+    # First create the cluster, without configuring the network
+    k8test/playbooks/create-cluster.yml \
+      -e zone="$zone" \
+      -e ssh_key=k8test/cluster/ssh.pub \
+      -e control_count=2 \
+      -e worker_count=2 \
+      -e kubelet_extra_args='--cloud-provider=external' \
+      -e kubernetes="${KUBERNETES}" \
+      -e cluster_prefix="${CLUSTER_PREFIX}" \
+      -e subnet="${SUBNET}" \
+      --tags setup-vms,setup-controls
+
+    # Those won't really change between runs, so update them during install
+    k8test/playbooks/update-secrets.yml \
+      -i k8test/cluster/inventory.yml
+
+    # Second, get the CCM running. Without it setting the node IPs, Cilium
+    # won't work.
+    deploy-ccm
+
+    # Finally, setup the cluster to completion (includes Cilium install)
+    k8test/playbooks/create-cluster.yml \
+      -e zone="$zone" \
+      -e ssh_key=k8test/cluster/ssh.pub \
+      -e control_count=2 \
+      -e worker_count=2 \
+      -e kubelet_extra_args='--cloud-provider=external' \
+      -e kubernetes="${KUBERNETES}" \
+      -e cluster_prefix="${CLUSTER_PREFIX}" \
+      -e subnet="${SUBNET}"
+  fi
+}
+
+# Build the latest image each time
+function build-image() {
+  k8test/playbooks/build-image.yml \
+    -i k8test/cluster/inventory.yml \
+    -e dockerfile=./Dockerfile \
+    -e tag="$IMAGE" \
+    -e extra='--build-arg=VERSION=test' \
+    -l controls
+}
+
+# Import an image from the host
+function import-image() {
+  k8test/playbooks/import-image.yml \
+    -i k8test/cluster/inventory.yml \
+    -e image="$PWD/image.tar"
+}
+
+# Verify imported image exists on all nodes
+function verify-image-import() {
+  echo ""
+  echo "=== Verifying CSI Image Import on All Nodes ==="
+  echo "Expected image: ${CSI_IMAGE}"
+  echo ""
+
+  # Show full image list from all nodes
+  echo "--- Full Image List on All Nodes ---"
+  ansible -i k8test/cluster/inventory.yml nodes \
+    -m shell \
+    -a "sudo nerdctl --namespace k8s.io images | grep -v '<none>' | grep -v 'REPOSITORY' || echo 'No images found'" \
+    --user ubuntu
+
+  echo ""
+  echo "--- CSI Image Check ---"
+
+  # Check for CSI image on each node and track failures
+  local missing_nodes=()
+  local node_list
+  node_list=$(ansible -i k8test/cluster/inventory.yml nodes --list-hosts 2>/dev/null | tail -n +2 || true)
+
+  for node in $node_list; do
+    if ! ansible -i k8test/cluster/inventory.yml "$node" \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi-plugin' || echo 'NOT_FOUND'" \
+      --user ubuntu 2>/dev/null | grep -q "cloudscale-csi-plugin"; then
+      missing_nodes+=("$node")
+      echo "❌ ${node}: CSI image NOT FOUND"
+    else
+      echo "✓ ${node}: CSI image found"
+    fi
+  done
+
+  echo ""
+
+  # Fail if any nodes are missing the image
+  if [[ ${#missing_nodes[@]} -gt 0 ]]; then
+    echo "=== IMAGE IMPORT VERIFICATION FAILED ==="
+    echo "Missing on nodes: ${missing_nodes[*]}"
+    echo ""
+    echo "This usually means:"
+    echo "  1. The image.tar file doesn't exist or is corrupted"
+    echo "  2. The import playbook failed on some nodes"
+    echo "  3. Hostname mismatch between inventory and actual VMs"
+    echo ""
+    exit 1
+  fi
+
+  echo "✓ All nodes have the CSI image"
+}
+
+# Deploy CCM from official GitHub release
+function deploy-ccm() {
+  export KUBECONFIG=k8test/cluster/admin.conf
+
+  echo "Deploying CCM from ${CCM_RELEASE_URL}..."
+  kubectl apply -f "${CCM_RELEASE_URL}"
+
+  echo "Waiting for CCM to be ready..."
+  kubectl -n kube-system rollout status daemonset/cloudscale-cloud-controller-manager --timeout=120s
+}
+
+# Deploy VolumeSnapshot CRDs and snapshot controller
+function deploy-snapshot-crds() {
+  export KUBECONFIG=k8test/cluster/admin.conf
+
+  echo "Installing VolumeSnapshot CRDs..."
+  kubectl apply -k "https://github.com/kubernetes-csi/external-snapshotter/client/config/crd?ref=v8.4.0"
+
+  echo "Installing snapshot controller..."
+  kubectl apply -k "https://github.com/kubernetes-csi/external-snapshotter/deploy/kubernetes/snapshot-controller?ref=v8.4.0"
+}
+
+# Deploy CSI using Helm chart with custom image
+function deploy-csi() {
+  api_url=$(echo "${CLOUDSCALE_API_URL-https://api.cloudscale.ch}" | sed 's|/v1||g')
+
+  export KUBECONFIG=k8test/cluster/admin.conf
+
+  # Parse CSI_IMAGE to extract tag
+  local image_tag="${CSI_IMAGE##*:}"
+
+  echo "Deploying CSI with image tag: ${image_tag}..."
+
+  # Generate manifest from Helm chart with custom image
+  helm template csi-cloudscale -n kube-system \
+    --set nameOverride=csi-cloudscale \
+    --set controller.image.tag="${image_tag}" \
+    --set node.image.tag="${image_tag}" \
+    --set cloudscale.apiUrl="${api_url}/" \
+    ./charts/csi-cloudscale | kubectl apply -n kube-system -f -
+
+  echo "Waiting for CSI controller to be ready..."
+  echo "  - Checking initial pod status..."
+  kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o wide
+
+  if ! kubectl -n kube-system rollout status statefulset/csi-cloudscale-controller --timeout=180s; then
+    echo "=== CSI Controller rollout FAILED ==="
+    echo ""
+    echo "--- Expected Image ---"
+    echo "Container: csi-cloudscale-plugin"
+    echo "Image: ${CSI_IMAGE}"
+    echo ""
+    echo "--- Pod Status ---"
+    kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o wide
+    echo ""
+    echo "--- Container States ---"
+    kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o jsonpath='{range .items[*]}{.metadata.name}: {.status.containerStatuses[*].state}{"\n"}{end}'
+    echo ""
+    echo "--- Pod Description (includes events) ---"
+    kubectl -n kube-system describe pods -l app=csi-cloudscale-controller
+    echo ""
+    echo "--- Images on Cluster Nodes ---"
+    ansible -i k8test/cluster/inventory.yml nodes \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi|REPOSITORY' || echo '  No CSI images found'" \
+      --user ubuntu
+    exit 1
+  fi
+
+  echo "Waiting for CSI node daemonset to be ready..."
+  echo "  - Checking node daemonset pod status..."
+  kubectl -n kube-system get pods -l app=csi-cloudscale-node -o wide
+
+  if ! kubectl -n kube-system rollout status daemonset/csi-cloudscale-node --timeout=300s; then
+    echo "=== CSI Node DaemonSet rollout FAILED ==="
+    echo ""
+    echo "--- Expected Image ---"
+    echo "Container: csi-cloudscale-plugin"
+    echo "Image: ${CSI_IMAGE}"
+    echo ""
+    echo "--- Pod Status ---"
+    kubectl -n kube-system get pods -l app=csi-cloudscale-node -o wide
+    echo ""
+    echo "--- Container States ---"
+    kubectl -n kube-system get pods -l app=csi-cloudscale-node -o jsonpath='{range .items[*]}{.metadata.name}: {.status.containerStatuses[*].state}{"\n"}{end}'
+    echo ""
+    echo "--- Pod Description (includes events) ---"
+    kubectl -n kube-system describe pods -l app=csi-cloudscale-node
+    echo ""
+    echo "--- Images on Cluster Nodes ---"
+    ansible -i k8test/cluster/inventory.yml nodes \
+      -m shell \
+      -a "sudo nerdctl --namespace k8s.io images | grep -E 'cloudscale-csi|REPOSITORY' || echo '  No CSI images found'" \
+      --user ubuntu
+    exit 1
+  fi
+}
+
+# Deploy both CCM and CSI components
+function deploy-components() {
+  echo "=== Deploying Components ==="
+  echo "IMAGE_SOURCE: ${IMAGE_SOURCE-build}"
+  echo "CSI_IMAGE: ${CSI_IMAGE}"
+  echo ""
+
+  # Deploy CCM first (required for node initialization and networking)
+  deploy-ccm
+
+  # Install VolumeSnapshot CRDs and snapshot controller (required for CSI driver)
+  deploy-snapshot-crds
+
+  # Import pre-built CSI image (used in CI via IMAGE_SOURCE=import)
+  if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
+    echo "Importing CSI image from image.tar..."
+    import-image
+    verify-image-import
+  fi
+
+  # Deploy CSI
+  deploy-csi
+}
+
+# Execute if not sourced
+if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
+
+  # The image name requires a slash in it, or Podman will add `localhost/` and
+  # confuse Kubernetes.
+  if [[ "$IMAGE" != *"/"* ]]; then
+    echo "\$IMAGE has no slash: $IMAGE"
+    exit 1
+  fi
+
+  first_run=$(test ! -f k8test/cluster/inventory.yml && echo "yes" || echo "no")
+
+  ensure-k8test
+  ensure-cluster
+
+  # Deploy components on both new and existing clusters. For new clusters,
+  # this happens after the full cluster bootstrap (including Cilium) is done.
+  deploy-components
+fi
