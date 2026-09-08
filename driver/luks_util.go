@@ -20,7 +20,6 @@ package driver
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -121,12 +120,12 @@ func getLuksContext(secrets map[string]string, context map[string]string, lifecy
 	}
 }
 
-func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []string, luksCtx LuksContext, log *logrus.Entry) (err error) {
+func luksFormat(source string, mkfsCmd string, mkfsArgs []string, ctx LuksContext, log *logrus.Entry) (err error) {
 	cryptsetupCmd, err := getCryptsetupCmd()
 	if err != nil {
 		return err
 	}
-	filename, err := writeLuksKey(ctx, luksCtx.EncryptionKey, log)
+	filename, err := writeLuksKey(ctx.EncryptionKey, log)
 	if err != nil {
 		return err
 	}
@@ -142,8 +141,8 @@ func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []s
 		"-v",
 		"--type=luks1",
 		"--batch-mode",
-		"--cipher", luksCtx.EncryptionCipher,
-		"--key-size", luksCtx.EncryptionKeySize,
+		"--cipher", ctx.EncryptionCipher,
+		"--key-size", ctx.EncryptionKeySize,
 		"--key-file", filename,
 		"luksFormat", source,
 	}
@@ -154,21 +153,21 @@ func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []s
 	}).Info("executing cryptsetup luksFormat command")
 
 	//nolint:gosec // G204: cryptsetup luksFormat is an intentional system command
-	out, err := exec.CommandContext(ctx, cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cryptsetup luksFormat failed: %v cmd: '%s %s' output: %q",
 			err, cryptsetupCmd, strings.Join(cryptsetupArgs, " "), string(out))
 	}
 
 	// open the luks partition and set up a mapping
-	opened, err := luksOpen(ctx, source, filename, luksCtx, log)
+	opened, err := luksOpen(source, filename, ctx, log)
 	if err != nil {
 		return fmt.Errorf("luksOpen during format failed: %w", err)
 	}
 
 	if opened {
 		defer func() {
-			if e := luksClose(ctx, luksCtx.VolumeName, log); e != nil {
+			if e := luksClose(ctx.VolumeName, log); e != nil {
 				log.Errorf("cannot close luks device: %s", e.Error())
 				if err == nil {
 					err = fmt.Errorf("luksClose after format failed: %w", e)
@@ -183,7 +182,7 @@ func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []s
 		if elem != source {
 			mkfsNewArgs[i] = elem
 		} else {
-			mkfsArgs[i] = "/dev/mapper/" + luksCtx.VolumeName
+			mkfsArgs[i] = "/dev/mapper/" + ctx.VolumeName
 		}
 	}
 
@@ -193,7 +192,7 @@ func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []s
 	}).Info("executing format command")
 
 	//nolint:gosec // G204: mkfs command is an intentional system command
-	mkfsOut, err := exec.CommandContext(ctx, mkfsCmd, mkfsArgs...).CombinedOutput()
+	mkfsOut, err := exec.Command(mkfsCmd, mkfsArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("formatting disk failed: %v cmd: '%s %s' output: %q",
 			err, mkfsCmd, strings.Join(mkfsArgs, " "), string(mkfsOut))
@@ -203,8 +202,8 @@ func luksFormat(ctx context.Context, source string, mkfsCmd string, mkfsArgs []s
 }
 
 // prepares a luks-encrypted volume for mounting and returns the path of the mapped volume
-func luksPrepareMount(ctx context.Context, source string, luksCtx LuksContext, log *logrus.Entry) (string, error) {
-	filename, err := writeLuksKey(ctx, luksCtx.EncryptionKey, log)
+func luksPrepareMount(source string, ctx LuksContext, log *logrus.Entry) (string, error) {
+	filename, err := writeLuksKey(ctx.EncryptionKey, log)
 	if err != nil {
 		return "", err
 	}
@@ -215,13 +214,13 @@ func luksPrepareMount(ctx context.Context, source string, luksCtx LuksContext, l
 	}()
 
 	// The mapping is intentionally kept open until NodeUnstageVolume.
-	if _, err := luksOpen(ctx, source, filename, luksCtx, log); err != nil {
+	if _, err := luksOpen(source, filename, ctx, log); err != nil {
 		return "", err
 	}
-	return "/dev/mapper/" + luksCtx.VolumeName, nil
+	return "/dev/mapper/" + ctx.VolumeName, nil
 }
 
-func luksClose(ctx context.Context, volume string, log *logrus.Entry) error {
+func luksClose(volume string, log *logrus.Entry) error {
 	cryptsetupCmd, err := getCryptsetupCmd()
 	if err != nil {
 		return err
@@ -234,7 +233,7 @@ func luksClose(ctx context.Context, volume string, log *logrus.Entry) error {
 	}).Info("executing cryptsetup close command")
 
 	//nolint:gosec // G204: cryptsetup close is an intentional system command
-	out, err := exec.CommandContext(ctx, cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("removing luks mapping failed: %v cmd: '%s %s' output: %q",
 			err, cryptsetupCmd, strings.Join(cryptsetupArgs, " "), string(out))
@@ -244,8 +243,8 @@ func luksClose(ctx context.Context, volume string, log *logrus.Entry) error {
 
 // checks if the given volume is formatted by checking if it is a luks volume and
 // if the luks volume, once opened, contains a filesystem
-func isLuksVolumeFormatted(ctx context.Context, volume string, luksCtx LuksContext, log *logrus.Entry) (formatted bool, err error) {
-	isLuksVolume, err := isLuks(ctx, volume)
+func isLuksVolumeFormatted(volume string, ctx LuksContext, log *logrus.Entry) (formatted bool, err error) {
+	isLuksVolume, err := isLuks(volume)
 	if err != nil {
 		return false, err
 	}
@@ -253,7 +252,7 @@ func isLuksVolumeFormatted(ctx context.Context, volume string, luksCtx LuksConte
 		return false, nil
 	}
 
-	filename, err := writeLuksKey(ctx, luksCtx.EncryptionKey, log)
+	filename, err := writeLuksKey(ctx.EncryptionKey, log)
 	if err != nil {
 		return false, err
 	}
@@ -263,13 +262,13 @@ func isLuksVolumeFormatted(ctx context.Context, volume string, luksCtx LuksConte
 		}
 	}()
 
-	opened, err := luksOpen(ctx, volume, filename, luksCtx, log)
+	opened, err := luksOpen(volume, filename, ctx, log)
 	if err != nil {
 		return false, err
 	}
 	if opened {
 		defer func() {
-			if e := luksClose(ctx, luksCtx.VolumeName, log); e != nil {
+			if e := luksClose(ctx.VolumeName, log); e != nil {
 				log.Errorf("cannot close luks device: %s", e.Error())
 				if err == nil {
 					err = fmt.Errorf("luksClose after format check failed: %w", e)
@@ -278,7 +277,7 @@ func isLuksVolumeFormatted(ctx context.Context, volume string, luksCtx LuksConte
 		}()
 	}
 
-	return isVolumeFormatted(ctx, volume, log)
+	return isVolumeFormatted(volume, log)
 }
 
 // luksOpen ensures that /dev/mapper/<ctx.VolumeName> exists and is backed by
@@ -287,8 +286,8 @@ func isLuksVolumeFormatted(ctx context.Context, volume string, luksCtx LuksConte
 // it validated and reused (false). Callers that registered a deferred
 // luksClose should gate it on this flag so they do not close a mapping they
 // did not open.
-func luksOpen(ctx context.Context, volume string, keyFile string, luksCtx LuksContext, log *logrus.Entry) (bool, error) {
-	mapperPath := "/dev/mapper/" + luksCtx.VolumeName
+func luksOpen(volume string, keyFile string, ctx LuksContext, log *logrus.Entry) (bool, error) {
+	mapperPath := "/dev/mapper/" + ctx.VolumeName
 	if _, statErr := os.Stat(mapperPath); statErr == nil {
 		// A mapping with this name already exists. Confirm that it is
 		// backed by the device we just resolved before reusing it.
@@ -297,7 +296,7 @@ func luksOpen(ctx context.Context, volume string, keyFile string, luksCtx LuksCo
 		// freshly attached volume. Once two staging paths share one
 		// device-mapper minor, GetDeviceMountRefs refuses every subsequent
 		// unstage and the node accumulates unrecoverable state.
-		inactive, backing, err := validateExistingLuksMapping(ctx, luksCtx.VolumeName, volume, cryptsetupStatus)
+		inactive, backing, err := validateExistingLuksMapping(ctx.VolumeName, volume, cryptsetupStatus)
 		if err != nil {
 			return false, err
 		}
@@ -324,7 +323,7 @@ func luksOpen(ctx context.Context, volume string, keyFile string, luksCtx LuksCo
 		"--batch-mode",
 		"luksOpen",
 		"--key-file", keyFile,
-		volume, luksCtx.VolumeName,
+		volume, ctx.VolumeName,
 	}
 	log.WithFields(logrus.Fields{
 		"cmd":  cryptsetupCmd,
@@ -332,7 +331,7 @@ func luksOpen(ctx context.Context, volume string, keyFile string, luksCtx LuksCo
 	}).Info("executing cryptsetup luksOpen command")
 
 	//nolint:gosec // G204: cryptsetup luksOpen is an intentional system command
-	out, err := exec.CommandContext(ctx, cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("cryptsetup luksOpen failed: %v cmd: '%s %s' output: %q",
 			err, cryptsetupCmd, strings.Join(cryptsetupArgs, " "), string(out))
@@ -341,7 +340,7 @@ func luksOpen(ctx context.Context, volume string, keyFile string, luksCtx LuksCo
 }
 
 // runs cryptsetup resize for a given volume (/dev/mapper/pvc-xyz)
-func luksResize(ctx context.Context, volume string, log *logrus.Entry) error {
+func luksResize(volume string, log *logrus.Entry) error {
 	cryptsetupCmd, err := getCryptsetupCmd()
 	if err != nil {
 		return err
@@ -354,7 +353,7 @@ func luksResize(ctx context.Context, volume string, log *logrus.Entry) error {
 	}).Info("executing cryptsetup resize command")
 
 	//nolint:gosec // G204: cryptsetup resize is an intentional system command
-	out, err := exec.CommandContext(ctx, cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cryptsetup resize failed: %v cmd: '%s %s' output: %q",
 			err, cryptsetupCmd, strings.Join(cryptsetupArgs, " "), string(out))
@@ -363,7 +362,7 @@ func luksResize(ctx context.Context, volume string, log *logrus.Entry) error {
 }
 
 // runs cryptsetup isLuks for a given volume
-func isLuks(ctx context.Context, volume string) (bool, error) {
+func isLuks(volume string) (bool, error) {
 	cryptsetupCmd, err := getCryptsetupCmd()
 	if err != nil {
 		return false, err
@@ -373,7 +372,7 @@ func isLuks(ctx context.Context, volume string) (bool, error) {
 	// cryptsetup isLuks exits with code 0 if the target is a luks volume; otherwise it returns
 	// a non-zero exit code which exec.Command interprets as an error
 	//nolint:gosec // G204: cryptsetup isLuks is an intentional system command
-	_, err = exec.CommandContext(ctx, cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
+	_, err = exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return false, nil
 	}
@@ -437,11 +436,10 @@ func parseCryptsetupStatus(out []byte) cryptsetupStatusInfo {
 // The statusFn parameter exists so tests can substitute a fake without
 // actually shelling out to cryptsetup.
 func validateExistingLuksMapping(
-	ctx context.Context,
 	mapperName, volume string,
-	statusFn func(context.Context, string) (cryptsetupStatusInfo, error),
+	statusFn func(string) (cryptsetupStatusInfo, error),
 ) (isInactive bool, backing string, err error) {
-	info, err := statusFn(ctx, mapperName)
+	info, err := statusFn(mapperName)
 	if err != nil {
 		return false, "", fmt.Errorf("luks mapping %s exists but cryptsetup status failed: %w",
 			mapperName, err)
@@ -478,13 +476,13 @@ func validateExistingLuksMapping(
 // case) is returned with info.isInactive == true and a nil error so callers
 // can distinguish it from real failures — mirroring the sentinel pattern in
 // ceph-csi's DeviceEncryptionStatus.
-func cryptsetupStatus(ctx context.Context, name string) (cryptsetupStatusInfo, error) {
+func cryptsetupStatus(name string) (cryptsetupStatusInfo, error) {
 	cryptsetupCmd, err := getCryptsetupCmd()
 	if err != nil {
 		return cryptsetupStatusInfo{}, err
 	}
 	//nolint:gosec // G204: cryptsetup status is an intentional system command
-	out, err := exec.CommandContext(ctx, cryptsetupCmd, "status", name).CombinedOutput()
+	out, err := exec.Command(cryptsetupCmd, "status", name).CombinedOutput()
 	info := parseCryptsetupStatus(out)
 	if err != nil {
 		if info.isInactive {
@@ -497,12 +495,12 @@ func cryptsetupStatus(ctx context.Context, name string) (cryptsetupStatusInfo, e
 }
 
 // check is a given mapping under /dev/mapper is a luks volume
-func isLuksMapping(ctx context.Context, volume string) (bool, string, error) {
+func isLuksMapping(volume string) (bool, string, error) {
 	if !strings.HasPrefix(volume, "/dev/mapper/") {
 		return false, "", nil
 	}
 	mappingName := volume[len("/dev/mapper/"):]
-	info, err := cryptsetupStatus(ctx, mappingName)
+	info, err := cryptsetupStatus(mappingName)
 	if err != nil {
 		return false, mappingName, err
 	}
@@ -526,8 +524,8 @@ func getCryptsetupCmd() (string, error) {
 
 // writes the given luks encryption key to a temporary file and returns the name of the temporary
 // file
-func writeLuksKey(ctx context.Context, key string, log *logrus.Entry) (string, error) {
-	if !checkTmpFs(ctx, "/tmp") {
+func writeLuksKey(key string, log *logrus.Entry) (string, error) {
+	if !checkTmpFs("/tmp") {
 		return "", errors.New("temporary directory /tmp is not a tmpfs volume; refusing to write luks key to a volume backed by a disk")
 	}
 	tmpFile, err := os.CreateTemp("/tmp", "luks-")
@@ -547,9 +545,9 @@ func writeLuksKey(ctx context.Context, key string, log *logrus.Entry) (string, e
 }
 
 // makes sure that the given directory is a tmpfs
-func checkTmpFs(ctx context.Context, dir string) bool {
+func checkTmpFs(dir string) bool {
 	//nolint:gosec // G204: df command for tmpfs check is an intentional system command
-	out, err := exec.CommandContext(ctx, "sh", "-c", "df -T "+dir+" | tail -n1 | awk '{print $2}'").CombinedOutput()
+	out, err := exec.Command("sh", "-c", "df -T "+dir+" | tail -n1 | awk '{print $2}'").CombinedOutput()
 	if err != nil {
 		return false
 	}

@@ -78,23 +78,23 @@ type volumeStatistics struct {
 // more than just mounting functionality by now.
 type Mounter interface {
 	// Format formats the source with the given filesystem type
-	Format(ctx context.Context, source, fsType string, luksContext LuksContext, log *logrus.Entry) error
+	Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error
 
 	// Mount mounts source to target with the given fstype and options.
-	Mount(ctx context.Context, source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error
+	Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error
 
 	// Unmount unmounts the given target
-	Unmount(ctx context.Context, target string, luksContext LuksContext, log *logrus.Entry) error
+	Unmount(target string, luksContext LuksContext, log *logrus.Entry) error
 
 	// IsFormatted checks whether the source device is formatted or not. It
 	// returns true if the source device is already formatted.
-	IsFormatted(ctx context.Context, source string, luksContext LuksContext, log *logrus.Entry) (bool, error)
+	IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error)
 
 	// GetMountInfo returns the mount currently at target, or nil if nothing
 	// is mounted there. Returns a non-nil error only on lookup failures
 	// (findmnt missing, JSON parse error, etc.). Callers that require
 	// correct mount propagation must check info.Propagation themselves.
-	GetMountInfo(ctx context.Context, target string, log *logrus.Entry) (*MountInfo, error)
+	GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error)
 
 	// Used to find a path in /dev/disk/by-id with a serial that we have from
 	// the cloudscale API.
@@ -102,7 +102,7 @@ type Mounter interface {
 
 	// GetStatistics returns capacity-related volume statistics for the given
 	// volume path.
-	GetStatistics(ctx context.Context, volumePath string) (volumeStatistics, error)
+	GetStatistics(volumePath string) (volumeStatistics, error)
 
 	// IsBlockDevice checks whether the device at the path is a block device
 	IsBlockDevice(volumePath string) (bool, error)
@@ -121,7 +121,7 @@ type Mounter interface {
 	GetDeviceName(mounter mount.Interface, mountPath string) (string, error)
 
 	FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entry) (string, error)
-	HasRequiredSize(ctx context.Context, log *logrus.Entry, path string, requiredSize int64) (bool, error)
+	HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error)
 }
 
 // TODO(arslan): this is Linux only for now. Refactor this into a package with
@@ -143,7 +143,7 @@ func newMounter() *mounter {
 	}
 }
 
-func (m *mounter) Format(ctx context.Context, source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
+func (m *mounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
 	mkfsCmd := fmt.Sprintf("mkfs.%s", fsType)
 
 	_, err := exec.LookPath(mkfsCmd)
@@ -179,8 +179,8 @@ func (m *mounter) Format(ctx context.Context, source, fsType string, luksContext
 			"args": mkfsArgs,
 		}).Info("executing format command")
 
-		//nolint:gosec // G204: mkfs command is an intentional system command
-		out, err := exec.CommandContext(ctx, mkfsCmd, mkfsArgs...).CombinedOutput()
+		//nolint:gosec // G204: intentional system command
+		out, err := exec.Command(mkfsCmd, mkfsArgs...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("formatting disk failed: %v cmd: '%s %s' output: %q",
 				err, mkfsCmd, strings.Join(mkfsArgs, " "), string(out))
@@ -192,14 +192,14 @@ func (m *mounter) Format(ctx context.Context, source, fsType string, luksContext
 	if err != nil {
 		return err
 	}
-	err = luksFormat(ctx, source, mkfsCmd, mkfsArgs, luksContext, log)
+	err = luksFormat(source, mkfsCmd, mkfsArgs, luksContext, log)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *mounter) Mount(ctx context.Context, source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
+func (m *mounter) Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
 	if source == "" {
 		return errors.New("source is not specified for mounting the volume")
 	}
@@ -234,7 +234,7 @@ func (m *mounter) Mount(ctx context.Context, source, target, fsType string, luks
 	}
 
 	if luksContext.EncryptionEnabled && luksContext.VolumeLifecycle == VolumeLifecycleNodeStageVolume {
-		luksSource, err := luksPrepareMount(ctx, source, luksContext, log)
+		luksSource, err := luksPrepareMount(source, luksContext, log)
 		if err != nil {
 			log.WithFields(logrus.Fields{
 				"error":  err.Error(),
@@ -280,7 +280,7 @@ func (m *mounter) Mount(ctx context.Context, source, target, fsType string, luks
 	return nil
 }
 
-func (m *mounter) Unmount(ctx context.Context, target string, luksContext LuksContext, log *logrus.Entry) error {
+func (m *mounter) Unmount(target string, luksContext LuksContext, log *logrus.Entry) error {
 	if target == "" {
 		return errors.New("target is not specified for unmounting the volume")
 	}
@@ -288,7 +288,7 @@ func (m *mounter) Unmount(ctx context.Context, target string, luksContext LuksCo
 	// Resolve the mounted source before tearing down so we can close any
 	// LUKS mapping that was backing it. Mount-propagation correctness is
 	// not Unmount's concern — a misconfigured mount must still be cleaned up.
-	info, err := m.GetMountInfo(ctx, target, log)
+	info, err := m.GetMountInfo(target, log)
 	if err != nil {
 		return fmt.Errorf("failed to get mount info for target %q: %v", target, err)
 	}
@@ -298,12 +298,12 @@ func (m *mounter) Unmount(ctx context.Context, target string, luksContext LuksCo
 	}
 
 	if luksContext.VolumeLifecycle == VolumeLifecycleNodeUnstageVolume && info != nil {
-		isLuksMapping, mappingName, err := isLuksMapping(ctx, info.Source)
+		isLuksMapping, mappingName, err := isLuksMapping(info.Source)
 		if err != nil {
 			return err
 		}
 		if isLuksMapping {
-			if err := luksClose(ctx, mappingName, log); err != nil {
+			if err := luksClose(mappingName, log); err != nil {
 				return err
 			}
 		}
@@ -312,19 +312,19 @@ func (m *mounter) Unmount(ctx context.Context, target string, luksContext LuksCo
 	return nil
 }
 
-func (m *mounter) IsFormatted(ctx context.Context, source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
+func (m *mounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	if !luksContext.EncryptionEnabled {
-		return isVolumeFormatted(ctx, source, log)
+		return isVolumeFormatted(source, log)
 	}
 
-	formatted, err := isLuksVolumeFormatted(ctx, source, luksContext, log)
+	formatted, err := isLuksVolumeFormatted(source, luksContext, log)
 	if err != nil {
 		return false, err
 	}
 	return formatted, nil
 }
 
-func isVolumeFormatted(ctx context.Context, source string, log *logrus.Entry) (bool, error) {
+func isVolumeFormatted(source string, log *logrus.Entry) (bool, error) {
 	if source == "" {
 		return false, errors.New("source is not specified")
 	}
@@ -346,8 +346,8 @@ func isVolumeFormatted(ctx context.Context, source string, log *logrus.Entry) (b
 	}).Info("checking if source is formatted")
 
 	exitCode := 0
-	//nolint:gosec // G204: blkid command is an intentional system command
-	cmd := exec.CommandContext(ctx, blkidCmd, blkidArgs...)
+	//nolint:gosec // G204: intentional system command
+	cmd := exec.Command(blkidCmd, blkidArgs...)
 	err = cmd.Run()
 	if err != nil {
 		exitError, ok := err.(*exec.ExitError)
@@ -365,7 +365,7 @@ func isVolumeFormatted(ctx context.Context, source string, log *logrus.Entry) (b
 	return true, nil
 }
 
-func (m *mounter) GetMountInfo(ctx context.Context, target string, log *logrus.Entry) (*MountInfo, error) {
+func (m *mounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
 	if target == "" {
 		return nil, errors.New("target is not specified for checking the mount")
 	}
@@ -386,8 +386,8 @@ func (m *mounter) GetMountInfo(ctx context.Context, target string, log *logrus.E
 		"args": findmntArgs,
 	}).Info("checking if target is mounted")
 
-	//nolint:gosec // G204: findmnt command is an intentional system command
-	out, err := exec.CommandContext(ctx, findmntCmd, findmntArgs...).CombinedOutput()
+	//nolint:gosec // G204: intentional system command
+	out, err := exec.Command(findmntCmd, findmntArgs...).CombinedOutput()
 	if err != nil {
 		// findmnt exits with non-zero exit status if it couldn't find anything
 		if strings.TrimSpace(string(out)) == "" {
@@ -489,7 +489,7 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(ctx context.Context, logge
 				"num_tries":       numTries,
 			}).Debug("FinalizeVolumeAttachmentAndFindPath: found device path")
 
-			devFsSerial, innerErr := getScsiSerial(ctx, resolved)
+			devFsSerial, innerErr := getScsiSerial(resolved)
 			if innerErr != nil {
 				logger.WithFields(logrus.Fields{
 					"disk_id_path":    diskIDPath,
@@ -515,7 +515,7 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(ctx context.Context, logge
 			"num_tries": numTries,
 		}).Debug("FinalizeVolumeAttachmentAndFindPath: device not found, probing")
 
-		probeAttachedVolume(ctx, logger)
+		probeAttachedVolume(logger)
 
 		numTries++
 		if numTries == 30 {
@@ -530,9 +530,9 @@ func (m *mounter) FinalizeVolumeAttachmentAndFindPath(ctx context.Context, logge
 // doesnt. It is the callers responsibility to verify the existence of this
 // tool. Calls scsi_id on the given devicePath to get the serial number reported
 // by that device.
-func getScsiSerial(ctx context.Context, devicePath string) (string, error) {
+func getScsiSerial(devicePath string) (string, error) {
 	//nolint:gosec // G204: scsi_id command is intentional for device identification
-	out, err := exec.CommandContext(ctx,
+	out, err := exec.Command(
 		"/usr/lib/udev/scsi_id",
 		"--page=0x83",
 		"--whitelisted",
@@ -562,12 +562,12 @@ func parseScsiSerial(output string) (string, error) {
 	return substrings[1], nil
 }
 
-func runCmdWithTimeout(ctx context.Context, name string, args []string, logger *logrus.Entry, timeout time.Duration) {
-	cmdCtx, cancel := context.WithTimeout(ctx, timeout)
+func runCmdWithTimeout(name string, args []string, logger *logrus.Entry, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	//nolint:gosec // G204: command with timeout is an intentional system command
-	out, err := exec.CommandContext(cmdCtx, name, args...).CombinedOutput()
+	//nolint:gosec // G204: intentional system command
+	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
 	if err != nil {
 		logger.WithError(err).
 			WithFields(logrus.Fields{"out": out, "name": name, "args": args}).
@@ -577,7 +577,7 @@ func runCmdWithTimeout(ctx context.Context, name string, args []string, logger *
 
 var probeLock sync.Mutex
 
-func probeAttachedVolume(ctx context.Context, logger *logrus.Entry) {
+func probeAttachedVolume(logger *logrus.Entry) {
 	const triggerTimeout = 15 * time.Second
 
 	// host rescan and udevadm are global actions and if run concurrently, may run into issues with
@@ -590,10 +590,10 @@ func probeAttachedVolume(ctx context.Context, logger *logrus.Entry) {
 	scsiHostRescan(logger)
 
 	logger.Debug("probeAttachedVolume: running udevadm trigger")
-	runCmdWithTimeout(ctx, "udevadm", []string{"trigger"}, logger, triggerTimeout)
+	runCmdWithTimeout("udevadm", []string{"trigger"}, logger, triggerTimeout)
 
 	logger.Debug("probeAttachedVolume: running udevadm settle")
-	runCmdWithTimeout(ctx, "udevadm", []string{"settle"}, logger, triggerTimeout)
+	runCmdWithTimeout("udevadm", []string{"settle"}, logger, triggerTimeout)
 
 	logger.Debugf("probeAttachedVolume: done")
 }
@@ -653,10 +653,10 @@ func (m *mounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.Entr
 	return resolved, nil
 }
 
-func (m *mounter) HasRequiredSize(ctx context.Context, log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+func (m *mounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
 	log.Infof("Checking device size: %s", path)
 	//nolint:gosec // G204: blockdev command is an intentional system command
-	output, err := exec.CommandContext(ctx, "blockdev", "--getsize64", path).CombinedOutput()
+	output, err := exec.Command("blockdev", "--getsize64", path).CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", path, string(output), err)
 	}
@@ -669,7 +669,7 @@ func (m *mounter) HasRequiredSize(ctx context.Context, log *logrus.Entry, path s
 	return gotSizeBytes == requiredSize, nil
 }
 
-func (m *mounter) GetStatistics(ctx context.Context, volumePath string) (volumeStatistics, error) {
+func (m *mounter) GetStatistics(volumePath string) (volumeStatistics, error) {
 	isBlock, err := m.IsBlockDevice(volumePath)
 	if err != nil {
 		return volumeStatistics{}, fmt.Errorf("failed to determine if volume %s is block device: %v", volumePath, err)
@@ -678,7 +678,7 @@ func (m *mounter) GetStatistics(ctx context.Context, volumePath string) (volumeS
 	if isBlock {
 		// See http://man7.org/linux/man-pages/man8/blockdev.8.html for details
 		//nolint:gosec // G204: blockdev command is an intentional system command
-		output, err := exec.CommandContext(ctx, "blockdev", "getsize64", volumePath).CombinedOutput()
+		output, err := exec.Command("blockdev", "getsize64", volumePath).CombinedOutput()
 		if err != nil {
 			return volumeStatistics{}, fmt.Errorf("error when getting size of block volume at path %s: output: %s, err: %v", volumePath, string(output), err)
 		}

@@ -26,6 +26,6 @@ jobs:
           go-version-file: go.mod
 
       - name: Check Go modules
-        run: go mod tidy
+        run: go mod tidy -diff
       - name: Running Tests
         run: make test TESTARGS='-race'

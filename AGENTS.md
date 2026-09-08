@@ -10,6 +10,18 @@ information, see [`README.md`](README.md). For contribution guidelines, see
 - [`README.md`](README.md) — project overview, installation, volume parameters
 - [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) — PR flow, required local checks
 - [`CHANGELOG.md`](CHANGELOG.md) — version history
+- [`csi-spec.md`](csi-spec.md) — **authoritative CSI specification — MUST be consulted for all RPC implementations, error handling, idempotency requirements.**
+
+## CSI Specification Guidance
+
+The [`csi-spec.md`](csi-spec.md) is the authoritative source for this driver's behavior. **Always consult it when:**
+
+- Implementing or modifying any RPC method in `driver/controller.go`, `driver/node.go`, or `driver/identity.go`.
+- Determining which gRPC error code to return for a failure condition.
+- Understanding idempotency requirements for an operation.
+- Handling edge cases (missing fields, concurrent operations, timeout recovery).
+
+**When the spec conflicts with existing code, highlight this very clearly**.
 
 ## What to run after a change
 

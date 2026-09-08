@@ -122,11 +122,11 @@ type fakeMounter struct {
 	mu         sync.RWMutex
 }
 
-func (f *fakeMounter) Format(ctx context.Context, source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
+func (f *fakeMounter) Format(source, fsType string, luksContext LuksContext, log *logrus.Entry) error {
 	return nil
 }
 
-func (f *fakeMounter) Mount(ctx context.Context, source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
+func (f *fakeMounter) Mount(source, target, fsType string, luksContext LuksContext, log *logrus.Entry, options ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mounted[target] = source
@@ -147,7 +147,7 @@ func (f *fakeMounter) Mount(ctx context.Context, source, target, fsType string, 
 	return nil
 }
 
-func (f *fakeMounter) Unmount(ctx context.Context, target string, luksContext LuksContext, log *logrus.Entry) error {
+func (f *fakeMounter) Unmount(target string, luksContext LuksContext, log *logrus.Entry) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.mounted, target)
@@ -169,7 +169,7 @@ func (f *fakeMounter) FindAbsoluteDeviceByIDPath(volumeName string, log *logrus.
 	return "/dev/sdb", nil
 }
 
-func (f *fakeMounter) IsFormatted(ctx context.Context, source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
+func (f *fakeMounter) IsFormatted(source string, luksContext LuksContext, log *logrus.Entry) (bool, error) {
 	return true, nil
 }
 
@@ -199,7 +199,7 @@ func (f *fakeMounter) GetFilesystemDeviceNumber(path string) (uint64, error) {
 	}
 	return n, nil
 }
-func (f *fakeMounter) GetMountInfo(ctx context.Context, target string, log *logrus.Entry) (*MountInfo, error) {
+func (f *fakeMounter) GetMountInfo(target string, log *logrus.Entry) (*MountInfo, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	source, ok := f.mounted[target]
@@ -210,7 +210,7 @@ func (f *fakeMounter) GetMountInfo(ctx context.Context, target string, log *logr
 }
 
 func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
-	info, err := f.GetMountInfo(context.Background(), path, nil)
+	info, err := f.GetMountInfo(path, nil)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +220,7 @@ func (f *fakeMounter) checkMountPath(path string) (sanity.PathKind, error) {
 	return sanity.PathIsNotFound, nil
 }
 
-func (f *fakeMounter) GetStatistics(ctx context.Context, volumePath string) (volumeStatistics, error) {
+func (f *fakeMounter) GetStatistics(volumePath string) (volumeStatistics, error) {
 	return volumeStatistics{
 		availableBytes: 3 * GB,
 		totalBytes:     10 * GB,
@@ -232,7 +232,7 @@ func (f *fakeMounter) GetStatistics(ctx context.Context, volumePath string) (vol
 	}, nil
 }
 
-func (f *fakeMounter) HasRequiredSize(ctx context.Context, log *logrus.Entry, path string, requiredSize int64) (bool, error) {
+func (f *fakeMounter) HasRequiredSize(log *logrus.Entry, path string, requiredSize int64) (bool, error) {
 	return true, nil
 }
 

@@ -229,10 +229,8 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	// Verify snapshot exists and get its properties, must return NotFound when snapshot does not exist.
 	snapshot, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, sourceSnapshotID)
 	if err != nil {
-		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
-			if errorResponse.StatusCode == http.StatusNotFound {
-				return nil, status.Errorf(codes.NotFound, "source snapshot %s not found", sourceSnapshotID)
-			}
+		if isNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "source snapshot %s not found: %v", sourceSnapshotID, err)
 		}
 		return nil, status.Errorf(codes.Internal, "failed to get source snapshot: %v", err)
 	}
@@ -240,6 +238,9 @@ func (d *Driver) createVolumeFromSnapshot(ctx context.Context, req *csi.CreateVo
 	// Fetch source volume to determine storage type
 	sourceVolume, err := d.cloudscaleClient.Volumes.Get(ctx, snapshot.SourceVolume.UUID)
 	if err != nil {
+		if isNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "source volume %s not found: %v", snapshot.SourceVolume.UUID, err)
+		}
 		return nil, status.Errorf(codes.Internal, "failed to get source volume for snapshot: %v", err)
 	}
 
@@ -417,17 +418,16 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 
 	err := d.cloudscaleClient.Volumes.Delete(ctx, req.VolumeId)
 	if err != nil {
-		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
-			if errorResponse.StatusCode == http.StatusNotFound {
-				// To make it idempotent, the volume might already have been
-				// deleted, so a 404 is ok.
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  errorResponse,
-				}).Debug("assuming volume is already deleted")
-				return &csi.DeleteVolumeResponse{}, nil
-			}
+		if isNotFound(err) {
+			// To make it idempotent, the volume might already have been
+			// deleted, so a 404 is ok.
+			ll.WithFields(logrus.Fields{
+				"error": err,
+			}).Debug("assuming volume is already deleted")
+			return &csi.DeleteVolumeResponse{}, nil
+		}
 
+		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
 			ll.WithFields(logrus.Fields{
 				"status_code": errorResponse.StatusCode,
 				"error":       err,
@@ -442,7 +442,7 @@ func (d *Driver) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest)
 				return nil, status.Error(codes.FailedPrecondition, "volume has existing snapshots that must be deleted first")
 			}
 		}
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to delete volume: %v", err)
 	}
 
 	ll.Info("volume is deleted")
@@ -488,7 +488,11 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 	// which would cause a stale VolumeAttachment and Multi-Attach errors.
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		return nil, reraiseNotFound(err, ll, "fetch volume for publish")
+		if isNotFound(err) {
+			ll.Warn("volume not found for publish")
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch volume for publish: %v", err)
 	}
 
 	if volume.ServerUUIDs != nil && len(*volume.ServerUUIDs) > 0 {
@@ -521,8 +525,11 @@ func (d *Driver) ControllerPublishVolume(ctx context.Context, req *csi.Controlle
 		if maxVolumesPerServerErrorMessageRe.MatchString(err.Error()) {
 			return nil, status.Error(codes.ResourceExhausted, err.Error())
 		}
-
-		return nil, reraiseNotFound(err, ll, "attaching volume")
+		if isNotFound(err) {
+			ll.Warn("volume not found for attach")
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "failed to attach volume: %v", err)
 	}
 
 	ll.Info("volume is attached")
@@ -557,13 +564,11 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	// check if volume exist before trying to detach it
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
-			if errorResponse.StatusCode == http.StatusNotFound {
-				ll.Info("assuming volume is detached because it does not exist")
-				return &csi.ControllerUnpublishVolumeResponse{}, nil
-			}
+		if isNotFound(err) {
+			ll.Info("assuming volume is detached because it does not exist")
+			return &csi.ControllerUnpublishVolumeResponse{}, nil
 		}
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to fetch volume for unpublish: %v", err)
 	}
 
 	isAttachedToNode := false
@@ -592,7 +597,11 @@ func (d *Driver) ControllerUnpublishVolume(ctx context.Context, req *csi.Control
 	}
 	err = d.cloudscaleClient.Volumes.Update(ctx, req.VolumeId, detachRequest)
 	if err != nil {
-		return nil, reraiseNotFound(err, ll, "unpublish volume")
+		if isNotFound(err) {
+			ll.Warn("volume not found during unpublish - unexpected disappearance")
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "failed to detach volume: %v", err)
 	}
 
 	ll.Info("volume is detached")
@@ -621,7 +630,10 @@ func (d *Driver) ValidateVolumeCapabilities(ctx context.Context, req *csi.Valida
 	// check if volume exist before trying to validate it it
 	_, err := d.cloudscaleClient.Volumes.Get(ctx, req.VolumeId)
 	if err != nil {
-		return nil, reraiseNotFound(err, ll, "fetch volume to validate capabilities")
+		if isNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch volume for capability validation: %v", err)
 	}
 
 	// if it's not supported (i.e: wrong region), we shouldn't override it
@@ -819,7 +831,7 @@ func (d *Driver) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequ
 				"error":       err,
 			}).Warn("cloudscale API returned error during snapshot creation")
 
-			if errorResponse.StatusCode == http.StatusNotFound {
+			if isNotFound(err) {
 				return nil, status.Errorf(codes.NotFound, "source volume %s not found: %v", req.SourceVolumeId, err)
 			}
 			if errorResponse.StatusCode == http.StatusBadRequest && maxSnapshotsPerVolumeErrorMessageRe.MatchString(err.Error()) {
@@ -857,18 +869,15 @@ func (d *Driver) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequ
 	// Cloudscale handles the deletion asynchronously. The operation is idempotent.
 	err := d.cloudscaleClient.VolumeSnapshots.Delete(ctx, req.SnapshotId)
 	if err != nil {
-		if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
-			if errorResponse.StatusCode == http.StatusNotFound {
-				// To make it idempotent, the snapshot might already have been
-				// deleted, so a 404 is ok.
-				ll.WithFields(logrus.Fields{
-					"error": err,
-					"resp":  errorResponse,
-				}).Debug("assuming snapshot is already deleted")
-				return &csi.DeleteSnapshotResponse{}, nil
-			}
+		if isNotFound(err) {
+			// To make it idempotent, the snapshot might already have been
+			// deleted, so a 404 is ok.
+			ll.WithFields(logrus.Fields{
+				"error": err,
+			}).Debug("assuming snapshot is already deleted")
+			return &csi.DeleteSnapshotResponse{}, nil
 		}
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to delete snapshot: %v", err)
 	}
 
 	ll.Info("snapshot is deleted")
@@ -890,8 +899,7 @@ func (d *Driver) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsReques
 	if req.SnapshotId != "" {
 		snap, err := d.cloudscaleClient.VolumeSnapshots.Get(ctx, req.SnapshotId)
 		if err != nil {
-			var errResp *cloudscale.ErrorResponse
-			if errors.As(err, &errResp) && errResp.StatusCode == http.StatusNotFound {
+			if isNotFound(err) {
 				// Per CSI spec: if snapshot_id is specified and not found, return empty.
 				return &csi.ListSnapshotsResponse{}, nil
 			}
@@ -996,7 +1004,10 @@ func (d *Driver) ControllerExpandVolume(ctx context.Context, req *csi.Controller
 
 	volume, err := d.cloudscaleClient.Volumes.Get(ctx, volID)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "ControllerExpandVolume could not retrieve existing volume: %v", err)
+		if isNotFound(err) {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Errorf(codes.Internal, "failed to fetch volume for expansion: %v", err)
 	}
 
 	resizeGigaBytes, err := calculateStorageGB(req.GetCapacityRange(), volume.Type)
@@ -1159,19 +1170,10 @@ func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
 	return violations.List()
 }
 
-func reraiseNotFound(err error, log *logrus.Entry, operation string) error {
-	if errorResponse, ok := errors.AsType[*cloudscale.ErrorResponse](err); ok {
-		lt := log.WithFields(logrus.Fields{
-			"error":         err,
-			"errorResponse": errorResponse,
-		})
-		if errorResponse.StatusCode == http.StatusNotFound {
-			lt.Warnf("%q: Server or volume not found", operation)
-			return status.Error(codes.NotFound, err.Error())
-		}
-		lt.Warnf("%q: operation failed", operation)
-		return status.Errorf(codes.Aborted, "%s: Request failed", operation)
-	}
-	log.Warnf("%q: random error", operation)
-	return status.Errorf(codes.Aborted, "%s: Random error", operation)
+// isNotFound returns true if the error indicates a resource was not found.
+// Per CSI spec, NotFound errors should be returned when a referenced resource
+// (volume, snapshot, node) does not exist.
+func isNotFound(err error) bool {
+	errResp, ok := errors.AsType[*cloudscale.ErrorResponse](err)
+	return ok && errResp.StatusCode == http.StatusNotFound
 }
