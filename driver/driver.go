@@ -166,6 +166,11 @@ func (d *Driver) Run(ctx context.Context) error {
 	csi.RegisterControllerServer(d.srv, d)
 	csi.RegisterNodeServer(d.srv, d)
 
+	go func() {
+		<-ctx.Done()
+		d.Stop()
+	}()
+
 	d.ready = true // we're now ready to go!
 	d.log.WithField("addr", addr).Info("server started")
 	return d.srv.Serve(listener)
@@ -178,7 +183,7 @@ func (d *Driver) Stop() {
 	d.readyMu.Unlock()
 
 	d.log.Info("server stopped")
-	d.srv.Stop()
+	d.srv.GracefulStop()
 }
 
 // GetVersion returns the current release version, as inserted at build time.

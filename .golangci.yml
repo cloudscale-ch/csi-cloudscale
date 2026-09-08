@@ -20,7 +20,10 @@ linters:
     - modernize # suggest simplifications to Go code, using modern language and library features
     - misspell # spelling checks
     - nakedret  # naked returns (named return parameters and an empty return)
-    - noctx  # http requests without context.Context
+    # Context cancellation is not safe for state-changing system commands (luksOpen, luksClose, cryptsetup, mkfs, etc.)
+    # because cancellation creates uncertainty about the final system state.
+    # These operations must run to completion or fail definitively.
+    # - noctx  # http requests without context.Context
     - predeclared # shadowing predeclared identifiers
     - revive # better version of golint
     - staticcheck # many static checks
