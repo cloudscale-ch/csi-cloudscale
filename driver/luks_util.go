@@ -152,6 +152,7 @@ func luksFormat(source string, mkfsCmd string, mkfsArgs []string, ctx LuksContex
 		"args": cryptsetupArgs,
 	}).Info("executing cryptsetup luksFormat command")
 
+	//nolint:gosec // G204: cryptsetup luksFormat is an intentional system command
 	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cryptsetup luksFormat failed: %v cmd: '%s %s' output: %q",
@@ -190,6 +191,7 @@ func luksFormat(source string, mkfsCmd string, mkfsArgs []string, ctx LuksContex
 		"args": mkfsArgs,
 	}).Info("executing format command")
 
+	//nolint:gosec // G204: mkfs command is an intentional system command
 	mkfsOut, err := exec.Command(mkfsCmd, mkfsArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("formatting disk failed: %v cmd: '%s %s' output: %q",
@@ -230,6 +232,7 @@ func luksClose(volume string, log *logrus.Entry) error {
 		"args": cryptsetupArgs,
 	}).Info("executing cryptsetup close command")
 
+	//nolint:gosec // G204: cryptsetup close is an intentional system command
 	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("removing luks mapping failed: %v cmd: '%s %s' output: %q",
@@ -241,11 +244,11 @@ func luksClose(volume string, log *logrus.Entry) error {
 // checks if the given volume is formatted by checking if it is a luks volume and
 // if the luks volume, once opened, contains a filesystem
 func isLuksVolumeFormatted(volume string, ctx LuksContext, log *logrus.Entry) (formatted bool, err error) {
-	isLuks, err := isLuks(volume)
+	isLuksVolume, err := isLuks(volume)
 	if err != nil {
 		return false, err
 	}
-	if !isLuks {
+	if !isLuksVolume {
 		return false, nil
 	}
 
@@ -326,6 +329,8 @@ func luksOpen(volume string, keyFile string, ctx LuksContext, log *logrus.Entry)
 		"cmd":  cryptsetupCmd,
 		"args": cryptsetupArgs,
 	}).Info("executing cryptsetup luksOpen command")
+
+	//nolint:gosec // G204: cryptsetup luksOpen is an intentional system command
 	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("cryptsetup luksOpen failed: %v cmd: '%s %s' output: %q",
@@ -347,6 +352,7 @@ func luksResize(volume string, log *logrus.Entry) error {
 		"args": cryptsetupArgs,
 	}).Info("executing cryptsetup resize command")
 
+	//nolint:gosec // G204: cryptsetup resize is an intentional system command
 	out, err := exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cryptsetup resize failed: %v cmd: '%s %s' output: %q",
@@ -365,6 +371,7 @@ func isLuks(volume string) (bool, error) {
 
 	// cryptsetup isLuks exits with code 0 if the target is a luks volume; otherwise it returns
 	// a non-zero exit code which exec.Command interprets as an error
+	//nolint:gosec // G204: cryptsetup isLuks is an intentional system command
 	_, err = exec.Command(cryptsetupCmd, cryptsetupArgs...).CombinedOutput()
 	if err != nil {
 		return false, nil
@@ -474,6 +481,7 @@ func cryptsetupStatus(name string) (cryptsetupStatusInfo, error) {
 	if err != nil {
 		return cryptsetupStatusInfo{}, err
 	}
+	//nolint:gosec // G204: cryptsetup status is an intentional system command
 	out, err := exec.Command(cryptsetupCmd, "status", name).CombinedOutput()
 	info := parseCryptsetupStatus(out)
 	if err != nil {
@@ -538,6 +546,7 @@ func writeLuksKey(key string, log *logrus.Entry) (string, error) {
 
 // makes sure that the given directory is a tmpfs
 func checkTmpFs(dir string) bool {
+	//nolint:gosec // G204: df command for tmpfs check is an intentional system command
 	out, err := exec.Command("sh", "-c", "df -T "+dir+" | tail -n1 | awk '{print $2}'").CombinedOutput()
 	if err != nil {
 		return false
