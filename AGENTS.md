@@ -70,8 +70,8 @@ The [`csi-spec.md`](csi-spec.md) is the authoritative source for this driver's b
 - Unit tests live next to the code they exercise (`*_test.go` in `driver/`).
 - Tests use [testify](https://github.com/stretchr/testify) for assertions.
 - The fake cloudscale client is implemented in `driver/driver_test.go`.
-- Run `make test` to execute all unit tests with race detection.
-- Integration tests require a real cloudscale.ch account and are run via
+- Run `make test` to execute all unit tests. If race detection is wished, add it via TESTARGS="-race".
+- Integration tests require a cloudscale.ch account and are run via
   `make test-integration`. Do not run integration tests as an agent. Always ask the user to run them for you.
 
 ## Release process
