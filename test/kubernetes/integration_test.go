@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -1510,19 +1511,21 @@ func TestVolumeStats(t *testing.T) {
 }
 
 func setup() error {
-	// if you want to change the loading rules (which files in which order),
-	// you can do so here
-	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	// Kubernetes client
+	k8test, ok := os.LookupEnv("K8TEST_PATH")
+	if !ok {
+		log.Fatalf("could not find K8TEST_PATH environment variable\n")
+	}
 
-	// if you want to change override values or bind them to flags, there are
-	// methods to help you
-	configOverrides := &clientcmd.ConfigOverrides{}
-
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
-	var err error
-	config, err = kubeConfig.ClientConfig()
+	path := filepath.Join(k8test, "cluster", "admin.conf")
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read kubeconfig at path %q: %w", path, err)
+	}
+
+	config, err = clientcmd.RESTConfigFromKubeConfig(data)
+	if err != nil {
+		return fmt.Errorf("failed to apply kubeconfig at path %q: %w", path, err)
 	}
 
 	// create the clientset
@@ -2118,7 +2121,7 @@ func getNodeName(podNamespace string, podName string) (string, error) {
 }
 
 // returns the diskinfo for the volume with the given name mounted into the given pod
-func getVolumeInfo(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, error) {
+func getVolumeInfoOnce(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, error) {
 	node, err := getNodeName(pod.Namespace, pod.Name)
 	if err != nil {
 		return DiskInfo{}, err
@@ -2133,6 +2136,42 @@ func getVolumeInfo(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, erro
 		}
 	}
 	return DiskInfo{}, fmt.Errorf("cannot find volume with name %v on node %v", volumeName, node)
+}
+
+func getVolumeInfo(t *testing.T, pod *v1.Pod, volumeName string) (DiskInfo, error) {
+	start := time.Now()
+	var lastErr error
+
+	for {
+		select {
+		case <-t.Context().Done():
+			t.Logf("test context canceled while waiting for volume %s: %v", volumeName, t.Context().Err())
+			return DiskInfo{}, lastErr
+		default:
+		}
+
+		disk, err := getVolumeInfoOnce(t, pod, volumeName)
+		if err == nil {
+			return disk, nil
+		}
+
+		lastErr = err
+		elapsed := time.Since(start)
+		if elapsed >= 120*time.Second {
+			t.Logf("timeout waiting for volume %s after %v: %v", volumeName, elapsed, lastErr)
+			return DiskInfo{}, lastErr
+		}
+
+		t.Logf("waiting for volume %s to be accessible (%v elapsed): %v", volumeName, elapsed, lastErr)
+		timer := time.NewTimer(5 * time.Second)
+		select {
+		case <-t.Context().Done():
+			timer.Stop()
+			t.Logf("test context canceled while waiting for volume %s after %v: %v", volumeName, elapsed, lastErr)
+			return DiskInfo{}, lastErr
+		case <-timer.C:
+		}
+	}
 }
 
 // inspects the node and returns information about the disks from the node's perspective
