@@ -33,14 +33,14 @@ The [`csi-spec.md`](csi-spec.md) is the authoritative source for this driver's b
 
 ## Project structure
 
-| Directory/File              | Purpose                                           |
-|-----------------------------|---------------------------------------------------|
-| `cmd/cloudscale-csi-plugin/` | Binary entry point and Dockerfile                |
-| `driver/`                    | CSI driver implementation (Controller, Node, etc.) |
-| `charts/csi-cloudscale/`     | Helm chart for deployment                        |
-| `deploy/kubernetes/releases/`| Pre-rendered Kubernetes manifests                |
-| `examples/kubernetes/`       | Example StorageClasses and PVCs                  |
-| `test/kubernetes/`           | Integration tests                                |
+| Directory/File                | Purpose                                            |
+|-------------------------------|----------------------------------------------------|
+| `cmd/cloudscale-csi-plugin/`  | Binary entry point                                 |
+| `driver/`                     | CSI driver implementation (Controller, Node, etc.) |
+| `charts/csi-cloudscale/`      | Helm chart for deployment                          |
+| `deploy/kubernetes/releases/` | Pre-rendered Kubernetes manifests                  |
+| `examples/kubernetes/`        | Example StorageClasses and PVCs                    |
+| `test/kubernetes/`            | Integration tests                                  |
 
 ## Key components
 

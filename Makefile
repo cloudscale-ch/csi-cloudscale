@@ -1,6 +1,6 @@
 NAME=cloudscale-csi-plugin
 OS ?= linux
-GO_VERSION := $(shell awk '/^go/ {print $$2}' go.mod)
+
 GIT_TREE_STATE ?= $(shell git status --porcelain 2>/dev/null | grep -q . && echo "dirty" || echo "clean")
 COMMIT ?= $(shell git rev-parse HEAD)
 BRANCH ?= $(shell git rev-parse --abbrev-ref HEAD)
@@ -94,7 +94,13 @@ test: vet ## Run tests.
 .PHONY: test-integration
 test-integration: ## Run integration tests
 	@echo "==> Started integration tests"
-	K8TEST_PATH=${PWD}/k8test go test -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...
+	@if [ -f "$(PWD)/k8test/cluster/admin.conf" ]; then \
+		echo "==> Found k8test cluster config at $(PWD)/k8test/cluster/admin.conf, using k8test kubeconfig"; \
+		KUBECONFIG=$(PWD)/k8test/cluster/admin.conf go test -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...; \
+	else \
+		echo "==> No k8test found, using standard kubeconfig loading"; \
+		go test -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...; \
+	fi
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -123,7 +129,7 @@ build: ## Build the docker image
 		--build-arg VERSION="$(VERSION)" \
 		--build-arg COMMIT="$(COMMIT)" \
 		--build-arg GIT_TREE_STATE="$(GIT_TREE_STATE)" \
-		-f cmd/cloudscale-csi-plugin/Dockerfile .
+		-f Dockerfile .
 
 .PHONY: push
 push: ## Push docker image to registry

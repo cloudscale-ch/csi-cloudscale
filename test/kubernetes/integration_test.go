@@ -14,7 +14,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -104,17 +103,13 @@ func TestMain(m *testing.M) {
 }
 
 func TestNode_Zone_Annotation(t *testing.T) {
-	labelSelector := "node-role.kubernetes.io/worker=true"
+	labelSelector := "csi.cloudscale.ch/zone"
 	nodes, err := client.CoreV1().Nodes().List(context.Background(), metav1.ListOptions{
 		LabelSelector: labelSelector,
 	})
 	assert.NoError(t, err)
 
-	if !(len(nodes.Items) > 0) {
-		t.Skipf("Could not find at least one node with label %s", labelSelector)
-		return
-	}
-
+	assert.Greater(t, len(nodes.Items), 0)
 	for _, node := range nodes.Items {
 		assert.Contains(t, []string{"rma1", "lpg1"}, node.Labels["csi.cloudscale.ch/zone"])
 	}
@@ -1511,21 +1506,19 @@ func TestVolumeStats(t *testing.T) {
 }
 
 func setup() error {
-	// Kubernetes client
-	k8test, ok := os.LookupEnv("K8TEST_PATH")
-	if !ok {
-		log.Fatalf("could not find K8TEST_PATH environment variable\n")
-	}
+	// if you want to change the loading rules (which files in which order),
+	// you can do so here
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 
-	path := filepath.Join(k8test, "cluster", "admin.conf")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to read kubeconfig at path %q: %w", path, err)
-	}
+	// if you want to change override values or bind them to flags, there are
+	// methods to help you
+	configOverrides := &clientcmd.ConfigOverrides{}
 
-	config, err = clientcmd.RESTConfigFromKubeConfig(data)
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+	var err error
+	config, err = kubeConfig.ClientConfig()
 	if err != nil {
-		return fmt.Errorf("failed to apply kubeconfig at path %q: %w", path, err)
+		return err
 	}
 
 	// create the clientset

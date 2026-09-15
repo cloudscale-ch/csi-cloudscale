@@ -117,8 +117,7 @@ function build-image() {
     -i k8test/cluster/inventory.yml \
     -e dockerfile=./Dockerfile \
     -e tag="$IMAGE" \
-    -e extra='--build-arg=VERSION=test' \
-    -l controls
+    -e extra='--build-arg=VERSION=test'
 }
 
 # Import an image from the host
@@ -145,7 +144,7 @@ function deploy-ccm() {
 }
 
 # Deploy VolumeSnapshot CRDs and snapshot controller
-function deploy-snapshot-crds() {
+function deploy-snapshot-components() {
   export KUBECONFIG=k8test/cluster/admin.conf
 
   echo "Installing VolumeSnapshot CRDs..."
@@ -218,23 +217,23 @@ function deploy-csi() {
   fi
 }
 
-# Deploy both CCM and CSI components
-function deploy-components() {
+# Deploy volume snapshot components, build/import CSI image and deploy CSI
+function deploy-csi-components() {
   echo "Deploying Components"
   echo "IMAGE_SOURCE: ${IMAGE_SOURCE-build}"
   echo "IMAGE: ${IMAGE}"
   echo ""
 
-  # Deploy CCM first (required for node initialization and networking)
-  deploy-ccm
-
   # Install VolumeSnapshot CRDs and snapshot controller (required for CSI driver)
-  deploy-snapshot-crds
+  deploy-snapshot-components
 
   # Import pre-built CSI image (used in CI via IMAGE_SOURCE=import)
   if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
     echo "Importing CSI image from image.tar..."
     import-image
+  else
+    echo "Building image"
+    build-image
   fi
 
   # Deploy CSI
@@ -243,7 +242,6 @@ function deploy-components() {
 
 # Execute if not sourced
 if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
-
   # The image name requires a slash in it, or Podman will add `localhost/` and
   # confuse Kubernetes.
   if [[ "$IMAGE" != *"/"* ]]; then
@@ -256,7 +254,9 @@ if [ "${BASH_SOURCE[0]}" -ef "$0" ]; then
   ensure-k8test
   ensure-cluster
 
-  # Deploy components on both new and existing clusters. For new clusters,
-  # this happens after the full cluster bootstrap (including Cilium) is done.
-  deploy-components
+  if [[ "$first_run" == "no" ]]; then
+    deploy-ccm
+  fi
+
+  deploy-csi-components
 fi

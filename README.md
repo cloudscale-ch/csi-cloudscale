@@ -418,33 +418,7 @@ This will create a binary with version `dev` and docker image pushed to
 `cloudscalech/cloudscale-csi-plugin:dev`
 
 
-To run the integration tests locally with your local CSI build:
-
-```bash
-# 1. Build and export the CSI image
-$ VERSION=dev make publish
-
-# 2. Create a test cluster with CCM and CSI
-$ export CLOUDSCALE_API_TOKEN=your-token
-$ export IMAGE=quay.io/cloudscalech/cloudscale-csi-plugin:dev
-$ helpers/run-in-test-cluster
-
-# This will:
-# - Create a Kubernetes cluster on cloudscale.ch
-# - Deploy CCM from the latest official release
-# - Deploy CSI from your local build
-
-# 3. Run integration tests
-$ export KUBECONFIG=$(pwd)/k8test/cluster/admin.conf
-$ make test-integration
-
-# Run a single test
-$ TESTARGS='-run TestPod_Single_SSD_Volume' make test-integration
-
-# 4. Clean up
-$ helpers/cleanup
-```
-
+Refer to the [deploy/README.md](deploy/README.md) for instructions on how to run the integration tests.
 
 ### Release a new version
 
