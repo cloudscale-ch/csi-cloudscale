@@ -127,6 +127,49 @@ function import-image() {
     -e image="$PWD/image.tar"
 }
 
+# List CSI-related container images on all cluster nodes using ansible ad-hoc
+function list-csi-images() {
+  echo "=== CSI Images on All Nodes ==="
+#  ansible -i k8test/cluster/inventory.yml nodes -b \
+#    -m shell \
+#    -a "ctr -n k8s.io images | grep -E 'cloudscale|csi' || echo '  No CSI images found on this node'" \
+#    --timeout=30
+  ansible -i k8test/cluster/inventory.yml nodes -b \
+    -m shell \
+    -a "ctr -n k8s.io images ls" \
+    --timeout=30
+  echo ""
+}
+
+# Debug a failed CSI rollout by printing pod events, status, description and node images
+function debug-rollout-failure() {
+  local component="$1"
+  local label="$2"
+
+  echo ""
+  echo "❌ CSI ${component} rollout failed"
+  echo ""
+  echo "=== ${component} Pod Events ==="
+  kubectl -n kube-system get pods -l "${label}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | \
+    while read -r pod; do
+      echo "Pod: $pod"
+      kubectl -n kube-system describe pod "$pod" | grep -A 20 "Events:" || echo "  (No events found)"
+      echo ""
+    done
+  echo "=== ${component} Pod Status ==="
+  kubectl -n kube-system get pods -l "${label}" -o wide
+  echo ""
+  echo "=== ${component} Container Images ==="
+  kubectl -n kube-system get pods -l "${label}" \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{range .status.containerStatuses[*]}  Container: {.name}, Image: {.image}, Ready: {.ready}, RestartCount: {.restartCount}{"\n"}{end}{"\n"}{end}'
+  echo ""
+  echo "=== ${component} Pod Full Description ==="
+  kubectl -n kube-system describe pods -l "${label}"
+  echo ""
+  echo "=== CSI Images on All Nodes ==="
+  list-csi-images
+}
+
 # Deploy CCM from official GitHub release
 function deploy-ccm() {
   export KUBECONFIG=k8test/cluster/admin.conf
@@ -203,7 +246,7 @@ function deploy-csi() {
   kubectl -n kube-system get pods -l app=csi-cloudscale-controller -o wide
 
   if ! kubectl -n kube-system rollout status statefulset/csi-cloudscale-controller --timeout=180s; then
-    echo "CSI Controller rollout failed"
+    debug-rollout-failure "Controller" "app=csi-cloudscale-controller"
     exit 1
   fi
 
@@ -212,7 +255,7 @@ function deploy-csi() {
   kubectl -n kube-system get pods -l app=csi-cloudscale-node -o wide
 
   if ! kubectl -n kube-system rollout status daemonset/csi-cloudscale-node --timeout=300s; then
-    echo "CSI Node DaemonSet rollout failed"
+    debug-rollout-failure "Node DaemonSet" "app=csi-cloudscale-node"
     exit 1
   fi
 }
