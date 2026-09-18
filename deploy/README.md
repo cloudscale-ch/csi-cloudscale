@@ -13,39 +13,36 @@ First bootstrap the cluster
 
     # Export your API Token obtained from http://control.cloudscale.ch
     export CLOUDSCALE_API_TOKEN="..."
+    export IMAGE=quay.io/cloudscalech/cloudscale-csi-plugin:dev
     
     # See the script for options, sensible defaults apply
-    ./helpers/bootstrap-cluster
+    ./helpers/run-in-test-cluster
+
+    # This will:
+    # - Create a Kubernetes cluster on cloudscale.ch
+    # - Deploy CCM from the latest official release
+    # - Deploy CSI from your local build
     
     # Verify cluster setup and access
     export KUBECONFIG=$PWD/k8test/cluster/admin.conf
     kubectl get nodes -o wide
 
-
-You can **either** install the driver from your working directory
-
-    # Install driver using dev image from working dir
-    # Pre-requesit: ensure the you have run `helm dependency build` as described in the main README file.
-    helm install -g -n kube-system --set controller.image.tag=dev --set node.image.tag=dev --set controller.image.pullPolicy=Always --set node.image.pullPolicy=Always ./charts/csi-cloudscale
-
-**Or** you can install a released version:
-
-    # List all released versions
-    helm search repo csi-cloudscale/csi-cloudscale  --versions
-    # Install a specific Chart version or latest if --version is omitted
-    helm install -n kube-system -g csi-cloudscale/csi-cloudscale [ --version v1.0.0 ]
-
 You can verify that the csi-driver has been installed by running the following command and checking if the csi-cloudscale pods are running:
 
+    export KUBECONFIG=$PWD/k8test/cluster/admin.conf
     kubectl get pods -n kube-system
 
 Then execute the test suite:
 
+    # integration tests automatically target the k8test-provisioned cluster
     make test-integration
 
-The get rid of the cluster:
+    # Run a single test
+    TESTARGS='-run TestPod_Single_SSD_Volume' make test-integration
 
-    ./helpers/clean-up
+To get rid of the cluster:
+
+    ./helpers/cleanup
 
 ## Debugging
 
