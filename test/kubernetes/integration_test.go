@@ -1245,8 +1245,24 @@ func TestPod_KubeletRestart_RestageSucceeds(t *testing.T) {
 				t.Fatalf("restart kubelet on %s: %v", nodeName, err)
 			}
 
-			// Give kubelet some time to restart and re-stage.
-			time.Sleep(60 * time.Second)
+			// Give Kubernetes time to detect kubelet went down (heartbeat timeout ~40s)
+			// and for kubelet to actually restart. Without this, we might poll and see
+			// stale Ready state from before the restart.
+			t.Logf("Waiting 45s for Kubernetes to detect kubelet restart on node %q", nodeName)
+			time.Sleep(45 * time.Second)
+
+			// Wait for kubelet to be back in Ready state
+			if err := waitForKubeletReady(t, nodeName); err != nil {
+				t.Fatalf("kubelet on node %s did not become Ready: %v", nodeName, err)
+			}
+
+			// Wait for CSI node plugin to be Running and Ready
+			if err := waitForCSINodePluginReady(t, nodeName); err != nil {
+				t.Fatalf("csi-node plugin on node %s did not become Ready: %v", nodeName, err)
+			}
+
+			// Additional time for kubelet to re-issue NodeStageVolume and device enumeration to stabilize
+			time.Sleep(30 * time.Second)
 
 			// fetch logs but with a bit of grace period to ensure we don't miss anything important
 			// and counter possible clock-skew (though that should normally not happen).
@@ -2367,6 +2383,67 @@ func extractStaleMountLines(logs string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// waitForKubeletReady polls the Kubernetes API until the given node's Ready
+// condition becomes True. Callers should wait a short time after restarting
+// kubelet (e.g. 45s) so Kubernetes has a chance to observe the node went
+// NotReady before starting this poll.
+func waitForKubeletReady(t *testing.T, nodeName string) error {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+	defer cancel()
+
+	t.Logf("Polling for kubelet on node %q to be Ready", nodeName)
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 3*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+			if err != nil {
+				return false, nil
+			}
+
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+					t.Logf("kubelet on node %q is Ready", nodeName)
+					return true, nil
+				}
+			}
+			return false, nil
+		})
+}
+
+// waitForCSINodePluginReady polls until the CSI node DaemonSet pod on the
+// given node is Running and Ready.
+func waitForCSINodePluginReady(t *testing.T, nodeName string) error {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+
+	t.Logf("Polling for csi-node plugin on node %q to be Ready", nodeName)
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 2*time.Minute, true,
+		func(ctx context.Context) (bool, error) {
+			pods, err := client.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{
+				LabelSelector: "app=csi-cloudscale-node,role=csi-cloudscale",
+			})
+			if err != nil {
+				return false, nil
+			}
+
+			for _, p := range pods.Items {
+				if p.Spec.NodeName != nodeName {
+					continue
+				}
+				if p.Status.Phase == v1.PodRunning {
+					for _, cond := range p.Status.Conditions {
+						if cond.Type == v1.PodReady && cond.Status == v1.ConditionTrue {
+							t.Logf("csi-node plugin on node %q is Ready (pod: %s)", nodeName, p.Name)
+							return true, nil
+						}
+					}
+				}
+			}
+			return false, nil
+		})
 }
 
 // Metrics Handling
