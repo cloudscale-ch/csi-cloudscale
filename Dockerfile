@@ -31,7 +31,7 @@ ARG COMMIT=unknown
 ARG GIT_TREE_STATE=unknown
 
 # Build using make (ensures consistent build logic)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 make compile \
+RUN make compile \
     VERSION="${VERSION}" \
     COMMIT="${COMMIT}" \
     GIT_TREE_STATE="${GIT_TREE_STATE}"

@@ -209,13 +209,10 @@ function deploy-csi() {
   echo "Deploying CSI with image tag: ${image_tag}..."
 
   # Determine imagePullPolicy
-  local image_pull_policy="Always"
+  local image_pull_policy="IfNotPresent"
   if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
     image_pull_policy="Never"
     echo "Using imagePullPolicy=Never (import mode - local images only)"
-  elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-    image_pull_policy="IfNotPresent"
-    echo "Using imagePullPolicy=IfNotPresent (CI build mode)"
   fi
 
   # Check if CSI is already installed so we can roll it out later
