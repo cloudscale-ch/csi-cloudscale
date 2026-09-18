@@ -208,11 +208,20 @@ function deploy-csi() {
 
   echo "Deploying CSI with image tag: ${image_tag}..."
 
-  # Determine imagePullPolicy - force Never for local-only images
-  local image_pull_policy="IfNotPresent"
+  # Determine imagePullPolicy
+  local image_pull_policy="Always"
   if [[ "${IMAGE_SOURCE-build}" == "import" ]]; then
     image_pull_policy="Never"
     echo "Using imagePullPolicy=Never (import mode - local images only)"
+  elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    image_pull_policy="IfNotPresent"
+    echo "Using imagePullPolicy=IfNotPresent (CI build mode)"
+  fi
+
+  # Check if CSI is already installed so we can roll it out later
+  local csi_installed="no"
+  if kubectl -n kube-system get statefulset csi-cloudscale-controller &>/dev/null; then
+    csi_installed="yes"
   fi
 
   # Generate manifest and capture for inspection
@@ -237,6 +246,13 @@ function deploy-csi() {
 
   # Apply the manifest
   kubectl apply -n kube-system -f "$manifest_file"
+
+  if [[ "$csi_installed" == "yes" ]]; then
+    echo ""
+    echo "CSI was already installed, triggering rollout restart..."
+    kubectl -n kube-system rollout restart statefulset csi-cloudscale-controller
+    kubectl -n kube-system rollout restart daemonset csi-cloudscale-node
+  fi
 
   # Cleanup
   rm -f "$manifest_file"
