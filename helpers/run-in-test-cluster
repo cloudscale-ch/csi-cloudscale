@@ -76,7 +76,7 @@ function ensure-cluster() {
   fi
 
   if ! test -f k8test/cluster/admin.conf; then
-    zone="$(random-zone)"
+    zone="${CLOUDSCALE_ZONE:-$(random-zone)}"
 
     # First create the cluster, without configuring the network
     k8test/playbooks/create-cluster.yml \
