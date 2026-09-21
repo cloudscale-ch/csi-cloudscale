@@ -14,6 +14,10 @@ export WORKER_COUNT="${WORKER_COUNT-2}"
 export IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
 export CCM_RELEASE_URL="https://github.com/cloudscale-ch/cloudscale-cloud-controller-manager/releases/latest/download/config.yml"
 
+CUSTOM_CA_SECRET_NAME="cloudscale-custom-ca"
+CUSTOM_CA_VOLUME_NAME="cloudscale-custom-ca"
+CUSTOM_CA_MOUNT_PATH="/etc/ssl/certs/cloudscale-custom-ca.pem"
+
 # Prepares k8test with an existing virtual env, or a newly created on
 function ensure-k8test() {
 
@@ -231,6 +235,54 @@ function debug-rollout-failure() {
   run-debug-command list-csi-images
 }
 
+# Create or update the Secret containing the custom cloudscale API CA. Callers
+# must only invoke this when CLOUDSCALE_CA_PEM is non-empty.
+function deploy-custom-ca-secret() (
+  if [[ -z "${CLOUDSCALE_CA_PEM:-}" ]]; then
+    return 0
+  fi
+
+  local ca_file
+  ca_file=$(mktemp)
+  trap 'rm -f "$ca_file"' EXIT
+
+  chmod 0600 "$ca_file"
+  printf '%s\n' "$CLOUDSCALE_CA_PEM" > "$ca_file"
+
+  kubectl -n kube-system create secret generic "$CUSTOM_CA_SECRET_NAME" \
+    --from-file=ca.pem="$ca_file" \
+    --dry-run=client \
+    -o yaml | kubectl apply -f -
+)
+
+# Extend a container's system trust store with the custom cloudscale API CA.
+function mount-custom-ca() {
+  if [[ -z "${CLOUDSCALE_CA_PEM:-}" ]]; then
+    return 0
+  fi
+
+  local resource="$1"
+  local container="$2"
+  local patch
+
+  patch="spec:
+  template:
+    spec:
+      containers:
+        - name: ${container}
+          volumeMounts:
+            - name: ${CUSTOM_CA_VOLUME_NAME}
+              mountPath: ${CUSTOM_CA_MOUNT_PATH}
+              subPath: ca.pem
+              readOnly: true
+      volumes:
+        - name: ${CUSTOM_CA_VOLUME_NAME}
+          secret:
+            secretName: ${CUSTOM_CA_SECRET_NAME}"
+
+  kubectl -n kube-system patch "$resource" --type=strategic --patch "$patch"
+}
+
 # Deploy CCM from official GitHub release
 function deploy-ccm() {
   export KUBECONFIG=k8test/cluster/admin.conf
@@ -242,6 +294,16 @@ function deploy-ccm() {
   curl -sL "${CCM_RELEASE_URL}" | \
     sed "s|https://api.cloudscale.ch/|${api_url}/|g" | \
     kubectl apply -f -
+
+  if [[ -n "${CLOUDSCALE_CA_PEM:-}" ]]; then
+    echo "Configuring custom CA for the cloudscale CCM..."
+    deploy-custom-ca-secret
+    mount-custom-ca \
+      daemonset/cloudscale-cloud-controller-manager \
+      cloudscale-cloud-controller-manager
+    kubectl -n kube-system rollout restart \
+      daemonset/cloudscale-cloud-controller-manager
+  fi
 
   echo "Waiting for CCM to be ready..."
   kubectl -n kube-system rollout status daemonset/cloudscale-cloud-controller-manager --timeout=120s
@@ -304,6 +366,17 @@ function deploy-csi() {
 
   # Apply the manifest
   kubectl apply -n kube-system -f "$manifest_file"
+
+  if [[ -n "${CLOUDSCALE_CA_PEM:-}" ]]; then
+    echo "Configuring custom CA for the cloudscale CSI plugin..."
+    deploy-custom-ca-secret
+    mount-custom-ca \
+      statefulset/csi-cloudscale-controller \
+      csi-cloudscale-plugin
+    mount-custom-ca \
+      daemonset/csi-cloudscale-node \
+      csi-cloudscale-plugin
+  fi
 
   if [[ "$csi_installed" == "yes" ]]; then
     echo ""
