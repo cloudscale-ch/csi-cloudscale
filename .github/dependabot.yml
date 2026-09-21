@@ -39,6 +39,11 @@ updates:
     schedule:
       interval: "weekly"
       day: "monday"
+    groups:
+      all-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
     cooldown:
       default-days: 7
 
@@ -60,5 +65,10 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+    groups:
+      all-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
     cooldown:
       default-days: 7
