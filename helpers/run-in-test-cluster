@@ -82,8 +82,8 @@ function ensure-cluster() {
     k8test/playbooks/create-cluster.yml \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
-      -e control_count=2 \
-      -e worker_count=2 \
+      -e control_count=1 \
+      -e worker_count=1 \
       -e kubelet_extra_args='--cloud-provider=external' \
       -e kubernetes="${KUBERNETES}" \
       -e cluster_prefix="${CLUSTER_PREFIX}" \
@@ -102,8 +102,8 @@ function ensure-cluster() {
     k8test/playbooks/create-cluster.yml \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
-      -e control_count=2 \
-      -e worker_count=2 \
+      -e control_count=1 \
+      -e worker_count=1 \
       -e kubelet_extra_args='--cloud-provider=external' \
       -e kubernetes="${KUBERNETES}" \
       -e cluster_prefix="${CLUSTER_PREFIX}" \
