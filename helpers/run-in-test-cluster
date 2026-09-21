@@ -9,6 +9,8 @@ export ANSIBLE_CONFIG="$PWD"/k8test/ansible.cfg
 export KUBERNETES="${KUBERNETES-latest}"
 export CLUSTER_PREFIX="${CLUSTER_PREFIX-csi}"
 export SUBNET="${SUBNET-10.200.1.0/24}"
+export CONTROL_COUNT="${CONTROL_COUNT-3}"
+export WORKER_COUNT="${WORKER_COUNT-2}"
 export IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
 export CCM_RELEASE_URL="https://github.com/cloudscale-ch/cloudscale-cloud-controller-manager/releases/latest/download/config.yml"
 
@@ -82,8 +84,8 @@ function ensure-cluster() {
     k8test/playbooks/create-cluster.yml \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
-      -e control_count=1 \
-      -e worker_count=1 \
+      -e control_count="${CONTROL_COUNT}" \
+      -e worker_count="${WORKER_COUNT}" \
       -e kubelet_extra_args='--cloud-provider=external' \
       -e kubernetes="${KUBERNETES}" \
       -e cluster_prefix="${CLUSTER_PREFIX}" \
@@ -102,8 +104,8 @@ function ensure-cluster() {
     k8test/playbooks/create-cluster.yml \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
-      -e control_count=1 \
-      -e worker_count=1 \
+      -e control_count="${CONTROL_COUNT}" \
+      -e worker_count="${WORKER_COUNT}" \
       -e kubelet_extra_args='--cloud-provider=external' \
       -e kubernetes="${KUBERNETES}" \
       -e cluster_prefix="${CLUSTER_PREFIX}" \
