@@ -1,5 +1,7 @@
 module github.com/cloudscale-ch/csi-cloudscale
 
+go 1.27.1
+
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/cloudscale-ch/cloudscale-go-sdk/v10 v10.0.0
@@ -129,5 +131,3 @@ replace k8s.io/mount-utils => k8s.io/mount-utils v0.28.15
 replace k8s.io/pod-security-admission => k8s.io/pod-security-admission v0.28.15
 
 replace k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.28.15
-
-go 1.26.6
