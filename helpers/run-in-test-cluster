@@ -143,33 +143,92 @@ function list-csi-images() {
   echo ""
 }
 
-# Debug a failed CSI rollout by printing pod events, status, description and node images
+# Run a diagnostic command without allowing a failure to hide subsequent output.
+function run-debug-command() {
+  if ! "$@"; then
+    echo "  (Diagnostic command failed: $*)"
+  fi
+}
+
+# Debug a failed CSI rollout. This deliberately gathers evidence only after a
+# rollout has failed so that successful deployments do not perform extra checks.
 function debug-rollout-failure() {
   local component="$1"
   local label="$2"
+  local ccm_selector
+  local pods
 
   echo ""
   echo "❌ CSI ${component} rollout failed"
   echo ""
-  echo "=== ${component} Pod Events ==="
-  kubectl -n kube-system get pods -l "${label}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | \
+
+  echo "=== Node Scheduling Summary ==="
+  run-debug-command kubectl get nodes -o wide
+  run-debug-command kubectl get nodes \
+    -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,UNSCHEDULABLE:.spec.unschedulable,ROLES:.metadata.labels.node-role\.kubernetes\.io/control-plane,TAINTS:.spec.taints'
+  echo ""
+
+  echo "=== ${component} Pod Scheduling Details ==="
+  if pods=$(kubectl -n kube-system get pods -l "${label}" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}'); then
+    if [[ -z "$pods" ]]; then
+      echo "  (No matching pods found for ${label})"
+    else
+      while read -r pod; do
+        [[ -z "$pod" ]] && continue
+        echo "Pod: $pod"
+        run-debug-command kubectl -n kube-system get pod "$pod" \
+          -o custom-columns='NAME:.metadata.name,PHASE:.status.phase,NODE:.spec.nodeName,NODE-SELECTOR:.spec.nodeSelector,TOLERATIONS:.spec.tolerations,AFFINITY:.spec.affinity,CONDITIONS:.status.conditions'
+        echo ""
+      done <<< "$pods"
+    fi
+  else
+    echo "  (Failed to list matching pods for ${label})"
+    pods=""
+  fi
+
+  echo "=== ${component} Pod Events and Descriptions ==="
+  if [[ -n "$pods" ]]; then
     while read -r pod; do
+      [[ -z "$pod" ]] && continue
       echo "Pod: $pod"
-      kubectl -n kube-system describe pod "$pod" | grep -A 20 "Events:" || echo "  (No events found)"
+      run-debug-command kubectl -n kube-system describe pod "$pod"
       echo ""
-    done
+    done <<< "$pods"
+  fi
+
+  echo "=== Recent Cluster Events ==="
+  run-debug-command kubectl get events --all-namespaces --sort-by=.metadata.creationTimestamp
+  echo ""
+
+  echo "=== cloudscale CCM Status ==="
+  run-debug-command kubectl -n kube-system get daemonset cloudscale-cloud-controller-manager -o wide
+  run-debug-command kubectl -n kube-system describe daemonset cloudscale-cloud-controller-manager
+  run-debug-command kubectl -n kube-system get pods -o wide
+  echo ""
+
+  echo "=== cloudscale CCM Logs ==="
+  if ccm_selector=$(kubectl -n kube-system get daemonset cloudscale-cloud-controller-manager -o json | \
+    jq -r '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",")') && [[ -n "$ccm_selector" ]]; then
+    run-debug-command kubectl -n kube-system logs -l "$ccm_selector" \
+      --all-containers=true --prefix=true --tail=-1 --max-log-requests=20
+    echo ""
+    echo "=== cloudscale CCM Previous Logs (if available) ==="
+    run-debug-command kubectl -n kube-system logs -l "$ccm_selector" \
+      --all-containers=true --prefix=true --previous --tail=-1 --max-log-requests=20
+  else
+    echo "  (Failed to determine the cloudscale CCM pod selector)"
+  fi
+  echo ""
+
   echo "=== ${component} Pod Status ==="
-  kubectl -n kube-system get pods -l "${label}" -o wide
+  run-debug-command kubectl -n kube-system get pods -l "${label}" -o wide
   echo ""
   echo "=== ${component} Container Images ==="
-  kubectl -n kube-system get pods -l "${label}" \
+  run-debug-command kubectl -n kube-system get pods -l "${label}" \
     -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{range .status.containerStatuses[*]}  Container: {.name}, Image: {.image}, Ready: {.ready}, RestartCount: {.restartCount}{"\n"}{end}{"\n"}{end}'
   echo ""
-  echo "=== ${component} Pod Full Description ==="
-  kubectl -n kube-system describe pods -l "${label}"
-  echo ""
   echo "=== CSI Images on All Nodes ==="
-  list-csi-images
+  run-debug-command list-csi-images
 }
 
 # Deploy CCM from official GitHub release
