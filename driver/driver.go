@@ -21,11 +21,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/cloudscale-ch/cloudscale-go-sdk/v10"
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -75,16 +77,36 @@ type Driver struct {
 	ready   bool
 }
 
+func transport() *http.Transport {
+	return &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+
+		TLSHandshakeTimeout: 5 * time.Second,
+
+		// needs to be set because we also set DialContext
+		ForceAttemptHTTP2: true,
+		HTTP2: &http.HTTP2Config{
+			SendPingTimeout: 5 * time.Second,
+			PingTimeout:     3 * time.Second,
+		},
+
+		IdleConnTimeout:     90 * time.Second,
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 50,
+		MaxConnsPerHost:     0,
+	}
+}
+
 // NewDriver returns a CSI plugin that contains the necessary gRPC
 // interfaces to interact with Kubernetes over unix domain sockets for
 // managaing cloudscale.ch Volumes
 func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error) {
-	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
-		AccessToken: token,
+	metadataClient := cloudscale.NewMetadataClient(&http.Client{
+		Transport: transport(),
 	})
-	oauthClient := oauth2.NewClient(context.Background(), tokenSource)
-
-	metadataClient := cloudscale.NewMetadataClient(nil)
 	metadata, err := metadataClient.GetMetadata(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get metadata: %s", err)
@@ -95,7 +117,19 @@ func NewDriver(ep, token, urlstr string, logLevel logrus.Level) (*Driver, error)
 	zone := metadata.AvailabilityZone
 	serverID := metadata.Meta.CloudscaleUUID
 
-	cloudscaleClient := cloudscale.NewClient(oauthClient)
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{
+		AccessToken: token,
+	})
+	httpClient := &http.Client{
+		Transport: &oauth2.Transport{
+			Source: tokenSource,
+			Base:   transport(),
+		},
+	}
+
+	cloudscaleClient := cloudscale.NewClient(httpClient)
+	cloudscaleClient.UserAgent = cloudscaleClient.UserAgent + " csi/" + version
+
 	baseURL, err := url.Parse(urlstr)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse url: %s", err)
