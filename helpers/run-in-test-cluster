@@ -136,10 +136,6 @@ function import-image() {
 # List CSI-related container images on all cluster nodes using ansible ad-hoc
 function list-csi-images() {
   echo "=== CSI Images on All Nodes ==="
-#  ansible -i k8test/cluster/inventory.yml nodes -b \
-#    -m shell \
-#    -a "ctr -n k8s.io images | grep -E 'cloudscale|csi' || echo '  No CSI images found on this node'" \
-#    --timeout=30
   ansible -i k8test/cluster/inventory.yml nodes -b \
     -m shell \
     -a "ctr -n k8s.io images ls" \
