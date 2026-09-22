@@ -21,6 +21,9 @@ SHELL = /usr/bin/env bash -o pipefail
 # mounted into a Linux sandbox) never mixes incompatible binaries.
 HOST_PLATFORM := $(shell go env GOOS)-$(shell go env GOARCH)
 
+## Parallel test execution (override with PARALLEL=2)
+PARALLEL ?= 4
+
 ## Location to install dependencies to (per-platform to keep host & sandbox separate)
 LOCALBIN := $(shell pwd)/bin/$(HOST_PLATFORM)
 $(LOCALBIN):
@@ -94,12 +97,13 @@ test: vet ## Run tests.
 .PHONY: test-integration
 test-integration: ## Run integration tests
 	@echo "==> Started integration tests"
+	@echo "==> Tip: Use TESTARGS='-short' for reduced volume sizes"
 	@if [ -f "$(PWD)/k8test/cluster/admin.conf" ]; then \
 		echo "==> Found k8test cluster config at $(PWD)/k8test/cluster/admin.conf, using k8test kubeconfig"; \
-		KUBECONFIG=$(PWD)/k8test/cluster/admin.conf go test -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...; \
+		KUBECONFIG=$(PWD)/k8test/cluster/admin.conf go test -count 1 -v $(TESTARGS) -tags integration -parallel $(PARALLEL) -timeout 20m ./test/...; \
 	else \
 		echo "==> No k8test found, using standard kubeconfig loading"; \
-		go test -count 1 -v $(TESTARGS) -tags integration -parallel 4 -timeout 20m ./test/...; \
+		go test -count 1 -v $(TESTARGS) -tags integration -parallel $(PARALLEL) -timeout 20m ./test/...; \
 	fi
 
 .PHONY: lint
