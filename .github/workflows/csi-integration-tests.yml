@@ -117,6 +117,8 @@ jobs:
       SUBNET: '${{ matrix.subnet }}'
       CLUSTER_PREFIX: '${{ matrix.cluster_prefix }}'
       IMAGE_SOURCE: import
+      CONTROL_COUNT: 3
+      WORKER_COUNT: 2
 
     # Prevent integration tests from running in parallel. Ideally this should
     # be seuqential, but that won't work due to the following issue:
