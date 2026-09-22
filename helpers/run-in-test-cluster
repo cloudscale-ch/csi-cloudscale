@@ -11,6 +11,8 @@ export CLUSTER_PREFIX="${CLUSTER_PREFIX-csi}"
 export SUBNET="${SUBNET-10.200.1.0/24}"
 export CONTROL_COUNT="${CONTROL_COUNT-3}"
 export WORKER_COUNT="${WORKER_COUNT-2}"
+export FLAVOR="${FLAVOR-flex-8-4}"
+export PARALLEL="${PARALLEL-4}"
 export IMAGE="${IMAGE-quay.io/cloudscalech/cloudscale-csi-plugin:test}"
 export CCM_RELEASE_URL="https://github.com/cloudscale-ch/cloudscale-cloud-controller-manager/releases/latest/download/config.yml"
 
@@ -86,6 +88,7 @@ function ensure-cluster() {
 
     # First create the cluster, without configuring the network
     k8test/playbooks/create-cluster.yml \
+      -e flavor="${FLAVOR}" \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
       -e control_count="${CONTROL_COUNT}" \
@@ -106,6 +109,7 @@ function ensure-cluster() {
 
     # Finally, setup the cluster to completion (includes Cilium install)
     k8test/playbooks/create-cluster.yml \
+      -e flavor="${FLAVOR}" \
       -e zone="$zone" \
       -e ssh_key=k8test/cluster/ssh.pub \
       -e control_count="${CONTROL_COUNT}" \

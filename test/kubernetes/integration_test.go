@@ -2048,7 +2048,7 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 	start := time.Now()
 
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		volumes, err := cloudscaleClient.Volumes.List(ctx, cloudscale.WithNameFilter(volumeName))
 		cancel()
 		if len(volumes) == 0 {
@@ -2064,13 +2064,13 @@ func waitCloudscaleVolumeDeleted(t *testing.T, volumeName string) {
 				}
 			}
 		}
-		if time.Now().UnixNano()-start.UnixNano() > (5 * time.Minute).Nanoseconds() {
+		if time.Now().UnixNano()-start.UnixNano() > (10 * time.Minute).Nanoseconds() {
 			t.Errorf("timeout exceeded while waiting for volume %v to be deleted from cloudscale", volumeName)
 			return
-		} else {
-			t.Logf("volume %v not deleted on cloudscale yet; awaiting deletion", volumeName)
-			time.Sleep(5 * time.Second)
 		}
+
+		t.Logf("volume %v not deleted on cloudscale yet; awaiting deletion", volumeName)
+		time.Sleep(10 * time.Second)
 	}
 }
 
@@ -2628,7 +2628,7 @@ func waitCloudscaleVolumeSnapshotDeleted(t *testing.T, snapshotHandle string) {
 	start := time.Now()
 
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		_, err := cloudscaleClient.VolumeSnapshots.Get(ctx, snapshotHandle)
 		cancel()
 
@@ -2644,13 +2644,13 @@ func waitCloudscaleVolumeSnapshotDeleted(t *testing.T, snapshotHandle string) {
 			t.Logf("error checking snapshot %v: %v", snapshotHandle, err)
 		}
 
-		if time.Since(start) > 5*time.Minute {
+		if time.Since(start) > 10*time.Minute {
 			t.Errorf("timeout exceeded while waiting for snapshot %v to be deleted from cloudscale", snapshotHandle)
 			return
 		}
 
 		t.Logf("snapshot %v not deleted on cloudscale yet; awaiting deletion", snapshotHandle)
-		time.Sleep(5 * time.Second)
+		time.Sleep(10 * time.Second)
 	}
 }
 
