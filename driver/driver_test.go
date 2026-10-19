@@ -700,7 +700,9 @@ func TestNodeStageVolume_ConcurrentSameVolume(t *testing.T) {
 
 	// Clean up: allow first operation to complete
 	execA <- struct{}{}
-	<-respA
+	if err := <-respA; err != nil {
+		t.Errorf("Unexpected error from first operation: %v", err)
+	}
 }
 
 // TestNodeStageVolume_ConcurrentDifferentVolumes tests that concurrent NodeStageVolume
@@ -820,6 +822,7 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 		},
 		PublishContext: map[string]string{
 			LuksEncryptedAttribute: "false",
+			PublishInfoVolumeName:  vol.Name,
 		},
 	}
 
@@ -872,7 +875,9 @@ func TestNodeOperations_CrossOperationLocking(t *testing.T) {
 
 	// Clean up: allow stage operation to complete
 	execStage <- struct{}{}
-	<-respStage
+	if err := <-respStage; err != nil {
+		t.Errorf("Unexpected error from stage operation: %v", err)
+	}
 }
 
 // newFakeMounter returns a zero-state fakeMounter.
