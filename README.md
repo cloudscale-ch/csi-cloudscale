@@ -429,7 +429,12 @@ $ make NEW_VERSION=vX.Y.Z bump-version
 $ make NEW_CHART_VERSION=vX.Y.Z bump-chart-version
 ```
 
-Make sure everything looks good. Verify that the Kubernetes compatibility matrix is up-to-date.
+Make sure everything looks good:
+
+- Verify that the Kubernetes compatibility matrix is up-to-date.
+- Verify the [CHANGELOG.mod](./CHANGELOG.md) is up-to-date.
+- Verify `make lint govulncheck build` passes.
+
 Create a new branch with all changes:
 
 ```
