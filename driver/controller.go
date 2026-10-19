@@ -1133,12 +1133,12 @@ func formatBytes(inputBytes int64) string {
 // of violations which may be empty if no violatons were found.
 func validateCapabilities(caps []*csi.VolumeCapability) []string {
 	violations := sets.NewString()
-	for _, cap := range caps {
-		if cap.GetAccessMode().GetMode() != supportedAccessMode.GetMode() {
-			violations.Insert(fmt.Sprintf("unsupported access mode %s", cap.GetAccessMode().GetMode().String()))
+	for _, capa := range caps {
+		if capa.GetAccessMode().GetMode() != supportedAccessMode.GetMode() {
+			violations.Insert(fmt.Sprintf("unsupported access mode %s", capa.GetAccessMode().GetMode().String()))
 		}
 
-		accessType := cap.GetAccessType()
+		accessType := capa.GetAccessType()
 		switch accessType.(type) {
 		case *csi.VolumeCapability_Block:
 		case *csi.VolumeCapability_Mount:
@@ -1152,8 +1152,8 @@ func validateCapabilities(caps []*csi.VolumeCapability) []string {
 
 func validateLuksCapabilities(caps []*csi.VolumeCapability) []string {
 	violations := sets.NewString()
-	for _, cap := range caps {
-		accessType := cap.GetAccessType()
+	for _, capa := range caps {
+		accessType := capa.GetAccessType()
 		switch accessType.(type) {
 		case *csi.VolumeCapability_Block:
 			violations.Insert("Cannot use LUKS with block volumes")
