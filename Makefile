@@ -163,7 +163,7 @@ helm-template: ## Generate helm template
 ##@ Tooling
 
 ## Tool Versions
-GOLANGCI_LINT_VERSION ?= v2.13.1
+GOLANGCI_LINT_VERSION ?= v2.15.0
 GOVULNCHECK_VERSION ?= v1.7.0
 
 ## Tool Binaries
