@@ -1,5 +1,12 @@
 ## unreleased
 
+## v4.0.3 - 2026.10.19
+
+* The CSI-Driver sets its user-agent to `cloudscale/<go-sdk version> csi/<csi version>`
+* Update `github.com/cloudscale-ch/cloudscale-go-sdk` fron `v7.0.0` to `v10.0.0`
+* Ensure correct volume type for volumes created from snapshots is passed
+
+
 ## v4.0.2 - 2026.06.22
 
 Fixes a regression from v4.0.1 where restaging a non-LUKS volume could fail because the staging mount check compared
