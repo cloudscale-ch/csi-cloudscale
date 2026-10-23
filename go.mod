@@ -1,6 +1,6 @@
 module github.com/cloudscale-ch/csi-cloudscale
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
