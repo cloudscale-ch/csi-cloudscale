@@ -2,6 +2,19 @@ apiVersion: v1
 entries:
   csi-cloudscale:
   - apiVersion: v2
+    appVersion: 4.0.4
+    created: "2026-10-23T16:08:22.746164309Z"
+    description: A Container Storage Interface Driver for cloudscale.ch volumes.
+    digest: 10dc7d4ed582bbbef8c9970c636f784289c177a59d6de1d0bc4157acbdfe4e8e
+    home: https://github.com/cloudscale-ch/csi-cloudscale
+    name: csi-cloudscale
+    sources:
+    - https://github.com/cloudscale-ch/csi-cloudscale.git
+    type: application
+    urls:
+    - https://github.com/cloudscale-ch/csi-cloudscale/releases/download/helm-csi-cloudscale-1.5.5/csi-cloudscale-1.5.5.tgz
+    version: 1.5.5
+  - apiVersion: v2
     appVersion: 4.0.2
     created: "2026-06-22T15:13:12.472025681Z"
     description: A Container Storage Interface Driver for cloudscale.ch volumes.
@@ -342,4 +355,4 @@ entries:
     urls:
     - https://github.com/cloudscale-ch/csi-cloudscale/releases/download/helm-csi-cloudscale-1.0.0/csi-cloudscale-1.0.0.tgz
     version: 1.0.0
-generated: "2026-06-22T15:13:12.472185202Z"
+generated: "2026-10-23T16:08:22.746342052Z"
