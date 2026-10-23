@@ -1,5 +1,7 @@
 ## unreleased
 
+## v4.0.4 - 2026.10.23
+
 * Build with Go 1.27.3 to reject certificate chains through compromised eMudhra intermediates (GO-2026-6809)
 * Update base image from `alpine:3.23.3` to `alpine:3.24.2`
 
