@@ -49,6 +49,7 @@ updates:
 
   # Check docker base image updates
   - package-ecosystem: "docker"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
