@@ -1,5 +1,7 @@
 ## unreleased
 
+* Build with Go 1.27.3 to reject certificate chains through compromised eMudhra intermediates (GO-2026-6809)
+
 ## v4.0.3 - 2026.10.19
 
 * The CSI-Driver sets its user-agent to `cloudscale/<go-sdk version> csi/<csi version>`
