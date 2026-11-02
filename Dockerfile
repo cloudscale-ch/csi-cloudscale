@@ -36,7 +36,7 @@ RUN make compile \
     COMMIT="${COMMIT}" \
     GIT_TREE_STATE="${GIT_TREE_STATE}"
 
-FROM alpine:3.24.2
+FROM alpine:3.24.3
 
 # e2fsprogs-extra is required for resize2fs used for the resize operation
 # blkid: block device identification tool from util-linux
