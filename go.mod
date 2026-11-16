@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/cloudscale-ch/cloudscale-go-sdk/v10 v10.0.0
+	github.com/cloudscale-ch/cloudscale-go-sdk/v10 v10.1.1
 	github.com/container-storage-interface/spec v1.13.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/uuid v1.6.0
@@ -12,9 +12,9 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/oauth2 v0.37.0
-	golang.org/x/sys v0.49.0
-	google.golang.org/grpc v1.83.2
+	golang.org/x/oauth2 v0.38.0
+	golang.org/x/sys v0.50.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	k8s.io/api v0.28.15
 	k8s.io/apimachinery v0.28.15
